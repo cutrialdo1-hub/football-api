@@ -1,86 +1,3 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Football Predictor Dashboard</title>
-
-<style>
-    body {
-        font-family: Arial, sans-serif;
-        background: #0f172a;
-        color: white;
-        margin: 0;
-        padding: 20px;
-    }
-
-    h1 {
-        text-align: center;
-        margin-bottom: 20px;
-    }
-
-    .card {
-        background: #1e293b;
-        padding: 15px;
-        border-radius: 10px;
-        margin-bottom: 15px;
-    }
-
-    select, button {
-        padding: 10px;
-        margin: 5px;
-        border-radius: 6px;
-        border: none;
-        width: 200px;
-    }
-
-    button {
-        background: #22c55e;
-        color: white;
-        cursor: pointer;
-    }
-
-    button:hover {
-        background: #16a34a;
-    }
-
-    .row {
-        display: flex;
-        gap: 10px;
-        justify-content: center;
-        flex-wrap: wrap;
-    }
-
-    .scoreline {
-        background: #334155;
-        padding: 8px;
-        margin: 5px 0;
-        border-radius: 6px;
-        display: flex;
-        justify-content: space-between;
-    }
-
-    .big {
-        font-size: 18px;
-        font-weight: bold;
-    }
-</style>
-</head>
-
-<body>
-
-<h1>⚽ Football Predictor Dashboard</h1>
-
-<div class="card">
-    <div class="row">
-        <select id="home"></select>
-        <select id="away"></select>
-        <button onclick="predict()">Predict</button>
-    </div>
-</div>
-
-<div id="output"></div>
-
 <script>
 
 const API = "https://football-api-9e4p.onrender.com";
@@ -100,11 +17,11 @@ async function loadTeams() {
         awaySelect.innerHTML = "";
 
         teams.forEach(team => {
-            let opt1 = document.createElement("option");
+            const opt1 = document.createElement("option");
             opt1.value = team;
             opt1.textContent = team;
 
-            let opt2 = document.createElement("option");
+            const opt2 = document.createElement("option");
             opt2.value = team;
             opt2.textContent = team;
 
@@ -113,9 +30,7 @@ async function loadTeams() {
         });
 
     } catch (err) {
-        console.error("Failed to load teams:", err);
-        document.getElementById("output").innerHTML =
-            "<div class='card'>❌ Failed to load teams from API</div>";
+        console.error("Teams failed to load:", err);
     }
 }
 
@@ -123,13 +38,14 @@ async function loadTeams() {
 // PREDICT
 // -----------------------------
 async function predict() {
+
     const home = document.getElementById("home").value;
     const away = document.getElementById("away").value;
 
     try {
         const res = await fetch(API + "/predict", {
             method: "POST",
-            headers: {"Content-Type": "application/json"},
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 home_team: home,
                 away_team: away
@@ -139,30 +55,11 @@ async function predict() {
         const data = await res.json();
 
         if (!res.ok) {
-            throw new Error(data.error || "API error");
+            document.getElementById("output").innerHTML =
+                `<div class="card">❌ ${data.error || "Prediction failed"}</div>`;
+            return;
         }
 
-        // -----------------------------
-        // BUILD SCORELINES FROM MATRIX
-        // -----------------------------
-        const matrix = data.score_matrix;
-        const scorelines = [];
-
-        for (let h = 0; h < matrix.length; h++) {
-            for (let a = 0; a < matrix[h].length; a++) {
-                scorelines.push({
-                    score: `${h}-${a}`,
-                    probability: matrix[h][a]
-                });
-            }
-        }
-
-        scorelines.sort((a, b) => b.probability - a.probability);
-        const top10 = scorelines.slice(0, 10);
-
-        // -----------------------------
-        // RENDER UI
-        // -----------------------------
         let html = "";
 
         // xG
@@ -184,29 +81,12 @@ async function predict() {
         </div>
         `;
 
-        // scorelines
-        html += `
-        <div class="card">
-            <div class="big">Top 10 Scorelines</div>
-        `;
-
-        top10.forEach(item => {
-            html += `
-            <div class="scoreline">
-                <span>${item.score}</span>
-                <span>${(item.probability * 100).toFixed(2)}%</span>
-            </div>
-            `;
-        });
-
-        html += `</div>`;
-
         document.getElementById("output").innerHTML = html;
 
     } catch (err) {
         console.error(err);
         document.getElementById("output").innerHTML =
-            `<div class="card">❌ Prediction failed: ${err.message}</div>`;
+            `<div class="card">❌ Prediction failed (network error)</div>`;
     }
 }
 
@@ -214,6 +94,3 @@ async function predict() {
 loadTeams();
 
 </script>
-
-</body>
-</html>

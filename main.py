@@ -1,10 +1,18 @@
 import math
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 
 app = Flask(__name__)
 
+# ✅ THIS FIXES YOUR ERROR
+CORS(app, origins=[
+    "https://verdant-selkie-f51025.netlify.app",
+    "http://localhost:3000",
+    "*"
+])
+
 # ----------------------------
-# 1. DATA
+# DATA
 # ----------------------------
 LEAGUE_AVERAGES = {
     "home_scored": 1.50,
@@ -39,7 +47,7 @@ TEAMS = {
 MAX_GOALS = 5
 
 # ----------------------------
-# 2. MODEL
+# MODEL
 # ----------------------------
 def team_strength(team):
     t = TEAMS[team]
@@ -50,7 +58,6 @@ def team_strength(team):
         "def_away": t["away_conceded"] / LEAGUE_AVERAGES["away_conceded"],
     }
 
-
 def expected_goals(home, away):
     h = team_strength(home)
     a = team_strength(away)
@@ -60,14 +67,11 @@ def expected_goals(home, away):
 
     return home_xg, away_xg
 
-
 def poisson(k, lam):
     return (lam ** k) * math.exp(-lam) / math.factorial(k)
 
-
 def dc_adjust(h, a, hxg, axg):
     rho = -0.08
-
     if h == 0 and a == 0:
         return 1 - (hxg * axg * rho)
     if h == 0 and a == 1:
@@ -77,7 +81,6 @@ def dc_adjust(h, a, hxg, axg):
     if h == 1 and a == 1:
         return 1 - rho
     return 1.0
-
 
 def score_matrix(hxg, axg):
     matrix = []
@@ -90,10 +93,8 @@ def score_matrix(hxg, axg):
         matrix.append(row)
     return matrix
 
-
 def outcomes(matrix):
     home = draw = away = 0
-
     for h in range(len(matrix)):
         for a in range(len(matrix)):
             p = matrix[h][a]
@@ -105,31 +106,23 @@ def outcomes(matrix):
                 away += p
 
     total = home + draw + away
-
     return {
         "home_win": home / total,
         "draw": draw / total,
         "away_win": away / total,
     }
 
-
-# ----------------------------
-# NEW: TOP SCORELINES
-# ----------------------------
-def top_scorelines(matrix, top_n=5):
+def top_scorelines(matrix):
     results = []
-
     for h in range(len(matrix)):
-        for a in range(len(matrix[h])):
+        for a in range(len(matrix)):
             results.append({
                 "score": f"{h}-{a}",
                 "probability": matrix[h][a]
             })
 
     results.sort(key=lambda x: x["probability"], reverse=True)
-
-    return results[:top_n]
-
+    return results[:6]
 
 # ----------------------------
 # API
@@ -138,11 +131,9 @@ def top_scorelines(matrix, top_n=5):
 def root():
     return jsonify({"status": "Football API running"})
 
-
 @app.get("/teams")
 def teams():
     return jsonify(list(TEAMS.keys()))
-
 
 @app.post("/predict")
 def predict():
@@ -165,7 +156,6 @@ def predict():
         "top_scorelines": top_scorelines(matrix),
         "model": "Dixon-Coles"
     })
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)

@@ -95,7 +95,7 @@ def outcomes(mat):
 # API
 # ----------------------------
 app = Flask(__name__)
-
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 @app.get("/")
 def home():

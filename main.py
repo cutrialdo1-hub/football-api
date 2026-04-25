@@ -1,10 +1,14 @@
 import math
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 
 app = Flask(__name__)
 
+# ✅ FIX: allow Netlify frontend to call Render backend
+CORS(app, origins="*")
+
 # ----------------------------
-# 1. DATA (unchanged)
+# 1. DATA
 # ----------------------------
 LEAGUE_AVERAGES = {
     "home_scored": 1.50,
@@ -38,6 +42,7 @@ TEAMS = {
 
 MAX_GOALS = 5
 
+
 # ----------------------------
 # 2. TEAM STRENGTH
 # ----------------------------
@@ -49,6 +54,7 @@ def team_strength(team):
         "attack_away": t["away_scored"] / LEAGUE_AVERAGES["away_scored"],
         "def_away": t["away_conceded"] / LEAGUE_AVERAGES["away_conceded"],
     }
+
 
 # ----------------------------
 # 3. EXPECTED GOALS
@@ -62,30 +68,30 @@ def expected_goals(home, away):
 
     return home_xg, away_xg
 
+
 # ----------------------------
 # 4. POISSON
 # ----------------------------
 def poisson(k, lam):
     return (lam ** k) * math.exp(-lam) / math.factorial(k)
 
-# ----------------------------
-# 5. DIXON-COLES ADJUSTMENT
-# ----------------------------
-def dc_correction(home_goals, away_goals, home_xg, away_xg):
-    """
-    Simple Dixon-Coles tau adjustment for low scores.
-    """
-    rho = -0.1  # correlation parameter (tunable)
 
-    if home_goals == 0 and away_goals == 0:
-        return 1 - (home_xg * away_xg * rho)
-    if home_goals == 0 and away_goals == 1:
-        return 1 + (home_xg * rho)
-    if home_goals == 1 and away_goals == 0:
-        return 1 + (away_xg * rho)
-    if home_goals == 1 and away_goals == 1:
+# ----------------------------
+# 5. DIXON–COLES
+# ----------------------------
+def dc_correction(h, a, hxg, axg):
+    rho = -0.1
+
+    if h == 0 and a == 0:
+        return 1 - (hxg * axg * rho)
+    if h == 0 and a == 1:
+        return 1 + (hxg * rho)
+    if h == 1 and a == 0:
+        return 1 + (axg * rho)
+    if h == 1 and a == 1:
         return 1 - rho
     return 1.0
+
 
 # ----------------------------
 # 6. SCORE MATRIX
@@ -103,11 +109,12 @@ def score_matrix(home_xg, away_xg):
 
     return matrix
 
+
 # ----------------------------
 # 7. OUTCOMES
 # ----------------------------
 def outcomes(matrix):
-    home = draw = away = 0
+    home = draw = away = 0.0
 
     for h in range(len(matrix)):
         for a in range(len(matrix)):
@@ -127,6 +134,7 @@ def outcomes(matrix):
         "away_win": away / total,
     }
 
+
 # ----------------------------
 # 8. API
 # ----------------------------
@@ -134,9 +142,11 @@ def outcomes(matrix):
 def root():
     return jsonify({"status": "Dixon-Coles model running"})
 
+
 @app.get("/teams")
 def teams():
     return jsonify(list(TEAMS.keys()))
+
 
 @app.post("/predict")
 def predict():
@@ -160,6 +170,7 @@ def predict():
         "outcomes": result,
         "model": "Dixon-Coles"
     })
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)

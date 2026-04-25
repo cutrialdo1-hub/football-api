@@ -1,17 +1,11 @@
-"""
-Football match predictor (Improved Poisson + Dixon-Coles model)
-Full single-file API for Render deployment
-"""
-
 import math
 import os
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-
-# ---------------------------------------------------------------------------
-# 1. DATA
-# ---------------------------------------------------------------------------
+# -----------------------------
+# DATA
+# -----------------------------
 LEAGUE_AVERAGES = {
     "home_scored": 1.50,
     "home_conceded": 1.23,
@@ -30,190 +24,119 @@ TEAMS = {
     "Crystal Palace": {"home_scored": 0.94, "home_conceded": 1.12, "away_scored": 1.27, "away_conceded": 1.13},
     "Everton": {"home_scored": 1.29, "home_conceded": 1.24, "away_scored": 1.13, "away_conceded": 1.13},
     "Fulham": {"home_scored": 1.69, "home_conceded": 1.19, "away_scored": 0.94, "away_conceded": 1.59},
-    "Leeds Utd": {"home_scored": 1.47, "home_conceded": 1.18, "away_scored": 1.12, "away_conceded": 1.82},
     "Liverpool": {"home_scored": 1.81, "home_conceded": 1.06, "away_scored": 1.47, "away_conceded": 1.53},
     "Manchester City": {"home_scored": 2.38, "home_conceded": 0.75, "away_scored": 1.65, "away_conceded": 1.00},
     "Manchester Utd": {"home_scored": 1.94, "home_conceded": 1.19, "away_scored": 1.59, "away_conceded": 1.53},
-    "Newcastle Utd": {"home_scored": 1.76, "home_conceded": 1.65, "away_scored": 1.00, "away_conceded": 1.31},
-    "Nottm Forest": {"home_scored": 1.06, "home_conceded": 1.24, "away_scored": 1.13, "away_conceded": 1.50},
-    "Sunderland": {"home_scored": 1.44, "home_conceded": 0.88, "away_scored": 0.76, "away_conceded": 1.53},
     "Tottenham": {"home_scored": 1.18, "home_conceded": 1.76, "away_scored": 1.38, "away_conceded": 1.44},
-    "West Ham Utd": {"home_scored": 1.38, "home_conceded": 1.75, "away_scored": 1.06, "away_conceded": 1.71},
-    "Wolverhampton": {"home_scored": 1.06, "home_conceded": 1.94, "away_scored": 0.41, "away_conceded": 1.76},
 }
 
 MAX_GOALS = 5
 
 
-# ---------------------------------------------------------------------------
-# 2. MODEL (IMPROVED)
-# ---------------------------------------------------------------------------
-
-def calculate_team_strength(team_name):
-    """
-    Form-weighted attack/defence strength
-    """
-    team = TEAMS[team_name]
-
-    form_weight = 0.06  # tuning knob
-
-    home_attack = team["home_scored"] / LEAGUE_AVERAGES["home_scored"]
-    home_defence = team["home_conceded"] / LEAGUE_AVERAGES["home_conceded"]
-    away_attack = team["away_scored"] / LEAGUE_AVERAGES["away_scored"]
-    away_defence = team["away_conceded"] / LEAGUE_AVERAGES["away_conceded"]
-
-    # simple form adjustment
-    home_attack *= (1 + form_weight)
-    away_attack *= (1 - form_weight)
-
-    return {
-        "home_attack": home_attack,
-        "home_defence": home_defence,
-        "away_attack": away_attack,
-        "away_defence": away_defence,
-    }
+# -----------------------------
+# MODEL
+# -----------------------------
+def poisson(k, lam):
+    return (lam ** k) * math.exp(-lam) / math.factorial(k)
 
 
-def expected_goals(home_team, away_team):
-    home = calculate_team_strength(home_team)
-    away = calculate_team_strength(away_team)
+def xg(home, away):
+    h = TEAMS[home]
+    a = TEAMS[away]
 
-    home_xg = home["home_attack"] * away["away_defence"] * LEAGUE_AVERAGES["home_scored"]
-    away_xg = away["away_attack"] * home["home_defence"] * LEAGUE_AVERAGES["away_scored"]
+    home_xg = (h["home_scored"] / LEAGUE_AVERAGES["home_scored"]) * (a["away_conceded"] / LEAGUE_AVERAGES["away_conceded"]) * LEAGUE_AVERAGES["home_scored"]
+
+    away_xg = (a["away_scored"] / LEAGUE_AVERAGES["away_scored"]) * (h["home_conceded"] / LEAGUE_AVERAGES["home_conceded"]) * LEAGUE_AVERAGES["away_scored"]
 
     return home_xg, away_xg
 
 
-def poisson_probability(k, lam):
-    return (lam ** k) * math.exp(-lam) / math.factorial(k)
-
-
-# ---------------------------------------------------------------------------
-# 3. DIXON-COLES ADJUSTMENT
-# ---------------------------------------------------------------------------
-
-def dixon_coles(i, j, lam, mu, rho=-0.08):
-    """
-    Adjusts low-score probabilities (key upgrade)
-    """
-
-    if i == 0 and j == 0:
-        return 1 - (lam * mu * rho)
-    if i == 0 and j == 1:
-        return 1 + (lam * rho)
-    if i == 1 and j == 0:
-        return 1 + (mu * rho)
-    if i == 1 and j == 1:
-        return 1 - rho
-
-    return 1.0
-
-
-# ---------------------------------------------------------------------------
-# 4. SCORE MATRIX (IMPROVED + NORMALISED)
-# ---------------------------------------------------------------------------
-
-def score_matrix(home_xg, away_xg):
-    home_dist = [poisson_probability(k, home_xg) for k in range(MAX_GOALS + 1)]
-    away_dist = [poisson_probability(k, away_xg) for k in range(MAX_GOALS + 1)]
+def build_matrix(hxg, axg):
+    h_dist = [poisson(i, hxg) for i in range(MAX_GOALS + 1)]
+    a_dist = [poisson(j, axg) for j in range(MAX_GOALS + 1)]
 
     matrix = []
-
-    for i, h in enumerate(home_dist):
+    for i in range(MAX_GOALS + 1):
         row = []
-        for j, a in enumerate(away_dist):
-
-            base = h * a
-            adj = dixon_coles(i, j, home_xg, away_xg)
-
-            row.append(base * adj)
-
+        for j in range(MAX_GOALS + 1):
+            row.append(h_dist[i] * a_dist[j])
         matrix.append(row)
 
-    return normalize_matrix(matrix)
+    return matrix
 
 
-def normalize_matrix(matrix):
-    total = sum(sum(row) for row in matrix)
-    return [[cell / total for cell in row] for row in matrix]
+def outcomes(matrix):
+    home = draw = away = 0
 
-
-# ---------------------------------------------------------------------------
-# 5. OUTCOMES
-# ---------------------------------------------------------------------------
-
-def match_outcomes(matrix):
-    home_win = draw = away_win = 0.0
-
-    for i, row in enumerate(matrix):
-        for j, p in enumerate(row):
+    for i in range(len(matrix)):
+        for j in range(len(matrix)):
             if i > j:
-                home_win += p
+                home += matrix[i][j]
             elif i == j:
-                draw += p
+                draw += matrix[i][j]
             else:
-                away_win += p
+                away += matrix[i][j]
 
     return {
-        "home_win": home_win,
+        "home_win": home,
         "draw": draw,
-        "away_win": away_win
+        "away_win": away
     }
 
 
-# ---------------------------------------------------------------------------
-# 6. FLASK APP
-# ---------------------------------------------------------------------------
+def top_scores(matrix, limit=10):
+    scores = []
 
+    for i in range(len(matrix)):
+        for j in range(len(matrix)):
+            scores.append({
+                "score": f"{i}-{j}",
+                "probability": matrix[i][j]
+            })
+
+    scores.sort(key=lambda x: x["probability"], reverse=True)
+
+    return scores[:limit]
+
+
+# -----------------------------
+# API
+# -----------------------------
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 
 @app.get("/")
 def home():
-    return jsonify({"status": "Football Predictor API running"})
-
-
-@app.get("/healthz")
-def health():
-    return jsonify({"status": "ok"})
+    return jsonify({"status": "Football Predictor Running"})
 
 
 @app.get("/teams")
 def teams():
-    return jsonify(sorted(TEAMS.keys()))
+    return jsonify(list(TEAMS.keys()))
 
 
-@app.route("/predict", methods=["POST", "OPTIONS"])
+@app.post("/predict")
 def predict():
-    if request.method == "OPTIONS":
-        return jsonify({}), 200
+    data = request.get_json()
 
-    body = request.get_json(silent=True) or {}
-    home_team = body.get("home_team")
-    away_team = body.get("away_team")
+    home = data.get("home_team")
+    away = data.get("away_team")
 
-    if not home_team or not away_team:
-        return jsonify({"error": "missing teams"}), 400
-
-    if home_team not in TEAMS or away_team not in TEAMS:
-        return jsonify({"error": "unknown team"}), 400
-
-    home_xg, away_xg = expected_goals(home_team, away_team)
-    matrix = score_matrix(home_xg, away_xg)
-    outcomes = match_outcomes(matrix)
+    hxg, axg = xg(home, away)
+    matrix = build_matrix(hxg, axg)
 
     return jsonify({
-        "home_team": home_team,
-        "away_team": away_team,
-        "expected_goals": {"home": home_xg, "away": away_xg},
-        "outcomes": outcomes
+        "home_team": home,
+        "away_team": away,
+        "expected_goals": {
+            "home": hxg,
+            "away": axg
+        },
+        "outcomes": outcomes(matrix),
+        "top_scorelines": top_scores(matrix)
     })
 
-
-# ---------------------------------------------------------------------------
-# 7. RUN
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))

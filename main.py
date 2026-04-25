@@ -1,16 +1,17 @@
-from flask_cors import CORS
 """
 Football match predictor (Poisson model) + Flask API
-Ready for deployment on Render
+Fixed for Render + Netlify (CORS + preflight enabled)
 """
 
 import math
 import os
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 
-# ----------------------------
-# DATA
-# ----------------------------
+
+# ---------------------------------------------------------------------------
+# 1. DATA
+# ---------------------------------------------------------------------------
 LEAGUE_AVERAGES = {
     "home_scored": 1.50,
     "home_conceded": 1.23,
@@ -43,97 +44,120 @@ TEAMS = {
 
 MAX_GOALS = 5
 
-# ----------------------------
-# MODEL
-# ----------------------------
-def poisson(k, lam):
-    return (lam ** k) * math.exp(-lam) / math.factorial(k)
 
-
-def team_strength(team):
-    t = TEAMS[team]
+# ---------------------------------------------------------------------------
+# 2. MODEL
+# ---------------------------------------------------------------------------
+def calculate_team_strength(team_name):
+    team = TEAMS[team_name]
     return {
-        "ha": t["home_scored"] / LEAGUE_AVERAGES["home_scored"],
-        "hd": t["home_conceded"] / LEAGUE_AVERAGES["home_conceded"],
-        "aa": t["away_scored"] / LEAGUE_AVERAGES["away_scored"],
-        "ad": t["away_conceded"] / LEAGUE_AVERAGES["away_conceded"],
+        "home_attack": team["home_scored"] / LEAGUE_AVERAGES["home_scored"],
+        "home_defense": team["home_conceded"] / LEAGUE_AVERAGES["home_conceded"],
+        "away_attack": team["away_scored"] / LEAGUE_AVERAGES["away_scored"],
+        "away_defense": team["away_conceded"] / LEAGUE_AVERAGES["away_conceded"],
     }
 
 
-def expected_goals(home, away):
-    h = team_strength(home)
-    a = team_strength(away)
+def expected_goals(home_team, away_team):
+    home = calculate_team_strength(home_team)
+    away = calculate_team_strength(away_team)
 
-    home_xg = h["ha"] * a["ad"] * LEAGUE_AVERAGES["home_scored"]
-    away_xg = a["aa"] * h["hd"] * LEAGUE_AVERAGES["away_scored"]
+    home_xg = home["home_attack"] * away["away_defense"] * LEAGUE_AVERAGES["home_scored"]
+    away_xg = away["away_attack"] * home["home_defense"] * LEAGUE_AVERAGES["away_scored"]
 
     return home_xg, away_xg
 
 
-def matrix(hxg, axg):
-    h = [poisson(i, hxg) for i in range(MAX_GOALS + 1)]
-    a = [poisson(i, axg) for i in range(MAX_GOALS + 1)]
-    return [[hi * aj for aj in a] for hi in h]
+def poisson_probability(k, expected):
+    return (expected ** k) * math.exp(-expected) / math.factorial(k)
 
 
-def outcomes(mat):
-    home = draw = away = 0
+def score_matrix(home_xg, away_xg):
+    home_dist = [poisson_probability(k, home_xg) for k in range(MAX_GOALS + 1)]
+    away_dist = [poisson_probability(k, away_xg) for k in range(MAX_GOALS + 1)]
+    return [[h * a for a in away_dist] for h in home_dist]
 
-    for i in range(len(mat)):
-        for j in range(len(mat[i])):
-            if i > j:
-                home += mat[i][j]
-            elif i == j:
-                draw += mat[i][j]
+
+def match_outcomes(matrix):
+    home_win = draw = away_win = 0.0
+
+    for h, row in enumerate(matrix):
+        for a, p in enumerate(row):
+            if h > a:
+                home_win += p
+            elif h == a:
+                draw += p
             else:
-                away += mat[i][j]
+                away_win += p
 
-    return {"home_win": home, "draw": draw, "away_win": away}
+    return {
+        "home_win": home_win,
+        "draw": draw,
+        "away_win": away_win
+    }
 
 
-# ----------------------------
-# API
-# ----------------------------
+# ---------------------------------------------------------------------------
+# 3. FLASK APP (CORS FIXED)
+# ---------------------------------------------------------------------------
 app = Flask(__name__)
+
+# ✅ FIX CORS PROPERLY FOR NETLIFY
 CORS(app, resources={r"/*": {"origins": "*"}})
 
+
 @app.get("/")
-def home():
-    return jsonify({"status": "Football API running"})
+def root():
+    return jsonify({
+        "status": "Football API running",
+        "endpoints": ["/teams", "/predict", "/healthz"]
+    })
+
+
+@app.get("/healthz")
+def healthz():
+    return jsonify({"status": "ok"})
 
 
 @app.get("/teams")
 def teams():
-    return jsonify(list(TEAMS.keys()))
+    return jsonify(sorted(TEAMS.keys()))
 
 
-@app.get("/healthz")
-def health():
-    return jsonify({"ok": True})
-
-
-@app.post("/predict")
+# ✅ FIX: handle OPTIONS preflight + POST
+@app.route("/predict", methods=["POST", "OPTIONS"])
 def predict():
-    data = request.get_json()
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
 
-    home = data.get("home_team")
-    away = data.get("away_team")
+    body = request.get_json(silent=True) or {}
+    home_team = body.get("home_team")
+    away_team = body.get("away_team")
 
-    if home not in TEAMS or away not in TEAMS:
-        return jsonify({"error": "Invalid team"}), 400
+    if not home_team or not away_team:
+        return jsonify({"error": "home_team and away_team required"}), 400
 
-    hxg, axg = expected_goals(home, away)
-    m = matrix(hxg, axg)
-    o = outcomes(m)
+    if home_team not in TEAMS or away_team not in TEAMS:
+        return jsonify({"error": "unknown team"}), 400
+
+    home_xg, away_xg = expected_goals(home_team, away_team)
+    matrix = score_matrix(home_xg, away_xg)
+    outcomes = match_outcomes(matrix)
 
     return jsonify({
-        "home_team": home,
-        "away_team": away,
-        "expected_goals": {"home": hxg, "away": axg},
-        "outcomes": o
+        "home_team": home_team,
+        "away_team": away_team,
+        "expected_goals": {
+            "home": home_xg,
+            "away": away_xg
+        },
+        "outcomes": outcomes
     })
 
 
+# ---------------------------------------------------------------------------
+# 4. RUN
+# ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)

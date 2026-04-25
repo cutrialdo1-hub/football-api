@@ -1,6 +1,6 @@
 """
-Football match predictor (Poisson model) + Flask API
-Fixed for Render + Netlify (CORS + preflight enabled)
+Football match predictor (Improved Poisson + Dixon-Coles model)
+Full single-file API for Render deployment
 """
 
 import math
@@ -46,15 +46,31 @@ MAX_GOALS = 5
 
 
 # ---------------------------------------------------------------------------
-# 2. MODEL
+# 2. MODEL (IMPROVED)
 # ---------------------------------------------------------------------------
+
 def calculate_team_strength(team_name):
+    """
+    Form-weighted attack/defence strength
+    """
     team = TEAMS[team_name]
+
+    form_weight = 0.06  # tuning knob
+
+    home_attack = team["home_scored"] / LEAGUE_AVERAGES["home_scored"]
+    home_defence = team["home_conceded"] / LEAGUE_AVERAGES["home_conceded"]
+    away_attack = team["away_scored"] / LEAGUE_AVERAGES["away_scored"]
+    away_defence = team["away_conceded"] / LEAGUE_AVERAGES["away_conceded"]
+
+    # simple form adjustment
+    home_attack *= (1 + form_weight)
+    away_attack *= (1 - form_weight)
+
     return {
-        "home_attack": team["home_scored"] / LEAGUE_AVERAGES["home_scored"],
-        "home_defense": team["home_conceded"] / LEAGUE_AVERAGES["home_conceded"],
-        "away_attack": team["away_scored"] / LEAGUE_AVERAGES["away_scored"],
-        "away_defense": team["away_conceded"] / LEAGUE_AVERAGES["away_conceded"],
+        "home_attack": home_attack,
+        "home_defence": home_defence,
+        "away_attack": away_attack,
+        "away_defence": away_defence,
     }
 
 
@@ -62,30 +78,78 @@ def expected_goals(home_team, away_team):
     home = calculate_team_strength(home_team)
     away = calculate_team_strength(away_team)
 
-    home_xg = home["home_attack"] * away["away_defense"] * LEAGUE_AVERAGES["home_scored"]
-    away_xg = away["away_attack"] * home["home_defense"] * LEAGUE_AVERAGES["away_scored"]
+    home_xg = home["home_attack"] * away["away_defence"] * LEAGUE_AVERAGES["home_scored"]
+    away_xg = away["away_attack"] * home["home_defence"] * LEAGUE_AVERAGES["away_scored"]
 
     return home_xg, away_xg
 
 
-def poisson_probability(k, expected):
-    return (expected ** k) * math.exp(-expected) / math.factorial(k)
+def poisson_probability(k, lam):
+    return (lam ** k) * math.exp(-lam) / math.factorial(k)
 
+
+# ---------------------------------------------------------------------------
+# 3. DIXON-COLES ADJUSTMENT
+# ---------------------------------------------------------------------------
+
+def dixon_coles(i, j, lam, mu, rho=-0.08):
+    """
+    Adjusts low-score probabilities (key upgrade)
+    """
+
+    if i == 0 and j == 0:
+        return 1 - (lam * mu * rho)
+    if i == 0 and j == 1:
+        return 1 + (lam * rho)
+    if i == 1 and j == 0:
+        return 1 + (mu * rho)
+    if i == 1 and j == 1:
+        return 1 - rho
+
+    return 1.0
+
+
+# ---------------------------------------------------------------------------
+# 4. SCORE MATRIX (IMPROVED + NORMALISED)
+# ---------------------------------------------------------------------------
 
 def score_matrix(home_xg, away_xg):
     home_dist = [poisson_probability(k, home_xg) for k in range(MAX_GOALS + 1)]
     away_dist = [poisson_probability(k, away_xg) for k in range(MAX_GOALS + 1)]
-    return [[h * a for a in away_dist] for h in home_dist]
 
+    matrix = []
+
+    for i, h in enumerate(home_dist):
+        row = []
+        for j, a in enumerate(away_dist):
+
+            base = h * a
+            adj = dixon_coles(i, j, home_xg, away_xg)
+
+            row.append(base * adj)
+
+        matrix.append(row)
+
+    return normalize_matrix(matrix)
+
+
+def normalize_matrix(matrix):
+    total = sum(sum(row) for row in matrix)
+    return [[cell / total for cell in row] for row in matrix]
+
+
+# ---------------------------------------------------------------------------
+# 5. OUTCOMES
+# ---------------------------------------------------------------------------
 
 def match_outcomes(matrix):
     home_win = draw = away_win = 0.0
 
-    for h, row in enumerate(matrix):
-        for a, p in enumerate(row):
-            if h > a:
+    for i, row in enumerate(matrix):
+        for j, p in enumerate(row):
+            if i > j:
                 home_win += p
-            elif h == a:
+            elif i == j:
                 draw += p
             else:
                 away_win += p
@@ -98,24 +162,20 @@ def match_outcomes(matrix):
 
 
 # ---------------------------------------------------------------------------
-# 3. FLASK APP (CORS FIXED)
+# 6. FLASK APP
 # ---------------------------------------------------------------------------
-app = Flask(__name__)
 
-# ✅ FIX CORS PROPERLY FOR NETLIFY
+app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 
 @app.get("/")
-def root():
-    return jsonify({
-        "status": "Football API running",
-        "endpoints": ["/teams", "/predict", "/healthz"]
-    })
+def home():
+    return jsonify({"status": "Football Predictor API running"})
 
 
 @app.get("/healthz")
-def healthz():
+def health():
     return jsonify({"status": "ok"})
 
 
@@ -124,7 +184,6 @@ def teams():
     return jsonify(sorted(TEAMS.keys()))
 
 
-# ✅ FIX: handle OPTIONS preflight + POST
 @app.route("/predict", methods=["POST", "OPTIONS"])
 def predict():
     if request.method == "OPTIONS":
@@ -135,7 +194,7 @@ def predict():
     away_team = body.get("away_team")
 
     if not home_team or not away_team:
-        return jsonify({"error": "home_team and away_team required"}), 400
+        return jsonify({"error": "missing teams"}), 400
 
     if home_team not in TEAMS or away_team not in TEAMS:
         return jsonify({"error": "unknown team"}), 400
@@ -147,17 +206,15 @@ def predict():
     return jsonify({
         "home_team": home_team,
         "away_team": away_team,
-        "expected_goals": {
-            "home": home_xg,
-            "away": away_xg
-        },
+        "expected_goals": {"home": home_xg, "away": away_xg},
         "outcomes": outcomes
     })
 
 
 # ---------------------------------------------------------------------------
-# 4. RUN
+# 7. RUN
 # ---------------------------------------------------------------------------
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)

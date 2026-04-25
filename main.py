@@ -1,3 +1,4 @@
+from flask_cors import CORS
 """
 Football match predictor (Poisson model) + Flask API
 Ready for deployment on Render

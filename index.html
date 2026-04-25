@@ -1,3 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Football Predictor Dashboard</title>
+
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        background: #0f172a;
+        color: white;
+        margin: 0;
+        padding: 20px;
+    }
+
+    h1 {
+        text-align: center;
+        margin-bottom: 20px;
+    }
+
+    .card {
+        background: #1e293b;
+        padding: 15px;
+        border-radius: 10px;
+        margin-bottom: 15px;
+    }
+
+    select, button {
+        padding: 10px;
+        margin: 5px;
+        border-radius: 6px;
+        border: none;
+        width: 200px;
+    }
+
+    button {
+        background: #22c55e;
+        color: white;
+        cursor: pointer;
+    }
+
+    button:hover {
+        background: #16a34a;
+    }
+
+    .row {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+
+    .scoreline {
+        background: #334155;
+        padding: 8px;
+        margin: 5px 0;
+        border-radius: 6px;
+        display: flex;
+        justify-content: space-between;
+    }
+
+    .big {
+        font-size: 18px;
+        font-weight: bold;
+    }
+</style>
+</head>
+
+<body>
+
+<h1>⚽ Football Predictor Dashboard</h1>
+
+<div class="card">
+    <div class="row">
+        <select id="home"></select>
+        <select id="away"></select>
+        <button onclick="predict()">Predict</button>
+    </div>
+</div>
+
+<div id="output"></div>
+
 <script>
 
 const API = "https://football-api-9e4p.onrender.com";
@@ -35,17 +118,18 @@ async function loadTeams() {
 }
 
 // -----------------------------
-// PREDICT
+// PREDICT MATCH
 // -----------------------------
 async function predict() {
-
     const home = document.getElementById("home").value;
     const away = document.getElementById("away").value;
+
+    const output = document.getElementById("output");
 
     try {
         const res = await fetch(API + "/predict", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {"Content-Type": "application/json"},
             body: JSON.stringify({
                 home_team: home,
                 away_team: away
@@ -53,12 +137,6 @@ async function predict() {
         });
 
         const data = await res.json();
-
-        if (!res.ok) {
-            document.getElementById("output").innerHTML =
-                `<div class="card">❌ ${data.error || "Prediction failed"}</div>`;
-            return;
-        }
 
         let html = "";
 
@@ -81,12 +159,32 @@ async function predict() {
         </div>
         `;
 
-        document.getElementById("output").innerHTML = html;
+        // scorelines (SAFE CHECK ADDED)
+        html += `
+        <div class="card">
+            <div class="big">Top Scorelines</div>
+        `;
+
+        if (data.top_scorelines && data.top_scorelines.length > 0) {
+            data.top_scorelines.forEach(item => {
+                html += `
+                <div class="scoreline">
+                    <span>${item.score}</span>
+                    <span>${(item.probability * 100).toFixed(2)}%</span>
+                </div>
+                `;
+            });
+        } else {
+            html += `<p>No scorelines available</p>`;
+        }
+
+        html += `</div>`;
+
+        output.innerHTML = html;
 
     } catch (err) {
         console.error(err);
-        document.getElementById("output").innerHTML =
-            `<div class="card">❌ Prediction failed (network error)</div>`;
+        output.innerHTML = `<div class="card">❌ Prediction failed</div>`;
     }
 }
 
@@ -94,3 +192,6 @@ async function predict() {
 loadTeams();
 
 </script>
+
+</body>
+</html>

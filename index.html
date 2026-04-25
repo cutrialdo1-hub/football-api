@@ -86,86 +86,128 @@
 const API = "https://football-api-9e4p.onrender.com";
 
 // -----------------------------
-// LOAD TEAMS INTO DROPDOWNS
+// LOAD TEAMS
 // -----------------------------
 async function loadTeams() {
-    const res = await fetch(API + "/teams");
-    const teams = await res.json();
+    try {
+        const res = await fetch(API + "/teams");
+        const teams = await res.json();
 
-    const homeSelect = document.getElementById("home");
-    const awaySelect = document.getElementById("away");
+        const homeSelect = document.getElementById("home");
+        const awaySelect = document.getElementById("away");
 
-    teams.forEach(team => {
-        let opt1 = document.createElement("option");
-        opt1.value = team;
-        opt1.textContent = team;
+        homeSelect.innerHTML = "";
+        awaySelect.innerHTML = "";
 
-        let opt2 = document.createElement("option");
-        opt2.value = team;
-        opt2.textContent = team;
+        teams.forEach(team => {
+            let opt1 = document.createElement("option");
+            opt1.value = team;
+            opt1.textContent = team;
 
-        homeSelect.appendChild(opt1);
-        awaySelect.appendChild(opt2);
-    });
+            let opt2 = document.createElement("option");
+            opt2.value = team;
+            opt2.textContent = team;
+
+            homeSelect.appendChild(opt1);
+            awaySelect.appendChild(opt2);
+        });
+
+    } catch (err) {
+        console.error("Failed to load teams:", err);
+        document.getElementById("output").innerHTML =
+            "<div class='card'>❌ Failed to load teams from API</div>";
+    }
 }
 
 // -----------------------------
-// PREDICT FUNCTION
+// PREDICT
 // -----------------------------
 async function predict() {
     const home = document.getElementById("home").value;
     const away = document.getElementById("away").value;
 
-    const res = await fetch(API + "/predict", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-            home_team: home,
-            away_team: away
-        })
-    });
+    try {
+        const res = await fetch(API + "/predict", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                home_team: home,
+                away_team: away
+            })
+        });
 
-    const data = await res.json();
+        const data = await res.json();
 
-    let html = "";
+        if (!res.ok) {
+            throw new Error(data.error || "API error");
+        }
 
-    // xG
-    html += `
-    <div class="card">
-        <div class="big">Expected Goals</div>
-        <p>${data.home_team}: ${data.expected_goals.home.toFixed(2)}</p>
-        <p>${data.away_team}: ${data.expected_goals.away.toFixed(2)}</p>
-    </div>
-    `;
+        // -----------------------------
+        // BUILD SCORELINES FROM MATRIX
+        // -----------------------------
+        const matrix = data.score_matrix;
+        const scorelines = [];
 
-    // outcomes
-    html += `
-    <div class="card">
-        <div class="big">Match Outcome Probabilities</div>
-        <p>Home Win: ${(data.outcomes.home_win * 100).toFixed(1)}%</p>
-        <p>Draw: ${(data.outcomes.draw * 100).toFixed(1)}%</p>
-        <p>Away Win: ${(data.outcomes.away_win * 100).toFixed(1)}%</p>
-    </div>
-    `;
+        for (let h = 0; h < matrix.length; h++) {
+            for (let a = 0; a < matrix[h].length; a++) {
+                scorelines.push({
+                    score: `${h}-${a}`,
+                    probability: matrix[h][a]
+                });
+            }
+        }
 
-    // scorelines
-    html += `
-    <div class="card">
-        <div class="big">Top Scorelines</div>
-    `;
+        scorelines.sort((a, b) => b.probability - a.probability);
+        const top10 = scorelines.slice(0, 10);
 
-    data.top_scorelines.forEach(item => {
+        // -----------------------------
+        // RENDER UI
+        // -----------------------------
+        let html = "";
+
+        // xG
         html += `
-        <div class="scoreline">
-            <span>${item.score}</span>
-            <span>${(item.probability * 100).toFixed(2)}%</span>
+        <div class="card">
+            <div class="big">Expected Goals</div>
+            <p>${data.home_team}: ${data.expected_goals.home.toFixed(2)}</p>
+            <p>${data.away_team}: ${data.expected_goals.away.toFixed(2)}</p>
         </div>
         `;
-    });
 
-    html += `</div>`;
+        // outcomes
+        html += `
+        <div class="card">
+            <div class="big">Match Outcome Probabilities</div>
+            <p>Home Win: ${(data.outcomes.home_win * 100).toFixed(1)}%</p>
+            <p>Draw: ${(data.outcomes.draw * 100).toFixed(1)}%</p>
+            <p>Away Win: ${(data.outcomes.away_win * 100).toFixed(1)}%</p>
+        </div>
+        `;
 
-    document.getElementById("output").innerHTML = html;
+        // scorelines
+        html += `
+        <div class="card">
+            <div class="big">Top 10 Scorelines</div>
+        `;
+
+        top10.forEach(item => {
+            html += `
+            <div class="scoreline">
+                <span>${item.score}</span>
+                <span>${(item.probability * 100).toFixed(2)}%</span>
+            </div>
+            `;
+        });
+
+        html += `</div>`;
+
+        document.getElementById("output").innerHTML = html;
+
+    } catch (err) {
+        console.error(err);
+        document.getElementById("output").innerHTML =
+            `<div class="card">❌ Prediction failed: ${err.message}</div>`;
+    }
 }
 
 // INIT

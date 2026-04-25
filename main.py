@@ -1,11 +1,7 @@
 import math
 from flask import Flask, jsonify, request
-from flask_cors import CORS
 
 app = Flask(__name__)
-
-# ✅ FIX: allow Netlify frontend to call Render backend
-CORS(app, origins="*")
 
 # ----------------------------
 # 1. DATA
@@ -42,9 +38,8 @@ TEAMS = {
 
 MAX_GOALS = 5
 
-
 # ----------------------------
-# 2. TEAM STRENGTH
+# 2. MODEL
 # ----------------------------
 def team_strength(team):
     t = TEAMS[team]
@@ -56,9 +51,6 @@ def team_strength(team):
     }
 
 
-# ----------------------------
-# 3. EXPECTED GOALS
-# ----------------------------
 def expected_goals(home, away):
     h = team_strength(home)
     a = team_strength(away)
@@ -69,18 +61,12 @@ def expected_goals(home, away):
     return home_xg, away_xg
 
 
-# ----------------------------
-# 4. POISSON
-# ----------------------------
 def poisson(k, lam):
     return (lam ** k) * math.exp(-lam) / math.factorial(k)
 
 
-# ----------------------------
-# 5. DIXON–COLES
-# ----------------------------
-def dc_correction(h, a, hxg, axg):
-    rho = -0.1
+def dc_adjust(h, a, hxg, axg):
+    rho = -0.08
 
     if h == 0 and a == 0:
         return 1 - (hxg * axg * rho)
@@ -93,28 +79,20 @@ def dc_correction(h, a, hxg, axg):
     return 1.0
 
 
-# ----------------------------
-# 6. SCORE MATRIX
-# ----------------------------
-def score_matrix(home_xg, away_xg):
+def score_matrix(hxg, axg):
     matrix = []
-
     for h in range(MAX_GOALS + 1):
         row = []
         for a in range(MAX_GOALS + 1):
-            p = poisson(h, home_xg) * poisson(a, away_xg)
-            p *= dc_correction(h, a, home_xg, away_xg)
+            p = poisson(h, hxg) * poisson(a, axg)
+            p *= dc_adjust(h, a, hxg, axg)
             row.append(p)
         matrix.append(row)
-
     return matrix
 
 
-# ----------------------------
-# 7. OUTCOMES
-# ----------------------------
 def outcomes(matrix):
-    home = draw = away = 0.0
+    home = draw = away = 0
 
     for h in range(len(matrix)):
         for a in range(len(matrix)):
@@ -136,11 +114,29 @@ def outcomes(matrix):
 
 
 # ----------------------------
-# 8. API
+# NEW: TOP SCORELINES
+# ----------------------------
+def top_scorelines(matrix, top_n=5):
+    results = []
+
+    for h in range(len(matrix)):
+        for a in range(len(matrix[h])):
+            results.append({
+                "score": f"{h}-{a}",
+                "probability": matrix[h][a]
+            })
+
+    results.sort(key=lambda x: x["probability"], reverse=True)
+
+    return results[:top_n]
+
+
+# ----------------------------
+# API
 # ----------------------------
 @app.get("/")
 def root():
-    return jsonify({"status": "Dixon-Coles model running"})
+    return jsonify({"status": "Football API running"})
 
 
 @app.get("/teams")
@@ -155,19 +151,18 @@ def predict():
     home = data["home_team"]
     away = data["away_team"]
 
-    home_xg, away_xg = expected_goals(home, away)
-
-    matrix = score_matrix(home_xg, away_xg)
-    result = outcomes(matrix)
+    hxg, axg = expected_goals(home, away)
+    matrix = score_matrix(hxg, axg)
 
     return jsonify({
         "home_team": home,
         "away_team": away,
         "expected_goals": {
-            "home": home_xg,
-            "away": away_xg
+            "home": hxg,
+            "away": axg
         },
-        "outcomes": result,
+        "outcomes": outcomes(matrix),
+        "top_scorelines": top_scorelines(matrix),
         "model": "Dixon-Coles"
     })
 

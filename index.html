@@ -51,24 +51,26 @@ button:hover {
     flex-wrap: wrap;
 }
 
-.scoreline {
+.matchbox {
+    background: #334155;
+    padding: 8px;
+    margin: 6px 0;
+    border-radius: 6px;
     display: flex;
     justify-content: space-between;
-    padding: 5px;
 }
 </style>
 </head>
 
 <body>
 
-<h1>⚽ Football Predictor Dashboard</h1>
+<h1>⚽ Football Matchday Predictor</h1>
 
-<!-- MATCHDAY SELECT -->
+<!-- DATE SELECT -->
 <div class="card">
     <div class="row">
-        <select id="matchdays" onchange="loadMatches()">
-            <option>Loading matchdays...</option>
-        </select>
+        <input type="date" id="date">
+        <button onclick="loadMatches()">Load Matches</button>
     </div>
 </div>
 
@@ -76,7 +78,7 @@ button:hover {
 <div class="card">
     <div class="row">
         <select id="matches">
-            <option>Select a matchday first</option>
+            <option value="">Select a date first</option>
         </select>
         <button onclick="predict()">Predict</button>
     </div>
@@ -89,84 +91,79 @@ button:hover {
 
 const API = "https://football-api-9e4p.onrender.com";
 
-let dataStore = {};
+let matchesData = [];
 
 // -----------------------------
-// LOAD MATCHDAYS
+// LOAD MATCHES BY DATE
 // -----------------------------
-async function loadMatchdays() {
+async function loadMatches() {
+    const date = document.getElementById("date").value;
+    const select = document.getElementById("matches");
+
+    if (!date) {
+        select.innerHTML = "<option>Please select a date</option>";
+        return;
+    }
+
+    select.innerHTML = "<option>Loading...</option>";
+
     try {
-        const res = await fetch(API + "/fixtures");
-        dataStore = await res.json();
+        const res = await fetch(`${API}/fixtures?from=${date}&to=${date}`);
+        const data = await res.json();
 
-        const select = document.getElementById("matchdays");
+        matchesData = [];
+
         select.innerHTML = "";
 
-        const dates = Object.keys(dataStore);
+        // backend returns OBJECT grouped by date
+        const days = Object.keys(data);
 
-        if (dates.length === 0) {
-            select.innerHTML = "<option>No matchdays found</option>";
+        if (!days.length) {
+            select.innerHTML = "<option>No matches found</option>";
             return;
         }
 
-        dates.forEach(date => {
+        // flatten all matches into array
+        days.forEach(day => {
+            data[day].forEach(match => {
+                matchesData.push(match);
+            });
+        });
+
+        if (matchesData.length === 0) {
+            select.innerHTML = "<option>No matches found</option>";
+            return;
+        }
+
+        matchesData.forEach((m, i) => {
             const opt = document.createElement("option");
-            opt.value = date;
-            opt.textContent = date;
+            opt.value = i;
+            opt.textContent = `${m.home} vs ${m.away}`;
             select.appendChild(opt);
         });
 
-        loadMatches();
-
     } catch (err) {
-        console.error("Matchdays failed:", err);
-        document.getElementById("matchdays").innerHTML =
-            "<option>Error loading matchdays</option>";
+        console.error(err);
+        select.innerHTML = "<option>Error loading matches</option>";
     }
 }
 
 // -----------------------------
-// LOAD MATCHES FOR DATE
-// -----------------------------
-function loadMatches() {
-    const date = document.getElementById("matchdays").value;
-    const select = document.getElementById("matches");
-
-    select.innerHTML = "";
-
-    if (!dataStore || !dataStore[date]) {
-        select.innerHTML = "<option>No matches found</option>";
-        return;
-    }
-
-    const matches = dataStore[date];
-
-    matches.forEach((m, i) => {
-        const opt = document.createElement("option");
-        opt.value = i;
-        opt.textContent = `${m.home} vs ${m.away}`;
-        select.appendChild(opt);
-    });
-}
-
-// -----------------------------
-// PREDICT (SAFE VERSION)
+// PREDICT
 // -----------------------------
 async function predict() {
-    const date = document.getElementById("matchdays").value;
     const index = document.getElementById("matches").value;
+    const match = matchesData[index];
 
     const output = document.getElementById("output");
 
-    if (!dataStore[date] || !dataStore[date][index]) {
-        output.innerHTML = "<div class='card'>❌ Please select a valid match</div>";
+    if (!match) {
+        output.innerHTML = `<div class="card">⚠️ Please select a match</div>`;
         return;
     }
 
-    const match = dataStore[date][index];
-
     try {
-        const res = await fetch(API + "/predict", {
+        const res = await fetch(`${API}/predict`, {
             method: "POST",
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify({
@@ -177,22 +174,17 @@ async function predict() {
 
         const data = await res.json();
 
-        if (!data || data.error) {
-            output.innerHTML = "<div class='card'>❌ Prediction error</div>";
-            return;
-        }
-
         let html = `
         <div class="card">
-            <h2>${data.home_team} vs ${data.away_team}</h2>
+            <h3>${data.home_team} vs ${data.away_team}</h3>
             <p><b>xG:</b> ${data.expected_goals.home.toFixed(2)} - ${data.expected_goals.away.toFixed(2)}</p>
         </div>
 
         <div class="card">
-            <h3>Match Outcome</h3>
-            <p>Home Win: ${(data.outcomes.home_win * 100).toFixed(1)}%</p>
-            <p>Draw: ${(data.outcomes.draw * 100).toFixed(1)}%</p>
-            <p>Away Win: ${(data.outcomes.away_win * 100).toFixed(1)}%</p>
+            <h3>Outcomes</h3>
+            <p>Home Win: ${(data.outcomes.home_win*100).toFixed(1)}%</p>
+            <p>Draw: ${(data.outcomes.draw*100).toFixed(1)}%</p>
+            <p>Away Win: ${(data.outcomes.away_win*100).toFixed(1)}%</p>
         </div>
 
         <div class="card">
@@ -201,9 +193,9 @@ async function predict() {
 
         data.top_scorelines.forEach(s => {
             html += `
-            <div class="scoreline">
+            <div class="matchbox">
                 <span>${s.score}</span>
-                <span>${(s.probability * 100).toFixed(2)}%</span>
+                <span>${(s.probability*100).toFixed(2)}%</span>
             </div>
             `;
         });
@@ -214,12 +206,9 @@ async function predict() {
 
     } catch (err) {
         console.error(err);
-        output.innerHTML = "<div class='card'>❌ Prediction failed</div>";
+        output.innerHTML = `<div class="card">❌ Prediction failed</div>`;
     }
 }
-
-// INIT
-loadMatchdays();
 
 </script>
 

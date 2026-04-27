@@ -10,24 +10,11 @@ CORS(app)
 
 API_KEY = os.environ.get("FOOTBALL_API_KEY")
 
-# ----------------------------
-# TEAM DATA (LIMITED → fallback used often)
-# ----------------------------
-TEAMS = {
-    "Arsenal": {"home_scored": 2.25, "home_conceded": 0.69, "away_scored": 1.59, "away_conceded": 0.88},
-    "Manchester City": {"home_scored": 2.38, "home_conceded": 0.75, "away_scored": 1.65, "away_conceded": 1.00},
-    "Liverpool": {"home_scored": 1.81, "home_conceded": 1.06, "away_scored": 1.47, "away_conceded": 1.53},
-    "Chelsea": {"home_scored": 1.35, "home_conceded": 1.24, "away_scored": 1.76, "away_conceded": 1.41},
-    "Tottenham": {"home_scored": 1.18, "home_conceded": 1.76, "away_scored": 1.38, "away_conceded": 1.44},
-}
+BASE_URL = "https://api.football-data.org/v4"
 
-# ----------------------------
-# HELPERS
-# ----------------------------
-def normalize_team(name):
-    if not name:
-        return ""
-    return name.replace(" FC", "").replace(" AFC", "").strip()
+HEADERS = {
+    "X-Auth-Token": API_KEY
+}
 
 # ----------------------------
 # POISSON MODEL
@@ -82,7 +69,36 @@ def top_scores(matrix):
     return scores[:5]
 
 # ----------------------------
-# FIXTURES (WORKING)
+# FETCH STANDINGS (REAL DATA)
+# ----------------------------
+def get_team_stats(competition_code):
+    url = f"{BASE_URL}/competitions/{competition_code}/standings"
+
+    res = requests.get(url, headers=HEADERS)
+
+    if res.status_code != 200:
+        return {}
+
+    data = res.json()
+
+    table = data["standings"][0]["table"]
+
+    stats = {}
+
+    for team in table:
+        name = team["team"]["name"]
+
+        games = team["playedGames"] or 1
+
+        stats[name] = {
+            "attack": team["goalsFor"] / games,
+            "defense": team["goalsAgainst"] / games
+        }
+
+    return stats
+
+# ----------------------------
+# FIXTURES (FILTERED BY COMP)
 # ----------------------------
 @app.get("/fixtures")
 def fixtures():
@@ -96,44 +112,41 @@ def fixtures():
             datetime.strptime(date_from, "%Y-%m-%d") + timedelta(days=1)
         ).strftime("%Y-%m-%d")
 
-        url = "https://api.football-data.org/v4/matches"
+        # 🔥 LIMIT TO COMPETITIONS (IMPORTANT)
+        competitions = ["PL", "BL1", "SA", "PD", "FL1"]
 
-        headers = {"X-Auth-Token": API_KEY}
+        all_matches = []
 
-        params = {
-            "dateFrom": date_from,
-            "dateTo": date_to
-        }
+        for comp in competitions:
+            url = f"{BASE_URL}/competitions/{comp}/matches"
 
-        res = requests.get(url, headers=headers, params=params)
+            params = {
+                "dateFrom": date_from,
+                "dateTo": date_to
+            }
 
-        if res.status_code != 200:
-            return jsonify({"error": "API failed", "status": res.status_code})
+            res = requests.get(url, headers=HEADERS, params=params)
 
-        data = res.json()
-        matches = data.get("matches", [])
+            if res.status_code != 200:
+                continue
 
-        # fallback if empty
-        if not matches:
-            return jsonify({
-                "data": {
-                    date_from: [
-                        {"home": "Arsenal", "away": "Chelsea"},
-                        {"home": "Liverpool", "away": "Manchester City"}
-                    ]
-                }
-            })
+            data = res.json()
+
+            for m in data.get("matches", []):
+                all_matches.append({
+                    "home": m["homeTeam"]["name"],
+                    "away": m["awayTeam"]["name"],
+                    "competition": comp,
+                    "date": m["utcDate"][:10]
+                })
+
+        if not all_matches:
+            return jsonify({"data": {}})
 
         grouped = {}
 
-        for m in matches:
-            date = m["utcDate"][:10]
-
-            grouped.setdefault(date, []).append({
-                "home": m["homeTeam"]["name"],
-                "away": m["awayTeam"]["name"],
-                "date": date
-            })
+        for m in all_matches:
+            grouped.setdefault(m["date"], []).append(m)
 
         return jsonify({"data": grouped})
 
@@ -148,48 +161,39 @@ def predict():
     try:
         data = request.get_json()
 
-        home_raw = data.get("home_team")
-        away_raw = data.get("away_team")
+        home = data.get("home_team")
+        away = data.get("away_team")
+        competition = data.get("competition", "PL")
 
-        home = normalize_team(home_raw)
-        away = normalize_team(away_raw)
+        team_stats = get_team_stats(competition)
 
-        # ----------------------------
-        # SMART FALLBACK LOGIC
-        # ----------------------------
-        if home in TEAMS and away in TEAMS:
-            h = TEAMS[home]
-            a = TEAMS[away]
-
-            home_xg = h["home_scored"] * 0.8 + a["away_conceded"] * 0.6
-            away_xg = a["away_scored"] * 0.8 + h["home_conceded"] * 0.6
-
+        if home not in team_stats or away not in team_stats:
+            # fallback
+            home_xg = 1.2
+            away_xg = 1.2
         else:
-            # 🔥 KEY FIX: dynamic fallback instead of fixed 1.2
-            base = 1.2
+            home_attack = team_stats[home]["attack"]
+            home_defense = team_stats[home]["defense"]
 
-            # small randomness based on team name (stable but different)
-            home_factor = (sum(ord(c) for c in home) % 20) / 100
-            away_factor = (sum(ord(c) for c in away) % 20) / 100
+            away_attack = team_stats[away]["attack"]
+            away_defense = team_stats[away]["defense"]
 
-            home_xg = base + home_factor
-            away_xg = base + away_factor
+            # 🔥 SIMPLE BUT REAL MODEL
+            home_xg = home_attack * (away_defense / 1.3)
+            away_xg = away_attack * (home_defense / 1.3)
 
-        # ----------------------------
-        # POISSON CALCULATION
-        # ----------------------------
         matrix = build_matrix(home_xg, away_xg)
 
         return jsonify({
             "home_team": home,
             "away_team": away,
             "expected_goals": {
-                "home": round(home_xg, 2),
-                "away": round(away_xg, 2)
+                "home": home_xg,
+                "away": away_xg
             },
             "outcomes": calculate_outcomes(matrix),
             "top_scorelines": top_scores(matrix),
-            "model": "Poisson Model"
+            "model": "Real Data Poisson"
         })
 
     except Exception as e:

@@ -6,10 +6,14 @@ from flask_cors import CORS
 
 app = Flask(__name__)
 
-# ✅ CORS FIX (important for Netlify)
+# ----------------------------
+# CORS
+# ----------------------------
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-# 🔐 API KEY (set in Render environment)
+# ----------------------------
+# API KEY (Render ENV VAR)
+# ----------------------------
 API_KEY = os.environ.get("FOOTBALL_API_KEY")
 
 # ----------------------------
@@ -102,6 +106,7 @@ def score_matrix(hxg, axg):
 
 def outcomes(matrix):
     home = draw = away = 0
+
     for h in range(len(matrix)):
         for a in range(len(matrix)):
             p = matrix[h][a]
@@ -113,6 +118,7 @@ def outcomes(matrix):
                 away += p
 
     total = home + draw + away
+
     return {
         "home_win": home / total,
         "draw": draw / total,
@@ -132,7 +138,7 @@ def top_scorelines(matrix):
     return results[:6]
 
 # ----------------------------
-# 📅 FIXTURES (API)
+# FIXTURES (FIXED)
 # ----------------------------
 @app.get("/fixtures")
 def fixtures():
@@ -140,19 +146,29 @@ def fixtures():
     date_to = request.args.get("to")
 
     if not date_from or not date_to:
-        return jsonify({"error": "Provide from and to dates"}), 400
+        return jsonify([])
 
-    url = f"https://api.football-data.org/v4/matches?dateFrom={date_from}&dateTo={date_to}"
-    headers = {"X-Auth-Token": API_KEY}
+    url = "https://api.football-data.org/v4/matches"
 
-    res = requests.get(url, headers=headers)
+    headers = {
+        "X-Auth-Token": API_KEY
+    }
+
+    params = {
+        "dateFrom": date_from,
+        "dateTo": date_to,
+        "competitions": "PL"
+    }
+
+    res = requests.get(url, headers=headers, params=params)
 
     if res.status_code != 200:
-        return jsonify({"error": "API failed"}), 500
+        return jsonify([])
 
     data = res.json()
 
     fixtures = []
+
     for m in data.get("matches", []):
         fixtures.append({
             "date": m["utcDate"][:10],
@@ -167,7 +183,7 @@ def fixtures():
 # ----------------------------
 @app.get("/")
 def root():
-    return jsonify({"status": "Football API running with fixtures"})
+    return jsonify({"status": "Football API running"})
 
 @app.get("/teams")
 def teams():
@@ -183,7 +199,7 @@ def predict():
     hxg, axg = expected_goals(home, away)
 
     if hxg is None:
-        return jsonify({"error": "Team not supported in model"}), 400
+        return jsonify({"error": "Team not supported"}), 400
 
     matrix = score_matrix(hxg, axg)
 

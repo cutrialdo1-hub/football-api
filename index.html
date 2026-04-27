@@ -115,7 +115,10 @@ async function predict() {
         const res = await fetch(`${API}/predict`, {
             method: "POST",
             headers: {"Content-Type": "application/json"},
-            body: JSON.stringify(match)
+            body: JSON.stringify({
+                home_team: match.home,
+                away_team: match.away
+            })
         });
 
         const data = await res.json();
@@ -133,6 +136,7 @@ async function predict() {
     } catch (err) {
         console.error(err);
         output.innerHTML = "<div class='card'>Prediction failed</div>";
+
     }
 }
 </script>

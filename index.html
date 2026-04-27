@@ -11,6 +11,7 @@ body {
     font-family: Arial;
     text-align: center;
 }
+
 .card {
     background: #1e293b;
     padding: 15px;
@@ -18,13 +19,16 @@ body {
     width: 300px;
     border-radius: 10px;
 }
+
 select, input, button {
     padding: 10px;
     margin: 5px;
 }
+
 button {
     background: green;
     color: white;
+    cursor: pointer;
 }
 </style>
 </head>
@@ -70,7 +74,6 @@ async function loadMatches() {
         select.innerHTML = "";
 
         const data = response.data || {};
-
         const days = Object.keys(data);
 
         if (!days.length) {
@@ -115,11 +118,10 @@ async function predict() {
         const res = await fetch(`${API}/predict`, {
             method: "POST",
             headers: {"Content-Type": "application/json"},
-           body: JSON.stringify({
-    home_team: match.home,
-    away_team: match.away,
-    competition: match.competition
-})
+            body: JSON.stringify({
+                home_team: match.home,
+                away_team: match.away,
+                competition: match.competition
             })
         });
 
@@ -129,16 +131,15 @@ async function predict() {
         <div class="card">
             <h3>${data.home_team} vs ${data.away_team}</h3>
             <p>xG: ${data.expected_goals.home.toFixed(2)} - ${data.expected_goals.away.toFixed(2)}</p>
-            <p>Home: ${(data.outcomes.home_win*100).toFixed(1)}%</p>
-            <p>Draw: ${(data.outcomes.draw*100).toFixed(1)}%</p>
-            <p>Away: ${(data.outcomes.away_win*100).toFixed(1)}%</p>
+            <p>Home: ${(data.outcomes.home_win * 100).toFixed(1)}%</p>
+            <p>Draw: ${(data.outcomes.draw * 100).toFixed(1)}%</p>
+            <p>Away: ${(data.outcomes.away_win * 100).toFixed(1)}%</p>
         </div>
         `;
 
     } catch (err) {
         console.error(err);
         output.innerHTML = "<div class='card'>Prediction failed</div>";
-
     }
 }
 </script>

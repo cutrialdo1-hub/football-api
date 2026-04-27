@@ -9,7 +9,6 @@ app = Flask(__name__)
 CORS(app)
 
 API_KEY = os.environ.get("FOOTBALL_API_KEY")
-
 BASE_URL = "https://api.football-data.org/v4"
 
 HEADERS = {
@@ -69,11 +68,23 @@ def top_scores(matrix):
     return scores[:5]
 
 # ----------------------------
-# FETCH STANDINGS (REAL DATA)
+# TEAM NAME NORMALISATION
+# ----------------------------
+def normalize(name):
+    if not name:
+        return ""
+    return (
+        name.replace(" FC", "")
+            .replace(" AFC", "")
+            .replace(" CF", "")
+            .strip()
+    )
+
+# ----------------------------
+# FETCH STATS FROM STANDINGS
 # ----------------------------
 def get_team_stats(competition_code):
     url = f"{BASE_URL}/competitions/{competition_code}/standings"
-
     res = requests.get(url, headers=HEADERS)
 
     if res.status_code != 200:
@@ -85,20 +96,33 @@ def get_team_stats(competition_code):
 
     stats = {}
 
-    for team in table:
-        name = team["team"]["name"]
+    league_goals = 0
+    league_games = 0
 
-        games = team["playedGames"] or 1
+    # first pass: league averages
+    for t in table:
+        league_goals += t["goalsFor"]
+        league_games += t["playedGames"]
+
+    league_avg = league_goals / league_games if league_games else 1.4
+
+    # second pass: team stats normalized
+    for t in table:
+        name = normalize(t["team"]["name"])
+        games = t["playedGames"] or 1
+
+        attack = (t["goalsFor"] / games) / league_avg
+        defense = (t["goalsAgainst"] / games) / league_avg
 
         stats[name] = {
-            "attack": team["goalsFor"] / games,
-            "defense": team["goalsAgainst"] / games
+            "attack": attack,
+            "defense": defense
         }
 
     return stats
 
 # ----------------------------
-# FIXTURES (FILTERED BY COMP)
+# FIXTURES (ALL COMPETITIONS)
 # ----------------------------
 @app.get("/fixtures")
 def fixtures():
@@ -112,7 +136,6 @@ def fixtures():
             datetime.strptime(date_from, "%Y-%m-%d") + timedelta(days=1)
         ).strftime("%Y-%m-%d")
 
-        # 🔥 LIMIT TO COMPETITIONS (IMPORTANT)
         competitions = ["PL", "BL1", "SA", "PD", "FL1"]
 
         all_matches = []
@@ -134,14 +157,11 @@ def fixtures():
 
             for m in data.get("matches", []):
                 all_matches.append({
-                    "home": m["homeTeam"]["name"],
-                    "away": m["awayTeam"]["name"],
+                    "home": normalize(m["homeTeam"]["name"]),
+                    "away": normalize(m["awayTeam"]["name"]),
                     "competition": comp,
                     "date": m["utcDate"][:10]
                 })
-
-        if not all_matches:
-            return jsonify({"data": {}})
 
         grouped = {}
 
@@ -154,33 +174,34 @@ def fixtures():
         return jsonify({"error": str(e)}), 500
 
 # ----------------------------
-# PREDICT (REAL MODEL)
+# PREDICT (FIXED MODEL)
 # ----------------------------
 @app.post("/predict")
 def predict():
     try:
         data = request.get_json()
 
-        home = data.get("home_team")
-        away = data.get("away_team")
+        home = normalize(data.get("home_team"))
+        away = normalize(data.get("away_team"))
         competition = data.get("competition", "PL")
 
-        team_stats = get_team_stats(competition)
+        stats = get_team_stats(competition)
 
-        if home not in team_stats or away not in team_stats:
-            # fallback
-            home_xg = 1.2
-            away_xg = 1.2
+        # fallback safe values
+        if home not in stats or away not in stats:
+            home_xg = 1.3
+            away_xg = 1.3
         else:
-            home_attack = team_stats[home]["attack"]
-            home_defense = team_stats[home]["defense"]
+            h = stats[home]
+            a = stats[away]
 
-            away_attack = team_stats[away]["attack"]
-            away_defense = team_stats[away]["defense"]
+            # 🔥 stronger model (balanced + normalized)
+            home_xg = 1.35 * h["attack"] * (1 / (a["defense"] + 0.75))
+            away_xg = 1.15 * a["attack"] * (1 / (h["defense"] + 0.75))
 
-            # 🔥 SIMPLE BUT REAL MODEL
-            home_xg = home_attack * (away_defense / 1.3)
-            away_xg = away_attack * (home_defense / 1.3)
+            # clamp unrealistic values
+            home_xg = max(0.2, min(home_xg, 4.0))
+            away_xg = max(0.2, min(away_xg, 4.0))
 
         matrix = build_matrix(home_xg, away_xg)
 
@@ -188,12 +209,12 @@ def predict():
             "home_team": home,
             "away_team": away,
             "expected_goals": {
-                "home": home_xg,
-                "away": away_xg
+                "home": round(home_xg, 2),
+                "away": round(away_xg, 2)
             },
             "outcomes": calculate_outcomes(matrix),
             "top_scorelines": top_scores(matrix),
-            "model": "Real Data Poisson"
+            "model": "Improved Poisson v2"
         })
 
     except Exception as e:

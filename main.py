@@ -41,10 +41,9 @@ def fixtures():
     headers = {"X-Auth-Token": API_KEY}
 
     params = {
-        "dateFrom": request.args.get("from"),
-        "dateTo": request.args.get("to"),
-        "competitions": "PL"
-    }
+    "dateFrom": request.args.get("from", "2026-04-01"),
+    "dateTo": request.args.get("to", "2026-05-01")
+}
 
     res = requests.get(url, headers=headers, params=params)
 

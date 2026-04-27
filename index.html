@@ -119,9 +119,9 @@ async function predict() {
             method: "POST",
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify({
-                home_team: match.home,
-                away_team: match.away,
-                competition: match.competition
+                home_id: match.home_id,
+away_id: match.away_id,
+competition: match.competition
             })
         });
 

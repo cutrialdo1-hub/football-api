@@ -2,7 +2,171 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<title>Football Predictor</title><!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
 <title>Football Predictor</title>
+
+<style>
+body {
+    background: #0f172a;
+    color: white;
+    font-family: Arial;
+    text-align: center;
+}
+
+.card {
+    background: #1e293b;
+    padding: 15px;
+    margin: 10px auto;
+    width: 320px;
+    border-radius: 10px;
+}
+
+select, input, button {
+    padding: 10px;
+    margin: 5px;
+    width: 250px;
+}
+
+button {
+    background: green;
+    color: white;
+    border: none;
+    cursor: pointer;
+}
+</style>
+</head>
+
+<body>
+
+<h1>⚽ Football Predictor</h1>
+
+<input type="date" id="date">
+<br>
+<button onclick="loadMatches()">Load Matches</button>
+
+<br><br>
+
+<select id="matches">
+<option value="">Select match</option>
+</select>
+
+<br>
+
+<button onclick="predict()">Predict</button>
+
+<div id="output"></div>
+
+<script>
+const API = "https://football-api-9e4p.onrender.com";
+
+let matchesData = [];
+
+// -------------------------
+// LOAD MATCHES
+// -------------------------
+async function loadMatches() {
+    const date = document.getElementById("date").value;
+    const select = document.getElementById("matches");
+
+    if (!date) {
+        select.innerHTML = "<option value=''>Select a date</option>";
+        return;
+    }
+
+    select.innerHTML = "<option>Loading...</option>";
+
+    try {
+        const res = await fetch(`${API}/fixtures?from=${date}&to=${date}`);
+        const response = await res.json();
+
+        matchesData = [];
+        select.innerHTML = "<option value=''>Select match</option>";
+
+        const data = response.data || {};
+        const days = Object.keys(data);
+
+        if (!days.length) {
+            select.innerHTML = "<option>No matches found</option>";
+            return;
+        }
+
+        days.forEach(day => {
+            const matches = data[day];
+            if (!Array.isArray(matches)) return;
+
+            matches.forEach(m => matchesData.push(m));
+        });
+
+        matchesData.forEach((m, i) => {
+            const opt = document.createElement("option");
+            opt.value = i;
+            opt.textContent = `${m.home} vs ${m.away}`;
+            select.appendChild(opt);
+        });
+
+    } catch (err) {
+        console.error(err);
+        select.innerHTML = "<option>Error loading matches</option>";
+    }
+}
+
+// -------------------------
+// PREDICT MATCH (FIXED)
+// -------------------------
+async function predict() {
+    const index = document.getElementById("matches").value;
+    const match = matchesData[index];
+    const output = document.getElementById("output");
+
+    if (!match) {
+        output.innerHTML = "<div class='card'>Select a match</div>";
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API}/predict`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                home_team: match.home,
+                away_team: match.away,
+                competition: match.competition
+            })
+        });
+
+        const data = await res.json();
+
+        if (!data || !data.expected_goals || !data.outcomes) {
+            output.innerHTML = "<div class='card'>Invalid prediction response</div>";
+            return;
+        }
+
+        output.innerHTML = `
+        <div class="card">
+            <h3>${match.home} vs ${match.away}</h3>
+
+            <p><b>xG:</b> ${data.expected_goals.home.toFixed(2)} - ${data.expected_goals.away.toFixed(2)}</p>
+
+            <p>Home: ${(data.outcomes.home_win * 100).toFixed(1)}%</p>
+            <p>Draw: ${(data.outcomes.draw * 100).toFixed(1)}%</p>
+            <p>Away: ${(data.outcomes.away_win * 100).toFixed(1)}%</p>
+        </div>
+        `;
+
+    } catch (err) {
+        console.error(err);
+        output.innerHTML = "<div class='card'>Prediction failed</div>";
+    }
+}
+</script>
+
+</body>
+</html>
 
 <style>
 body {

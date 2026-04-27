@@ -1,30 +1,88 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<title>Matchday Dashboard</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Football Predictor Dashboard</title>
 
 <style>
-body { background:#0f172a; color:white; font-family:Arial; padding:20px; }
-.card { background:#1e293b; padding:15px; margin:10px 0; border-radius:10px; }
-select, button { padding:10px; margin:5px; width:250px; }
-button { background:#22c55e; color:white; border:none; }
-.row { display:flex; gap:10px; flex-wrap:wrap; }
+body {
+    font-family: Arial, sans-serif;
+    background: #0f172a;
+    color: white;
+    margin: 0;
+    padding: 20px;
+}
+
+h1 {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.card {
+    background: #1e293b;
+    padding: 15px;
+    border-radius: 10px;
+    margin-bottom: 15px;
+}
+
+select, button, input {
+    padding: 10px;
+    margin: 5px;
+    border-radius: 6px;
+    border: none;
+    width: 240px;
+}
+
+button {
+    background: #22c55e;
+    color: white;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #16a34a;
+}
+
+.row {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.scoreline {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px;
+}
 </style>
 </head>
 
 <body>
 
-<h1>⚽ Matchday Predictor</h1>
+<h1>⚽ Football Predictor Dashboard</h1>
 
+<!-- MATCHDAY SELECT -->
 <div class="card">
-    <select id="matchdays" onchange="loadMatches()"></select>
+    <div class="row">
+        <select id="matchdays" onchange="loadMatches()">
+            <option>Loading matchdays...</option>
+        </select>
+    </div>
 </div>
 
+<!-- MATCH SELECT -->
 <div class="card">
-    <select id="matches"></select>
-    <button onclick="predict()">Predict</button>
+    <div class="row">
+        <select id="matches">
+            <option>Select a matchday first</option>
+        </select>
+        <button onclick="predict()">Predict</button>
+    </div>
 </div>
 
+<!-- OUTPUT -->
 <div id="output"></div>
 
 <script>
@@ -33,66 +91,134 @@ const API = "https://football-api-9e4p.onrender.com";
 
 let dataStore = {};
 
+// -----------------------------
+// LOAD MATCHDAYS
+// -----------------------------
 async function loadMatchdays() {
-    const res = await fetch(API + "/fixtures");
-    dataStore = await res.json();
+    try {
+        const res = await fetch(API + "/fixtures");
+        dataStore = await res.json();
 
-    const select = document.getElementById("matchdays");
-    select.innerHTML = "";
+        const select = document.getElementById("matchdays");
+        select.innerHTML = "";
 
-    Object.keys(dataStore).forEach(date => {
-        let opt = document.createElement("option");
-        opt.value = date;
-        opt.textContent = date;
-        select.appendChild(opt);
-    });
+        const dates = Object.keys(dataStore);
 
-    loadMatches();
+        if (dates.length === 0) {
+            select.innerHTML = "<option>No matchdays found</option>";
+            return;
+        }
+
+        dates.forEach(date => {
+            const opt = document.createElement("option");
+            opt.value = date;
+            opt.textContent = date;
+            select.appendChild(opt);
+        });
+
+        loadMatches();
+
+    } catch (err) {
+        console.error("Matchdays failed:", err);
+        document.getElementById("matchdays").innerHTML =
+            "<option>Error loading matchdays</option>";
+    }
 }
 
+// -----------------------------
+// LOAD MATCHES FOR DATE
+// -----------------------------
 function loadMatches() {
     const date = document.getElementById("matchdays").value;
-    const matches = dataStore[date] || [];
-
     const select = document.getElementById("matches");
+
     select.innerHTML = "";
 
+    if (!dataStore || !dataStore[date]) {
+        select.innerHTML = "<option>No matches found</option>";
+        return;
+    }
+
+    const matches = dataStore[date];
+
     matches.forEach((m, i) => {
-        let opt = document.createElement("option");
+        const opt = document.createElement("option");
         opt.value = i;
         opt.textContent = `${m.home} vs ${m.away}`;
         select.appendChild(opt);
     });
 }
 
+// -----------------------------
+// PREDICT (SAFE VERSION)
+// -----------------------------
 async function predict() {
     const date = document.getElementById("matchdays").value;
     const index = document.getElementById("matches").value;
 
+    const output = document.getElementById("output");
+
+    if (!dataStore[date] || !dataStore[date][index]) {
+        output.innerHTML = "<div class='card'>❌ Please select a valid match</div>";
+        return;
+    }
+
     const match = dataStore[date][index];
 
-    const res = await fetch(API + "/predict", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-            home_team: match.home,
-            away_team: match.away
-        })
-    });
+    try {
+        const res = await fetch(API + "/predict", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                home_team: match.home,
+                away_team: match.away
+            })
+        });
 
-    const data = await res.json();
+        const data = await res.json();
 
-    document.getElementById("output").innerHTML = `
-    <div class="card">
-        <h3>${data.home_team} vs ${data.away_team}</h3>
-        <p>xG: ${data.expected_goals.home.toFixed(2)} - ${data.expected_goals.away.toFixed(2)}</p>
-        <p>Home Win: ${(data.outcomes.home_win*100).toFixed(1)}%</p>
-        <p>Draw: ${(data.outcomes.draw*100).toFixed(1)}%</p>
-        <p>Away Win: ${(data.outcomes.away_win*100).toFixed(1)}%</p>
-    </div>
-    `;
+        if (!data || data.error) {
+            output.innerHTML = "<div class='card'>❌ Prediction error</div>";
+            return;
+        }
+
+        let html = `
+        <div class="card">
+            <h2>${data.home_team} vs ${data.away_team}</h2>
+            <p><b>xG:</b> ${data.expected_goals.home.toFixed(2)} - ${data.expected_goals.away.toFixed(2)}</p>
+        </div>
+
+        <div class="card">
+            <h3>Match Outcome</h3>
+            <p>Home Win: ${(data.outcomes.home_win * 100).toFixed(1)}%</p>
+            <p>Draw: ${(data.outcomes.draw * 100).toFixed(1)}%</p>
+            <p>Away Win: ${(data.outcomes.away_win * 100).toFixed(1)}%</p>
+        </div>
+
+        <div class="card">
+            <h3>Top Scorelines</h3>
+        `;
+
+        data.top_scorelines.forEach(s => {
+            html += `
+            <div class="scoreline">
+                <span>${s.score}</span>
+                <span>${(s.probability * 100).toFixed(2)}%</span>
+            </div>
+            `;
+        });
+
+        html += "</div>";
+
+        output.innerHTML = html;
+
+    } catch (err) {
+        console.error(err);
+        output.innerHTML = "<div class='card'>❌ Prediction failed</div>";
+    }
 }
 
+// INIT
 loadMatchdays();
 
 </script>

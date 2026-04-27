@@ -1,5 +1,6 @@
 import math
 import os
+import time
 import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -9,182 +10,127 @@ CORS(app)
 
 API_KEY = os.environ.get("FOOTBALL_API_KEY")
 BASE_URL = "https://api.football-data.org/v4"
-
 HEADERS = {"X-Auth-Token": API_KEY}
 
-MAX_GOALS = 5
+# --- CACHE SETTINGS ---
+# We store standings for 24 hours to avoid hitting the 10 req/min limit
+standings_cache = {} 
+CACHE_DURATION = 86400  # 24 hours in seconds
 
-# ----------------------------
-# POISSON MODEL
-# ----------------------------
-def poisson(k, lam):
-    return (lam ** k) * math.exp(-lam) / math.factorial(k)
+def get_team_strengths(comp_code):
+    now = time.time()
+    
+    # Check if we have a fresh cache for this competition
+    if comp_code in standings_cache:
+        timestamp, data = standings_cache[comp_code]
+        if now - timestamp < CACHE_DURATION:
+            return data
 
-def build_matrix(home_xg, away_xg):
-    matrix = []
-    for h in range(MAX_GOALS + 1):
-        row = []
-        for a in range(MAX_GOALS + 1):
-            row.append(poisson(h, home_xg) * poisson(a, away_xg))
-        matrix.append(row)
-    return matrix
-
-def calculate_outcomes(matrix):
-    home = draw = away = 0
-
-    for h in range(len(matrix)):
-        for a in range(len(matrix)):
-            p = matrix[h][a]
-            if h > a:
-                home += p
-            elif h == a:
-                draw += p
-            else:
-                away += p
-
-    total = home + draw + away
-
-    return {
-        "home_win": home / total,
-        "draw": draw / total,
-        "away_win": away / total
-    }
-
-# ----------------------------
-# TEAM STRENGTHS (BY TEAM ID)
-# ----------------------------
-def get_team_strengths(competition):
-    url = f"{BASE_URL}/competitions/{competition}/standings"
+    # If no cache, fetch from API
+    url = f"{BASE_URL}/competitions/{comp_code}/standings"
     res = requests.get(url, headers=HEADERS)
-
+    
     if res.status_code != 200:
-        return {}
+        return {} # Fallback to empty if API is down or rate-limited
 
-    table = res.json()["standings"][0]["table"]
+    data = res.json()
+    # v4 docs: standings[0] is usually the 'TOTAL' table for LEAGUE types
+    table = data["standings"][0]["table"]
 
-    goals_for = sum(t["goalsFor"] for t in table)
-    goals_against = sum(t["goalsAgainst"] for t in table)
-    games = sum(t["playedGames"] for t in table)
+    # Calculate League Averages for Scaling
+    total_goals = sum(t["goalsFor"] for t in table)
+    total_games = sum(t["playedGames"] for t in table)
+    avg_goals_per_game = total_goals / max(total_games, 1)
 
-    avg_gf = goals_for / max(games, 1)
-    avg_ga = goals_against / max(games, 1)
-
-    teams = {}
-
+    strengths = {}
     for t in table:
-        team_id = t["team"]["id"]
-
+        t_id = t["team"]["id"]
         played = max(t["playedGames"], 1)
-
-        attack = (t["goalsFor"] / played) / avg_gf
-        defence = (t["goalsAgainst"] / played) / avg_ga
-
-        teams[team_id] = {
-            "attack": attack,
-            "defence": defence
+        
+        # Normalize: 1.0 is "Average", >1.0 is "Stronger than average"
+        strengths[t_id] = {
+            "attack": (t["goalsFor"] / played) / avg_goals_per_game,
+            "defence": (t["goalsAgainst"] / played) / avg_goals_per_game
         }
+    
+    # Save to cache
+    standings_cache[comp_code] = (now, strengths)
+    return strengths
 
-    return teams
+def poisson_probability(actual, expected):
+    return (math.pow(expected, actual) * math.exp(-expected)) / math.factorial(actual)
 
-# ----------------------------
-# FIXTURES (USE TEAM IDS)
-# ----------------------------
 @app.get("/fixtures")
 def fixtures():
-    try:
-        date_from = request.args.get("from")
+    date_str = request.args.get("date") # Format YYYY-MM-DD
+    if not date_str:
+        return jsonify({"error": "Date required"}), 400
 
-        if not date_from:
-            return jsonify({"error": "Missing date"}), 400
+    # IMPROVEMENT: Date ranges in v4 are [inclusive, exclusive)
+    # To get matches for JUST today, we go from Today to Tomorrow
+    from datetime import datetime, timedelta
+    date_dt = datetime.strptime(date_str, "%Y-%m-%d")
+    date_to = (date_dt + timedelta(days=1)).strftime("%Y-%m-%d")
 
-        competitions = ["PL", "BL1", "SA", "PD", "FL1"]
+    params = {
+        "dateFrom": date_str,
+        "dateTo": date_to,
+        "competitions": "PL,BL1,SA,PD,FL1"
+    }
+    
+    res = requests.get(f"{BASE_URL}/matches", headers=HEADERS, params=params)
+    if res.status_code != 200:
+        return jsonify({"error": "API Limit reached or invalid request"}), res.status_code
 
-        all_matches = []
+    matches = res.json().get("matches", [])
+    output = []
+    for m in matches:
+        output.append({
+            "id": m["id"],
+            "home": m["homeTeam"]["name"],
+            "home_id": m["homeTeam"]["id"],
+            "away": m["awayTeam"]["name"],
+            "away_id": m["awayTeam"]["id"],
+            "competition": m["competition"]["code"],
+            "status": m["status"]
+        })
+    return jsonify(output)
 
-        for comp in competitions:
-            url = f"{BASE_URL}/competitions/{comp}/matches"
-
-            params = {
-                "dateFrom": date_from,
-                "dateTo": date_from
-            }
-
-            res = requests.get(url, headers=HEADERS, params=params)
-
-            if res.status_code != 200:
-                continue
-
-            data = res.json()
-
-            for m in data.get("matches", []):
-
-                all_matches.append({
-                    "home": m["homeTeam"]["name"],
-                    "away": m["awayTeam"]["name"],
-
-                    # 🔥 CRITICAL FIX
-                    "home_id": m["homeTeam"]["id"],
-                    "away_id": m["awayTeam"]["id"],
-
-                    "competition": comp,
-                    "date": m["utcDate"][:10]
-                })
-
-        grouped = {}
-
-        for m in all_matches:
-            grouped.setdefault(m["date"], []).append(m)
-
-        return jsonify({"data": grouped})
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# ----------------------------
-# PREDICT (FIXED TO USE IDS)
-# ----------------------------
 @app.post("/predict")
 def predict():
-    try:
-        data = request.get_json()
+    req = request.get_json()
+    comp = req.get("competition")
+    h_id = req.get("home_id")
+    a_id = req.get("away_id")
 
-        home_id = data.get("home_id")
-        away_id = data.get("away_id")
-        comp = data.get("competition", "PL")
+    strengths = get_team_strengths(comp)
+    
+    # Default values if team is new/not in standings
+    h_attack = strengths.get(h_id, {}).get("attack", 1.0)
+    a_defence = strengths.get(a_id, {}).get("defence", 1.0)
+    a_attack = strengths.get(a_id, {}).get("attack", 1.0)
+    h_defence = strengths.get(h_id, {}).get("defence", 1.0)
 
-        teams = get_team_strengths(comp)
+    # League Constant (Avg goals in a PL match is ~1.3-1.5 per team)
+    LEAGUE_AVG = 1.35
+    h_xg = h_attack * a_defence * LEAGUE_AVG * 1.10 # 10% Home Advantage
+    a_xg = a_attack * h_defence * LEAGUE_AVG
 
-        # fallback
-        if home_id not in teams or away_id not in teams:
-            home_xg = 1.3
-            away_xg = 1.1
-        else:
-            home = teams[home_id]
-            away = teams[away_id]
+    # Calculate Win/Draw/Loss via 6x6 Poisson Matrix
+    home_p = draw_p = away_p = 0
+    for h in range(6):
+        for a in range(6):
+            prob = poisson_probability(h, h_xg) * poisson_probability(a, a_xg)
+            if h > a: home_p += prob
+            elif h == a: draw_p += prob
+            else: away_p += prob
 
-            HOME_ADV = 1.15
-
-            home_xg = 1.30 * home["attack"] * away["defence"] * HOME_ADV
-            away_xg = 1.15 * away["attack"] * home["defence"]
-
-            home_xg = max(0.2, min(home_xg, 4))
-            away_xg = max(0.2, min(away_xg, 4))
-
-        matrix = build_matrix(home_xg, away_xg)
-
-        return jsonify({
-            "expected_goals": {
-                "home": home_xg,
-                "away": away_xg
-            },
-            "outcomes": calculate_outcomes(matrix),
-            "model": "ID-based Poisson v2"
-        })
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.get("/")
-def root():
-    return jsonify({"status": "API running"})
+    return jsonify({
+        "home_xg": round(h_xg, 2),
+        "away_xg": round(a_xg, 2),
+        "probabilities": {
+            "home": round(home_p * 100, 1),
+            "draw": round(draw_p * 100, 1),
+            "away": round(away_p * 100, 1)
+        }
+    })

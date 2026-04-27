@@ -1,15 +1,16 @@
 import math
+import os
+import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 app = Flask(__name__)
 
-# ✅ THIS FIXES YOUR ERROR
-CORS(app, origins=[
-    "https://verdant-selkie-f51025.netlify.app",
-    "http://localhost:3000",
-    "*"
-])
+# ✅ CORS FIX (important for Netlify)
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+# 🔐 API KEY (set in Render environment)
+API_KEY = os.environ.get("FOOTBALL_API_KEY")
 
 # ----------------------------
 # DATA
@@ -50,7 +51,10 @@ MAX_GOALS = 5
 # MODEL
 # ----------------------------
 def team_strength(team):
-    t = TEAMS[team]
+    t = TEAMS.get(team)
+    if not t:
+        return None
+
     return {
         "attack_home": t["home_scored"] / LEAGUE_AVERAGES["home_scored"],
         "def_home": t["home_conceded"] / LEAGUE_AVERAGES["home_conceded"],
@@ -61,6 +65,9 @@ def team_strength(team):
 def expected_goals(home, away):
     h = team_strength(home)
     a = team_strength(away)
+
+    if not h or not a:
+        return None, None
 
     home_xg = h["attack_home"] * a["def_away"] * LEAGUE_AVERAGES["home_scored"]
     away_xg = a["attack_away"] * h["def_home"] * LEAGUE_AVERAGES["away_scored"]
@@ -125,11 +132,42 @@ def top_scorelines(matrix):
     return results[:6]
 
 # ----------------------------
-# API
+# 📅 FIXTURES (API)
+# ----------------------------
+@app.get("/fixtures")
+def fixtures():
+    date_from = request.args.get("from")
+    date_to = request.args.get("to")
+
+    if not date_from or not date_to:
+        return jsonify({"error": "Provide from and to dates"}), 400
+
+    url = f"https://api.football-data.org/v4/matches?dateFrom={date_from}&dateTo={date_to}"
+    headers = {"X-Auth-Token": API_KEY}
+
+    res = requests.get(url, headers=headers)
+
+    if res.status_code != 200:
+        return jsonify({"error": "API failed"}), 500
+
+    data = res.json()
+
+    fixtures = []
+    for m in data.get("matches", []):
+        fixtures.append({
+            "date": m["utcDate"][:10],
+            "home": m["homeTeam"]["name"],
+            "away": m["awayTeam"]["name"]
+        })
+
+    return jsonify(fixtures)
+
+# ----------------------------
+# API ROUTES
 # ----------------------------
 @app.get("/")
 def root():
-    return jsonify({"status": "Football API running"})
+    return jsonify({"status": "Football API running with fixtures"})
 
 @app.get("/teams")
 def teams():
@@ -139,10 +177,14 @@ def teams():
 def predict():
     data = request.get_json()
 
-    home = data["home_team"]
-    away = data["away_team"]
+    home = data.get("home_team")
+    away = data.get("away_team")
 
     hxg, axg = expected_goals(home, away)
+
+    if hxg is None:
+        return jsonify({"error": "Team not supported in model"}), 400
+
     matrix = score_matrix(hxg, axg)
 
     return jsonify({
@@ -157,5 +199,6 @@ def predict():
         "model": "Dixon-Coles"
     })
 
+# ----------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)

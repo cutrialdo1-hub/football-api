@@ -15,10 +15,13 @@ HEADERS = {"X-Auth-Token": API_KEY}
 MAX_GOALS = 5
 
 # ----------------------------
-# POISSON
+# POISSON MODEL
 # ----------------------------
 def poisson(k, lam):
+    if lam <= 0:
+        lam = 0.01
     return (lam ** k) * math.exp(-lam) / math.factorial(k)
+
 
 def build_matrix(home_xg, away_xg):
     matrix = []
@@ -28,6 +31,7 @@ def build_matrix(home_xg, away_xg):
             row.append(poisson(h, home_xg) * poisson(a, away_xg))
         matrix.append(row)
     return matrix
+
 
 def calculate_outcomes(matrix):
     home = draw = away = 0
@@ -44,33 +48,40 @@ def calculate_outcomes(matrix):
 
     total = home + draw + away
 
+    if total == 0:
+        return {"home_win": 0.33, "draw": 0.33, "away_win": 0.33}
+
     return {
         "home_win": home / total,
         "draw": draw / total,
         "away_win": away / total
     }
 
+
 # ----------------------------
-# REAL TEAM STRENGTH MODEL
+# SAFE TEAM MATCHING (IMPORTANT FIX)
 # ----------------------------
-def get_league_stats(competition):
-    url = f"{BASE_URL}/competitions/{competition}/standings"
-    res = requests.get(url, headers=HEADERS)
+def find_team(name, teams):
+    if not name:
+        return None
 
-    if res.status_code != 200:
-        return {}
+    name_lower = name.lower()
 
-    table = res.json()["standings"][0]["table"]
+    for k in teams.keys():
+        k_lower = k.lower()
 
-    total_goals_for = sum(t["goalsFor"] for t in table)
-    total_goals_against = sum(t["goalsAgainst"] for t in table)
-    total_games = sum(t["playedGames"] for t in table)
+        if name_lower == k_lower:
+            return k
 
-    return {
-        "avg_goals_for": total_goals_for / total_games,
-        "avg_goals_against": total_goals_against / total_games
-    }
+        if name_lower in k_lower or k_lower in name_lower:
+            return k
 
+    return None
+
+
+# ----------------------------
+# LEAGUE STATS
+# ----------------------------
 def get_team_strengths(competition):
     url = f"{BASE_URL}/competitions/{competition}/standings"
     res = requests.get(url, headers=HEADERS)
@@ -78,11 +89,12 @@ def get_team_strengths(competition):
     if res.status_code != 200:
         return {}
 
-    table = res.json()["standings"][0]["table"]
+    data = res.json()
 
-    league_stats = get_league_stats(competition)
-
-    avg_goals = league_stats["avg_goals_for"]
+    try:
+        table = data["standings"][0]["table"]
+    except:
+        return {}
 
     teams = {}
 
@@ -90,8 +102,8 @@ def get_team_strengths(competition):
         name = t["team"]["name"]
         games = max(t["playedGames"], 1)
 
-        attack = (t["goalsFor"] / games) / avg_goals
-        defence = (t["goalsAgainst"] / games) / avg_goals
+        attack = t["goalsFor"] / games
+        defence = t["goalsAgainst"] / games
 
         teams[name] = {
             "attack": attack,
@@ -100,8 +112,58 @@ def get_team_strengths(competition):
 
     return teams
 
+
 # ----------------------------
-# PREDICT (UPGRADED MODEL)
+# FIXTURES
+# ----------------------------
+@app.get("/fixtures")
+def fixtures():
+    try:
+        date_from = request.args.get("from")
+
+        if not date_from:
+            return jsonify({"error": "Missing date"}), 400
+
+        competitions = ["PL", "BL1", "SA", "PD", "FL1"]
+
+        all_matches = []
+
+        for comp in competitions:
+            url = f"{BASE_URL}/competitions/{comp}/matches"
+
+            params = {
+                "dateFrom": date_from,
+                "dateTo": date_from
+            }
+
+            res = requests.get(url, headers=HEADERS, params=params)
+
+            if res.status_code != 200:
+                continue
+
+            data = res.json()
+
+            for m in data.get("matches", []):
+                all_matches.append({
+                    "home": m["homeTeam"]["name"],
+                    "away": m["awayTeam"]["name"],
+                    "competition": comp,
+                    "date": m["utcDate"][:10]
+                })
+
+        grouped = {}
+
+        for m in all_matches:
+            grouped.setdefault(m["date"], []).append(m)
+
+        return jsonify({"data": grouped})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ----------------------------
+# PREDICT (UPGRADED + FIXED)
 # ----------------------------
 @app.post("/predict")
 def predict():
@@ -114,21 +176,28 @@ def predict():
 
         teams = get_team_strengths(comp)
 
-        # fallback safety
-        if home not in teams or away not in teams:
+        home_key = find_team(home, teams)
+        away_key = find_team(away, teams)
+
+        # fallback safe values
+        if not home_key or not away_key:
             home_xg = 1.3
             away_xg = 1.1
         else:
-            home_team = teams[home]
-            away_team = teams[away]
+            home_team = teams[home_key]
+            away_team = teams[away_key]
 
-            # 🏠 real home advantage (important)
-            HOME_ADV = 1.18
+            HOME_ADV = 1.15
 
-            home_xg = 1.35 * home_team["attack"] * away_team["defence"] * HOME_ADV
-            away_xg = 1.20 * away_team["attack"] * home_team["defence"]
+            home_xg = (
+                home_team["attack"] * away_team["defence"] * 1.25 * HOME_ADV
+            )
 
-            # 🔧 smoothing (prevents extremes)
+            away_xg = (
+                away_team["attack"] * home_team["defence"] * 1.10
+            )
+
+            # safety clamps (stability improvement)
             home_xg = max(0.2, min(home_xg, 3.5))
             away_xg = max(0.2, min(away_xg, 3.5))
 
@@ -142,12 +211,18 @@ def predict():
                 "away": away_xg
             },
             "outcomes": calculate_outcomes(matrix),
-            "model": "Upgraded Strength Poisson"
+            "model": "Upgraded Poisson v2 (Fixed Matching)"
         })
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+# ----------------------------
 @app.get("/")
 def root():
     return jsonify({"status": "API running"})
+
+
+if __name__ == "__main__":
+    app.run()

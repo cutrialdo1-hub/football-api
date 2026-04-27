@@ -115,9 +115,11 @@ async function predict() {
         const res = await fetch(`${API}/predict`, {
             method: "POST",
             headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({
-                home_team: match.home,
-                away_team: match.away
+           body: JSON.stringify({
+    home_team: match.home,
+    away_team: match.away,
+    competition: match.competition
+})
             })
         });
 

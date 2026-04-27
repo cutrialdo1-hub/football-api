@@ -37,47 +37,52 @@ TEAMS = {
 @app.get("/fixtures")
 def fixtures():
     url = "https://api.football-data.org/v4/matches"
-
     headers = {"X-Auth-Token": API_KEY}
 
+    date_from = request.args.get("from")
+    date_to = request.args.get("to")
+
+    if not date_from or not date_to:
+        return jsonify({"error": "Missing date range"}), 400
+
     params = {
-    "dateFrom": request.args.get("from", "2026-04-01"),
-    "dateTo": request.args.get("to", "2026-05-01")
-}
+        "dateFrom": date_from,
+        "dateTo": date_to
+    }
 
     res = requests.get(url, headers=headers, params=params)
 
-    print("STATUS CODE:", res.status_code)
-    print("RESPONSE TEXT:", res.text[:1000])  # 👈 CRITICAL DEBUG
+    print("STATUS:", res.status_code)
+    print("BODY:", res.text[:500])
 
     if res.status_code != 200:
         return jsonify({
-            "error": "API request failed",
-            "status": res.status_code,
-            "response": res.text
+            "error": "API failed",
+            "status": res.status_code
         }), 500
 
     data = res.json()
-
     matches = data.get("matches", [])
 
-    print("MATCH COUNT:", len(matches))
-
-    if not matches:
-        return jsonify({"debug": "No matches returned from API"})
-
+    # ✅ ALWAYS RETURN SAME TYPE (IMPORTANT FIX)
     grouped = {}
 
     for m in matches:
-        date = m["utcDate"][:10]
+        try:
+            date = m["utcDate"][:10]
 
-        grouped.setdefault(date, []).append({
-            "home": m["homeTeam"]["name"],
-            "away": m["awayTeam"]["name"],
-            "date": date
-        })
+            grouped.setdefault(date, []).append({
+                "home": m["homeTeam"]["name"],
+                "away": m["awayTeam"]["name"],
+                "date": date
+            })
+        except:
+            continue
 
-    return jsonify(grouped)
+    return jsonify({
+        "count": len(matches),
+        "data": grouped
+    })
 # ----------------------------
 @app.get("/")
 def root():

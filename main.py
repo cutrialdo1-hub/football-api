@@ -40,36 +40,40 @@ def fixtures():
 
     headers = {"X-Auth-Token": API_KEY}
 
-    # pull a wider range (next ~10 days)
     params = {
-        "dateFrom": request.args.get("from", "2026-04-01"),
-        "dateTo": request.args.get("to", "2026-05-01"),
+        "dateFrom": request.args.get("from"),
+        "dateTo": request.args.get("to"),
         "competitions": "PL"
     }
 
     res = requests.get(url, headers=headers, params=params)
 
+    print("STATUS:", res.status_code)
+    print("RESPONSE:", res.text[:500])  # 👈 IMPORTANT DEBUG
+
     if res.status_code != 200:
-        return jsonify([])
+        return jsonify({"error": "API failed", "status": res.status_code}), 500
 
     data = res.json()
 
+    matches = data.get("matches", [])
+
+    # if empty, return clearly
+    if not matches:
+        return jsonify([])
+
     grouped = {}
 
-    for m in data.get("matches", []):
+    for m in matches:
         date = m["utcDate"][:10]
 
-        if date not in grouped:
-            grouped[date] = []
-
-        grouped[date].append({
+        grouped.setdefault(date, []).append({
             "home": m["homeTeam"]["name"],
             "away": m["awayTeam"]["name"],
             "date": date
         })
 
     return jsonify(grouped)
-
 # ----------------------------
 @app.get("/")
 def root():

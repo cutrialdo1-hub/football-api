@@ -91,12 +91,9 @@ async function loadMatches() {
 
         days.forEach(day => {
             const matches = data[day];
-
             if (!Array.isArray(matches)) return;
 
-            matches.forEach(m => {
-                matchesData.push(m);
-            });
+            matches.forEach(m => matchesData.push(m));
         });
 
         matchesData.forEach((m, i) => {
@@ -140,15 +137,21 @@ async function predict() {
 
         const data = await res.json();
 
+        // 🛡️ SAFETY CHECK (prevents crashes)
+        if (!data || !data.expected_goals || !data.outcomes) {
+            output.innerHTML = "<div class='card'>Invalid prediction response</div>";
+            return;
+        }
+
         output.innerHTML = `
         <div class="card">
             <h3>${match.home} vs ${match.away}</h3>
 
-            <p><b>xG:</b> ${data.expected_goals.home.toFixed(2)} - ${data.expected_goals.away.toFixed(2)}</p>
+            <p><b>xG:</b> ${(data.expected_goals.home || 0).toFixed(2)} - ${(data.expected_goals.away || 0).toFixed(2)}</p>
 
-            <p>Home: ${(data.outcomes.home_win * 100).toFixed(1)}%</p>
-            <p>Draw: ${(data.outcomes.draw * 100).toFixed(1)}%</p>
-            <p>Away: ${(data.outcomes.away_win * 100).toFixed(1)}%</p>
+            <p>Home: ${((data.outcomes.home_win || 0) * 100).toFixed(1)}%</p>
+            <p>Draw: ${((data.outcomes.draw || 0) * 100).toFixed(1)}%</p>
+            <p>Away: ${((data.outcomes.away_win || 0) * 100).toFixed(1)}%</p>
         </div>
         `;
 

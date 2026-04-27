@@ -1,7 +1,6 @@
 import math
 import os
 import requests
-from datetime import datetime, timedelta
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
@@ -13,20 +12,22 @@ BASE_URL = "https://api.football-data.org/v4"
 
 HEADERS = {"X-Auth-Token": API_KEY}
 
-# ----------------------------
-# POISSON MODEL
-# ----------------------------
 MAX_GOALS = 5
 
+# ----------------------------
+# POISSON
+# ----------------------------
 def poisson(k, lam):
     return (lam ** k) * math.exp(-lam) / math.factorial(k)
 
 def build_matrix(home_xg, away_xg):
-    return [
-        [poisson(h, home_xg) * poisson(a, away_xg)
-         for a in range(MAX_GOALS + 1)]
-        for h in range(MAX_GOALS + 1)
-    ]
+    matrix = []
+    for h in range(MAX_GOALS + 1):
+        row = []
+        for a in range(MAX_GOALS + 1):
+            row.append(poisson(h, home_xg) * poisson(a, away_xg))
+        matrix.append(row)
+    return matrix
 
 def calculate_outcomes(matrix):
     home = draw = away = 0
@@ -49,159 +50,104 @@ def calculate_outcomes(matrix):
         "away_win": away / total
     }
 
-def top_scores(matrix):
-    scores = []
-
-    for h in range(len(matrix)):
-        for a in range(len(matrix)):
-            scores.append({
-                "score": f"{h}-{a}",
-                "probability": matrix[h][a]
-            })
-
-    return sorted(scores, key=lambda x: x["probability"], reverse=True)[:5]
-
 # ----------------------------
-# REAL TEAM MODEL (FIXED)
+# REAL TEAM STRENGTH MODEL
 # ----------------------------
-def get_team_model(competition):
+def get_league_stats(competition):
     url = f"{BASE_URL}/competitions/{competition}/standings"
     res = requests.get(url, headers=HEADERS)
 
     if res.status_code != 200:
         return {}
 
-    data = res.json()
-    table = data["standings"][0]["table"]
+    table = res.json()["standings"][0]["table"]
 
-    stats = {}
-
-    total_goals_for = 0
-    total_goals_against = 0
-    total_games = 0
-
-    # build raw stats
-    for t in table:
-        team_id = t["team"]["id"]
-        games = max(t["playedGames"], 1)
-
-        gf = t["goalsFor"]
-        ga = t["goalsAgainst"]
-
-        total_goals_for += gf
-        total_goals_against += ga
-        total_games += games
-
-        stats[team_id] = {
-            "attack": gf / games,
-            "defense": ga / games
-        }
-
-    # league baseline (IMPORTANT FIX)
-    league_attack_avg = total_goals_for / total_games
-    league_def_avg = total_goals_against / total_games
+    total_goals_for = sum(t["goalsFor"] for t in table)
+    total_goals_against = sum(t["goalsAgainst"] for t in table)
+    total_games = sum(t["playedGames"] for t in table)
 
     return {
-        "teams": stats,
-        "league_attack_avg": league_attack_avg,
-        "league_def_avg": league_def_avg
+        "avg_goals_for": total_goals_for / total_games,
+        "avg_goals_against": total_goals_against / total_games
     }
 
-# ----------------------------
-# FIXTURES
-# ----------------------------
-@app.get("/fixtures")
-def fixtures():
-    date_from = request.args.get("from")
+def get_team_strengths(competition):
+    url = f"{BASE_URL}/competitions/{competition}/standings"
+    res = requests.get(url, headers=HEADERS)
 
-    if not date_from:
-        return jsonify({"error": "Missing date"}), 400
+    if res.status_code != 200:
+        return {}
 
-    date_to = (
-        datetime.strptime(date_from, "%Y-%m-%d") + timedelta(days=1)
-    ).strftime("%Y-%m-%d")
+    table = res.json()["standings"][0]["table"]
 
-    competitions = ["PL", "BL1", "SA", "PD", "FL1"]
+    league_stats = get_league_stats(competition)
 
-    all_matches = []
+    avg_goals = league_stats["avg_goals_for"]
 
-    for comp in competitions:
-        url = f"{BASE_URL}/competitions/{comp}/matches"
+    teams = {}
 
-        res = requests.get(url, headers=HEADERS, params={
-            "dateFrom": date_from,
-            "dateTo": date_to
-        })
+    for t in table:
+        name = t["team"]["name"]
+        games = max(t["playedGames"], 1)
 
-        if res.status_code != 200:
-            continue
+        attack = (t["goalsFor"] / games) / avg_goals
+        defence = (t["goalsAgainst"] / games) / avg_goals
 
-        for m in res.json().get("matches", []):
-            all_matches.append({
-                "home": m["homeTeam"]["name"],
-                "away": m["awayTeam"]["name"],
-                "home_id": m["homeTeam"]["id"],
-                "away_id": m["awayTeam"]["id"],
-                "competition": comp,
-                "date": m["utcDate"][:10]
-            })
+        teams[name] = {
+            "attack": attack,
+            "defence": defence
+        }
 
-    grouped = {}
-
-    for m in all_matches:
-        grouped.setdefault(m["date"], []).append(m)
-
-    return jsonify({"data": grouped})
+    return teams
 
 # ----------------------------
-# PREDICT (FIXED ACCURACY MODEL)
+# PREDICT (UPGRADED MODEL)
 # ----------------------------
 @app.post("/predict")
 def predict():
-    data = request.get_json()
+    try:
+        data = request.get_json()
 
-    home_id = data.get("home_id")
-    away_id = data.get("away_id")
-    competition = data.get("competition", "PL")
+        home = data.get("home_team")
+        away = data.get("away_team")
+        comp = data.get("competition", "PL")
 
-    model = get_team_model(competition)
+        teams = get_team_strengths(comp)
 
-    teams = model.get("teams", {})
+        # fallback safety
+        if home not in teams or away not in teams:
+            home_xg = 1.3
+            away_xg = 1.1
+        else:
+            home_team = teams[home]
+            away_team = teams[away]
 
-    # fallback
-    if home_id not in teams or away_id not in teams:
-        home_xg = 1.3
-        away_xg = 1.1
-    else:
-        h = teams[home_id]
-        a = teams[away_id]
+            # 🏠 real home advantage (important)
+            HOME_ADV = 1.18
 
-        league_attack = model["league_attack_avg"]
-        league_def = model["league_def_avg"]
+            home_xg = 1.35 * home_team["attack"] * away_team["defence"] * HOME_ADV
+            away_xg = 1.20 * away_team["attack"] * home_team["defence"]
 
-        # 🔥 NORMALISED MODEL (KEY FIX)
-        home_xg = (h["attack"] / league_attack) * (a["defense"])
-        away_xg = (a["attack"] / league_attack) * (h["defense"])
+            # 🔧 smoothing (prevents extremes)
+            home_xg = max(0.2, min(home_xg, 3.5))
+            away_xg = max(0.2, min(away_xg, 3.5))
 
-        # stabilise values
-        home_xg = max(0.2, min(home_xg, 3.5))
-        away_xg = max(0.2, min(away_xg, 3.5))
+        matrix = build_matrix(home_xg, away_xg)
 
-    matrix = build_matrix(home_xg, away_xg)
+        return jsonify({
+            "home_team": home,
+            "away_team": away,
+            "expected_goals": {
+                "home": home_xg,
+                "away": away_xg
+            },
+            "outcomes": calculate_outcomes(matrix),
+            "model": "Upgraded Strength Poisson"
+        })
 
-    return jsonify({
-        "home_team": home_id,
-        "away_team": away_id,
-        "expected_goals": {
-            "home": home_xg,
-            "away": away_xg
-        },
-        "outcomes": calculate_outcomes(matrix),
-        "top_scorelines": top_scores(matrix),
-        "model": "Improved Normalised Poisson"
-    })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-# ----------------------------
 @app.get("/")
 def root():
     return jsonify({"status": "API running"})

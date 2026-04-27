@@ -63,7 +63,6 @@ button:hover {
 
 <h1>⚽ Football Predictor Dashboard</h1>
 
-<!-- DATE -->
 <div class="card">
     <div class="row">
         <input type="date" id="date">
@@ -71,17 +70,15 @@ button:hover {
     </div>
 </div>
 
-<!-- MATCH SELECT -->
 <div class="card">
     <div class="row">
         <select id="matches">
-            <option>Select a date first</option>
+            <option value="">Select a date first</option>
         </select>
         <button onclick="predict()">Predict</button>
     </div>
 </div>
 
-<!-- OUTPUT -->
 <div id="output"></div>
 
 <script>
@@ -91,27 +88,39 @@ const API = "https://football-api-9e4p.onrender.com";
 let matchesData = [];
 
 // -----------------------------
-// LOAD MATCHES
+// LOAD MATCHES (FIXED + SAFE)
 // -----------------------------
 async function loadMatches() {
     const date = document.getElementById("date").value;
     const select = document.getElementById("matches");
 
-    select.innerHTML = "<option>Loading...</option>";
+    if (!date) {
+        select.innerHTML = "<option>Please select a date</option>";
+        return;
+    }
+
+    select.innerHTML = "<option>Loading matches...</option>";
 
     try {
         const res = await fetch(`${API}/fixtures?from=${date}&to=${date}`);
         const data = await res.json();
 
-        matchesData = data;
+        console.log("FIXTURES RESPONSE:", data);
+
+        // FORCE ARRAY SAFETY
+        const matches = Array.isArray(data) ? data : [];
+
+        matchesData = matches;
         select.innerHTML = "";
 
-        if (!data.length) {
+        if (matches.length === 0) {
             select.innerHTML = "<option>No matches found</option>";
             return;
         }
 
-        data.forEach((match, i) => {
+        matches.forEach((match, i) => {
+            if (!match.home || !match.away) return;
+
             const opt = document.createElement("option");
             opt.value = i;
             opt.textContent = `${match.home} vs ${match.away}`;
@@ -119,18 +128,17 @@ async function loadMatches() {
         });
 
     } catch (err) {
-        console.error(err);
+        console.error("Load matches error:", err);
         select.innerHTML = "<option>Error loading matches</option>";
     }
 }
 
 // -----------------------------
-// PREDICT
+// PREDICT MATCH (SAFE)
 // -----------------------------
 async function predict() {
     const index = document.getElementById("matches").value;
     const match = matchesData[index];
-
     const output = document.getElementById("output");
 
     if (!match) {
@@ -167,21 +175,25 @@ async function predict() {
             <h3>Top Scorelines</h3>
         `;
 
-        data.top_scorelines.forEach(s => {
-            html += `
-            <div class="scoreline">
-                <span>${s.score}</span>
-                <span>${(s.probability*100).toFixed(2)}%</span>
-            </div>
-            `;
-        });
+        if (data.top_scorelines && data.top_scorelines.length) {
+            data.top_scorelines.forEach(s => {
+                html += `
+                <div class="scoreline">
+                    <span>${s.score}</span>
+                    <span>${(s.probability*100).toFixed(2)}%</span>
+                </div>
+                `;
+            });
+        } else {
+            html += `<p>No scorelines available</p>`;
+        }
 
         html += "</div>";
 
         output.innerHTML = html;
 
     } catch (err) {
-        console.error(err);
+        console.error("Prediction error:", err);
         output.innerHTML = "<div class='card'>❌ Prediction failed</div>";
     }
 }

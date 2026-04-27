@@ -1,104 +1,64 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Football Predictor Dashboard</title>
+<meta charset="UTF-8">
+<title>Football Predictor</title>
 
 <style>
 body {
-    font-family: Arial, sans-serif;
     background: #0f172a;
     color: white;
-    margin: 0;
-    padding: 20px;
-}
-
-h1 {
+    font-family: Arial;
     text-align: center;
-    margin-bottom: 20px;
 }
-
 .card {
     background: #1e293b;
     padding: 15px;
+    margin: 10px auto;
+    width: 300px;
     border-radius: 10px;
-    margin-bottom: 15px;
 }
-
-select, button, input {
+select, input, button {
     padding: 10px;
     margin: 5px;
-    border-radius: 6px;
-    border: none;
-    width: 240px;
 }
-
 button {
-    background: #22c55e;
+    background: green;
     color: white;
-    cursor: pointer;
-}
-
-button:hover {
-    background: #16a34a;
-}
-
-.row {
-    display: flex;
-    gap: 10px;
-    justify-content: center;
-    flex-wrap: wrap;
-}
-
-.matchbox {
-    background: #334155;
-    padding: 8px;
-    margin: 6px 0;
-    border-radius: 6px;
-    display: flex;
-    justify-content: space-between;
 }
 </style>
 </head>
 
 <body>
 
-<h1>⚽ Football Matchday Predictor</h1>
+<h1>⚽ Predictor</h1>
 
-<!-- DATE SELECT -->
-<div class="card">
-    <div class="row">
-        <input type="date" id="date">
-        <button onclick="loadMatches()">Load Matches</button>
-    </div>
-</div>
+<input type="date" id="date">
+<button onclick="loadMatches()">Load Matches</button>
 
-<!-- MATCH SELECT -->
-<div class="card">
-    <div class="row">
-        <select id="matches">
-            <option value="">Select a date first</option>
-        </select>
-        <button onclick="predict()">Predict</button>
-    </div>
-</div>
+<br>
 
-<!-- OUTPUT -->
+<select id="matches">
+<option>Select match</option>
+</select>
+
+<button onclick="predict()">Predict</button>
+
 <div id="output"></div>
 
 <script>
-
 const API = "https://football-api-9e4p.onrender.com";
 
 let matchesData = [];
 
-// -----------------------------
-// LOAD MATCHES BY DATE (FIXED VERSION)
-// -----------------------------
 async function loadMatches() {
     const date = document.getElementById("date").value;
     const select = document.getElementById("matches");
+
+    if (!date) {
+        select.innerHTML = "<option>Select a date</option>";
+        return;
+    }
 
     select.innerHTML = "<option>Loading...</option>";
 
@@ -109,7 +69,6 @@ async function loadMatches() {
         matchesData = [];
         select.innerHTML = "";
 
-        // ✅ FIXED SAFE ACCESS (YOUR PATCH INTEGRATED)
         const data = response.data || {};
 
         const days = Object.keys(data);
@@ -129,11 +88,6 @@ async function loadMatches() {
             });
         });
 
-        if (!matchesData.length) {
-            select.innerHTML = "<option>No matches found</option>";
-            return;
-        }
-
         matchesData.forEach((m, i) => {
             const opt = document.createElement("option");
             opt.value = i;
@@ -147,17 +101,13 @@ async function loadMatches() {
     }
 }
 
-// -----------------------------
-// PREDICT
-// -----------------------------
 async function predict() {
     const index = document.getElementById("matches").value;
     const match = matchesData[index];
-
     const output = document.getElementById("output");
 
     if (!match) {
-        output.innerHTML = `<div class="card">⚠️ Please select a match</div>`;
+        output.innerHTML = "<div class='card'>Select match</div>";
         return;
     }
 
@@ -165,50 +115,26 @@ async function predict() {
         const res = await fetch(`${API}/predict`, {
             method: "POST",
             headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({
-                home_team: match.home,
-                away_team: match.away
-            })
+            body: JSON.stringify(match)
         });
 
         const data = await res.json();
 
-        let html = `
+        output.innerHTML = `
         <div class="card">
             <h3>${data.home_team} vs ${data.away_team}</h3>
-            <p><b>xG:</b> ${data.expected_goals.home.toFixed(2)} - ${data.expected_goals.away.toFixed(2)}</p>
-        </div>
-
-        <div class="card">
-            <h3>Outcomes</h3>
-            <p>Home Win: ${(data.outcomes.home_win*100).toFixed(1)}%</p>
+            <p>xG: ${data.expected_goals.home.toFixed(2)} - ${data.expected_goals.away.toFixed(2)}</p>
+            <p>Home: ${(data.outcomes.home_win*100).toFixed(1)}%</p>
             <p>Draw: ${(data.outcomes.draw*100).toFixed(1)}%</p>
-            <p>Away Win: ${(data.outcomes.away_win*100).toFixed(1)}%</p>
+            <p>Away: ${(data.outcomes.away_win*100).toFixed(1)}%</p>
         </div>
-
-        <div class="card">
-            <h3>Top Scorelines</h3>
         `;
-
-        data.top_scorelines.forEach(s => {
-            html += `
-            <div class="matchbox">
-                <span>${s.score}</span>
-                <span>${(s.probability*100).toFixed(2)}%</span>
-            </div>
-            `;
-        });
-
-        html += "</div>";
-
-        output.innerHTML = html;
 
     } catch (err) {
         console.error(err);
-        output.innerHTML = `<div class="card">❌ Prediction failed</div>`;
+        output.innerHTML = "<div class='card'>Prediction failed</div>";
     }
 }
-
 </script>
 
 </body>

@@ -5,29 +5,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Football Predictor Pro</title>
     <style>
-        body { background: #0f172a; color: white; font-family: sans-serif; text-align: center; padding: 20px; }
-        .card { background: #1e293b; padding: 20px; margin: 15px auto; max-width: 400px; border-radius: 12px; }
-        select, input, button { padding: 12px; margin: 8px; width: 100%; max-width: 300px; border-radius: 8px; border: none; }
-        button { background: #22c55e; color: white; font-weight: bold; cursor: pointer; }
+        body { background: #0f172a; color: white; font-family: 'Segoe UI', sans-serif; text-align: center; padding: 20px; }
+        .card { background: #1e293b; padding: 20px; margin: 15px auto; max-width: 400px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        select, input, button { padding: 12px; margin: 8px; width: 100%; max-width: 320px; border-radius: 8px; border: 1px solid #334155; }
+        input, select { background: #0f172a; color: white; }
+        button { background: #22c55e; color: white; font-weight: bold; border: none; cursor: pointer; transition: 0.2s; }
         button:hover { background: #16a34a; }
         .prob-bar { background: #334155; height: 20px; border-radius: 10px; margin: 15px 0; overflow: hidden; display: flex; }
         .h-fill { background: #3b82f6; height: 100%; }
         .d-fill { background: #94a3b8; height: 100%; }
         .a-fill { background: #ef4444; height: 100%; }
+        hr { border: 0; border-top: 1px solid #334155; margin: 20px 0; }
     </style>
 </head>
 <body>
 
     <h1>⚽ Poisson Match Predictor</h1>
+    <p style="color: #94a3b8;">PL, La Liga, Serie A, Bundesliga, Ligue 1</p>
 
     <div class="card">
+        <label for="date">Select Match Date:</label><br>
         <input type="date" id="date">
         <button onclick="loadMatches()">Load Fixtures</button>
     </div>
 
     <div class="card">
         <select id="matches">
-            <option value="">Select a date first</option>
+            <option value="">-- Load Fixtures First --</option>
         </select>
         <button onclick="predict()">Calculate Probability</button>
     </div>
@@ -35,26 +39,33 @@
     <div id="output"></div>
 
     <script>
-        // REPLACE WITH YOUR ACTUAL RENDER URL
+        // REPLACE with your actual Render URL (no trailing slash)
         const API = "https://football-api-9e4p.onrender.com"; 
         let matchesData = [];
 
         async function loadMatches() {
             const date = document.getElementById("date").value;
             const select = document.getElementById("matches");
-            if (!date) return alert("Select a date");
+            if (!date) return alert("Please select a date first.");
 
-            select.innerHTML = "<option>Loading...</option>";
+            select.innerHTML = "<option>Fetching matches...</option>";
             
             try {
+                // We send ?date= to match the Python request.args.get("date")
                 const res = await fetch(`${API}/fixtures?date=${date}`);
+                if (!res.ok) throw new Error(`Server returned ${res.status}`);
+                
                 const data = await res.json();
                 
-                if (data.error) throw new Error(data.error);
-
                 matchesData = data;
-                select.innerHTML = "<option value=''>-- Select Match --</option>";
-                
+                select.innerHTML = "";
+
+                if (matchesData.length === 0) {
+                    select.innerHTML = "<option value=''>No matches found for this date</option>";
+                    return;
+                }
+
+                select.innerHTML = "<option value=''>-- Select a Match --</option>";
                 matchesData.forEach((m, i) => {
                     const opt = document.createElement("option");
                     opt.value = i;
@@ -62,18 +73,19 @@
                     select.appendChild(opt);
                 });
             } catch (e) {
-                select.innerHTML = "<option>Error loading fixtures</option>";
-                console.error(e);
+                select.innerHTML = "<option>Error: Could not connect to API</option>";
+                console.error("Fetch Error:", e);
+                alert("API is currently offline or loading. Check console for details.");
             }
         }
 
         async function predict() {
             const idx = document.getElementById("matches").value;
             const out = document.getElementById("output");
-            if (idx === "") return;
+            if (idx === "") return alert("Please select a match.");
 
             const m = matchesData[idx];
-            out.innerHTML = "<div class='card'>Simulating...</div>";
+            out.innerHTML = "<div class='card'>Running Monte Carlo Simulation...</div>";
 
             try {
                 const res = await fetch(`${API}/predict`, {
@@ -85,26 +97,32 @@
                         competition: m.competition
                     })
                 });
+                
                 const d = await res.json();
+                if (d.error) throw new Error(d.error);
 
                 out.innerHTML = `
                     <div class="card">
                         <h3>${m.home} vs ${m.away}</h3>
-                        <p>Expected Goals: ${d.home_xg} - ${d.away_xg}</p>
+                        <p><b>Expected Goals:</b> ${d.home_xg} - ${d.away_xg}</p>
+                        
                         <div class="prob-bar">
                             <div class="h-fill" style="width:${d.probabilities.home}%"></div>
                             <div class="d-fill" style="width:${d.probabilities.draw}%"></div>
                             <div class="a-fill" style="width:${d.probabilities.away}%"></div>
                         </div>
-                        <div style="display:flex; justify-content:space-between; font-size:0.8em">
-                            <span>Win: ${d.probabilities.home}%</span>
-                            <span>Draw: ${d.probabilities.draw}%</span>
-                            <span>Loss: ${d.probabilities.away}%</span>
+
+                        <div style="display:flex; justify-content:space-between; font-size:0.9em; font-weight:bold;">
+                            <span style="color:#3b82f6">Home: ${d.probabilities.home}%</span>
+                            <span style="color:#94a3b8">Draw: ${d.probabilities.draw}%</span>
+                            <span style="color:#ef4444">Away: ${d.probabilities.away}%</span>
                         </div>
+                        <p style="font-size: 0.7em; color: #64748b; margin-top: 15px;">Model: ${d.model}</p>
                     </div>
                 `;
             } catch (e) {
-                out.innerHTML = "<div class='card'>Error calculating prediction</div>";
+                out.innerHTML = `<div class="card" style="border: 1px solid red;">Error: ${e.message}</div>`;
+                console.error("Prediction Error:", e);
             }
         }
     </script>

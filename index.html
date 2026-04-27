@@ -94,7 +94,7 @@ const API = "https://football-api-9e4p.onrender.com";
 let matchesData = [];
 
 // -----------------------------
-// LOAD MATCHES BY DATE
+// LOAD MATCHES BY DATE (FIXED VERSION)
 // -----------------------------
 async function loadMatches() {
     const date = document.getElementById("date").value;
@@ -104,22 +104,30 @@ async function loadMatches() {
 
     try {
         const res = await fetch(`${API}/fixtures?from=${date}&to=${date}`);
-        const data = await res.json();
+        const response = await res.json();
 
         matchesData = [];
         select.innerHTML = "";
 
-        // ✅ CASE 1: API returned array (fallback)
-        if (Array.isArray(data)) {
-            matchesData = data;
-        } 
-        // ✅ CASE 2: grouped object
-        else {
-            const days = Object.keys(data || {});
-            days.forEach(day => {
-                (data[day] || []).forEach(m => matchesData.push(m));
-            });
+        // ✅ FIXED SAFE ACCESS (YOUR PATCH INTEGRATED)
+        const data = response.data || {};
+
+        const days = Object.keys(data);
+
+        if (!days.length) {
+            select.innerHTML = "<option>No matches found</option>";
+            return;
         }
+
+        days.forEach(day => {
+            const matches = data[day];
+
+            if (!Array.isArray(matches)) return;
+
+            matches.forEach(m => {
+                matchesData.push(m);
+            });
+        });
 
         if (!matchesData.length) {
             select.innerHTML = "<option>No matches found</option>";
@@ -138,6 +146,7 @@ async function loadMatches() {
         select.innerHTML = "<option>Error loading matches</option>";
     }
 }
+
 // -----------------------------
 // PREDICT
 // -----------------------------

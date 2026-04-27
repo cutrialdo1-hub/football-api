@@ -48,19 +48,24 @@ def fixtures():
 
     res = requests.get(url, headers=headers, params=params)
 
-    print("STATUS:", res.status_code)
-    print("RESPONSE:", res.text[:500])  # 👈 IMPORTANT DEBUG
+    print("STATUS CODE:", res.status_code)
+    print("RESPONSE TEXT:", res.text[:1000])  # 👈 CRITICAL DEBUG
 
     if res.status_code != 200:
-        return jsonify({"error": "API failed", "status": res.status_code}), 500
+        return jsonify({
+            "error": "API request failed",
+            "status": res.status_code,
+            "response": res.text
+        }), 500
 
     data = res.json()
 
     matches = data.get("matches", [])
 
-    # if empty, return clearly
+    print("MATCH COUNT:", len(matches))
+
     if not matches:
-        return jsonify([])
+        return jsonify({"debug": "No matches returned from API"})
 
     grouped = {}
 

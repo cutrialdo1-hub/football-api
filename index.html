@@ -100,11 +100,6 @@ async function loadMatches() {
     const date = document.getElementById("date").value;
     const select = document.getElementById("matches");
 
-    if (!date) {
-        select.innerHTML = "<option>Please select a date</option>";
-        return;
-    }
-
     select.innerHTML = "<option>Loading...</option>";
 
     try {
@@ -112,25 +107,21 @@ async function loadMatches() {
         const data = await res.json();
 
         matchesData = [];
-
         select.innerHTML = "";
 
-        // backend returns OBJECT grouped by date
-        const days = Object.keys(data);
-
-        if (!days.length) {
-            select.innerHTML = "<option>No matches found</option>";
-            return;
+        // ✅ CASE 1: API returned array (fallback)
+        if (Array.isArray(data)) {
+            matchesData = data;
+        } 
+        // ✅ CASE 2: grouped object
+        else {
+            const days = Object.keys(data || {});
+            days.forEach(day => {
+                (data[day] || []).forEach(m => matchesData.push(m));
+            });
         }
 
-        // flatten all matches into array
-        days.forEach(day => {
-            data[day].forEach(match => {
-                matchesData.push(match);
-            });
-        });
-
-        if (matchesData.length === 0) {
+        if (!matchesData.length) {
             select.innerHTML = "<option>No matches found</option>";
             return;
         }
@@ -147,7 +138,6 @@ async function loadMatches() {
         select.innerHTML = "<option>Error loading matches</option>";
     }
 }
-
 // -----------------------------
 // PREDICT
 // -----------------------------

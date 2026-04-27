@@ -1,165 +1,174 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Football Predictor</title>
-
-<style>
-body {
-    background: #0f172a;
-    color: white;
-    font-family: Arial;
-    text-align: center;
-}
-
-.card {
-    background: #1e293b;
-    padding: 15px;
-    margin: 10px auto;
-    width: 320px;
-    border-radius: 10px;
-}
-
-select, input, button {
-    padding: 10px;
-    margin: 5px;
-    width: 250px;
-}
-
-button {
-    background: green;
-    color: white;
-    border: none;
-    cursor: pointer;
-}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Football Predictor Pro</title>
+    <style>
+        body {
+            background: #0f172a;
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            text-align: center;
+            padding: 20px;
+        }
+        .card {
+            background: #1e293b;
+            padding: 20px;
+            margin: 15px auto;
+            max-width: 400px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        select, input, button {
+            padding: 12px;
+            margin: 8px;
+            width: 100%;
+            max-width: 300px;
+            border-radius: 8px;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: white;
+        }
+        button {
+            background: #22c55e;
+            font-weight: bold;
+            border: none;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #16a34a;
+        }
+        .prob-bar {
+            background: #334155;
+            height: 20px;
+            border-radius: 10px;
+            margin: 10px 0;
+            overflow: hidden;
+            display: flex;
+        }
+        .home-fill { background: #3b82f6; height: 100%; }
+        .draw-fill { background: #94a3b8; height: 100%; }
+        .away-fill { background: #ef4444; height: 100%; }
+    </style>
 </head>
-
 <body>
 
-<h1>⚽ Football Predictor</h1>
+    <h1>⚽ Matchday Predictor</h1>
 
-<input type="date" id="date">
-<br>
-<button onclick="loadMatches()">Load Matches</button>
+    <div class="card">
+        <input type="date" id="date">
+        <button onclick="loadMatches()">Load Matches</button>
+    </div>
 
-<br><br>
+    <div class="card">
+        <select id="matches">
+            <option value="">Select a date first</option>
+        </select>
+        <button onclick="predict()">Calculate Probability</button>
+    </div>
 
-<select id="matches">
-<option value="">Select match</option>
-</select>
+    <div id="output"></div>
 
-<br>
+    <script>
+        // Update this to your actual Render URL
+        const API = "https://football-api-9e4p.onrender.com";
+        let matchesData = [];
 
-<button onclick="predict()">Predict</button>
+        async function loadMatches() {
+            const date = document.getElementById("date").value;
+            const select = document.getElementById("matches");
+            const output = document.getElementById("output");
 
-<div id="output"></div>
+            if (!date) return alert("Please select a date");
 
-<script>
-const API = "https://football-api-9e4p.onrender.com";
+            select.innerHTML = "<option>Searching fixtures...</option>";
+            output.innerHTML = ""; // Clear old results
 
-let matchesData = [];
+            try {
+                // Using the updated /fixtures endpoint which expects ?date=
+                const res = await fetch(`${API}/fixtures?date=${date}`);
+                const data = await res.json();
 
-// -------------------------
-// LOAD MATCHES
-// -------------------------
-async function loadMatches() {
-    const date = document.getElementById("date").value;
-    const select = document.getElementById("matches");
+                if (data.error) throw new Error(data.error);
 
-    if (!date) {
-        select.innerHTML = "<option value=''>Select a date</option>";
-        return;
-    }
+                matchesData = data; // Backend now returns a flat array
+                select.innerHTML = "<option value=''>-- Select a Match --</option>";
 
-    select.innerHTML = "<option>Loading...</option>";
+                if (matchesData.length === 0) {
+                    select.innerHTML = "<option>No major league matches today</option>";
+                    return;
+                }
 
-    try {
-        const res = await fetch(`${API}/fixtures?from=${date}&to=${date}`);
-        const response = await res.json();
+                matchesData.forEach((m, i) => {
+                    const opt = document.createElement("option");
+                    opt.value = i;
+                    opt.textContent = `[${m.competition}] ${m.home} vs ${m.away}`;
+                    select.appendChild(opt);
+                });
 
-        matchesData = [];
-        select.innerHTML = "<option value=''>Select match</option>";
-
-        const data = response.data || {};
-        const days = Object.keys(data);
-
-        if (!days.length) {
-            select.innerHTML = "<option>No matches found</option>";
-            return;
+            } catch (err) {
+                console.error(err);
+                select.innerHTML = "<option>Error: Check Console</option>";
+            }
         }
 
-        days.forEach(day => {
-            const matches = data[day];
-            if (!Array.isArray(matches)) return;
+        async function predict() {
+            const index = document.getElementById("matches").value;
+            const output = document.getElementById("output");
+            
+            if (index === "") return alert("Select a match first");
+            
+            const match = matchesData[index];
+            output.innerHTML = "<div class='card'>Running Poisson Simulation...</div>";
 
-            matches.forEach(m => matchesData.push(m));
-        });
+            try {
+                const res = await fetch(`${API}/predict`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        home_id: match.home_id,
+                        away_id: match.away_id,
+                        competition: match.competition
+                    })
+                });
 
-        matchesData.forEach((m, i) => {
-            const opt = document.createElement("option");
-            opt.value = i;
-            opt.textContent = `${m.home} vs ${m.away}`;
-            select.appendChild(opt);
-        });
+                const data = await res.json();
 
-    } catch (err) {
-        console.error(err);
-        select.innerHTML = "<option>Error loading matches</option>";
-    }
-}
+                if (data.error) throw new Error(data.error);
 
-// -------------------------
-// PREDICT MATCH (FIXED)
-// -------------------------
-async function predict() {
-    const index = document.getElementById("matches").value;
-    const match = matchesData[index];
-    const output = document.getElementById("output");
+                output.innerHTML = `
+                    <div class="card">
+                        <h3>${match.home} vs ${match.away}</h3>
+                        <p><b>Expected Goals (xG)</b></p>
+                        <p>${data.home_xg} — ${data.away_xg}</p>
+                        
+                        <hr style="border: 0.5px solid #334155; margin: 15px 0;">
+                        
+                        <div style="display: flex; justify-content: space-between; font-size: 0.9em;">
+                            <span>Home ${data.probabilities.home}%</span>
+                            <span>Draw ${data.probabilities.draw}%</span>
+                            <span>Away ${data.probabilities.away}%</span>
+                        </div>
+                        
+                        <div class="prob-bar">
+                            <div class="home-fill" style="width: ${data.probabilities.home}%"></div>
+                            <div class="draw-fill" style="width: ${data.probabilities.draw}%"></div>
+                            <div class="away-fill" style="width: ${data.probabilities.away}%"></div>
+                        </div>
+                        
+                        <p style="font-size: 0.7em; color: #94a3b8; margin-top: 10px;">
+                            Model: ${data.model}
+                        </p>
+                    </div>
+                `;
 
-    if (!match) {
-        output.innerHTML = "<div class='card'>Select a match</div>";
-        return;
-    }
-
-    try {
-        const res = await fetch(`${API}/predict`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                home_team: match.home,
-                away_team: match.away,
-                competition: match.competition
-            })
-        });
-
-        const data = await res.json();
-
-        if (!data || !data.expected_goals || !data.outcomes) {
-            output.innerHTML = "<div class='card'>Invalid prediction response</div>";
-            return;
+            } catch (err) {
+                console.error(err);
+                output.innerHTML = `<div class="card" style="color: #ef4444;">❌ Prediction Error: ${err.message}</div>`;
+            }
         }
-
-        output.innerHTML = `
-        <div class="card">
-            <h3>${match.home} vs ${match.away}</h3>
-
-            <p><b>xG:</b> ${data.expected_goals.home.toFixed(2)} - ${data.expected_goals.away.toFixed(2)}</p>
-
-            <p>Home: ${(data.outcomes.home_win * 100).toFixed(1)}%</p>
-            <p>Draw: ${(data.outcomes.draw * 100).toFixed(1)}%</p>
-            <p>Away: ${(data.outcomes.away_win * 100).toFixed(1)}%</p>
-        </div>
-        `;
-
-    } catch (err) {
-        console.error(err);
-        output.innerHTML = "<div class='card'>Prediction failed</div>";
-    }
-}
-</script>
-
+    </script>
 </body>
 </html>

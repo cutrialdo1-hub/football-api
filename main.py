@@ -7,6 +7,7 @@ from flask_cors import CORS
 from datetime import datetime, timedelta
 # New official Google library
 from google import genai
+from google.genai import types
 
 app = Flask(__name__)
 CORS(app)
@@ -15,10 +16,11 @@ CORS(app)
 FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY") or os.environ.get("API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# Initialize Gemini Client
+# Initialize Gemini Client - Explicitly forcing version 'v1'
 client = None
 if GEMINI_API_KEY:
-    client = genai.Client(api_key=GEMINI_API_KEY)
+    # We specify the api_version to avoid the 404 v1beta error in your logs
+    client = genai.Client(api_key=GEMINI_API_KEY, http_options={'api_version': 'v1'})
 
 BASE_URL = "https://api.football-data.org/v4"
 HEADERS = {"X-Auth-Token": FOOTBALL_API_KEY}
@@ -74,27 +76,32 @@ def get_form(team_id):
 
 def gaffer_ai_verdict(h_name, a_name, h_s, a_s, h_pts, a_pts, score):
     if not client:
-        return "The Gaffer's in the pub. (API Client not initialized)"
+        return "The Gaffer's still stuck in traffic. (Check GEMINI_API_KEY)"
 
     context = (f"Match: {h_name} vs {a_name}. Table: {h_name}({h_s['rank']}), {a_name}({a_s['rank']}). "
                f"Form pts: {h_pts} vs {a_pts}. Computer Predicted Score: {score}.")
 
     prompt = (
-        "You are 'The Gaffer', a blunt, legendary football manager with a dry wit. "
+        "You are 'The Gaffer', a blunt, legendary football manager. "
         "Analyze this match in 3 short sentences using tactical manager-speak. "
-        "Use phrases like 'parking the bus', 'proper six-pointer', or 'tactical masterclass'. "
+        "Use phrases like 'proper six-pointer' or 'tactical masterclass'. "
         f"Data: {context}"
     )
 
     try:
+        # Use the explicit model string and configuration
         response = client.models.generate_content(
             model="gemini-1.5-flash",
-            contents=prompt
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.7,
+                top_p=0.95,
+            )
         )
         return response.text.strip()
     except Exception as e:
-        print(f"GAFFER ERROR: {e}")
-        return "The Gaffer's lost his temper with the fourth official. He's letting the numbers speak for themselves today."
+        print(f"GAFFER FINAL ERROR: {e}")
+        return "The Gaffer's in the dressing room giving them the hairdryer treatment. He's letting the numbers speak for themselves today."
 
 @app.route("/fixtures", methods=["GET"])
 def fixtures():

@@ -2,31 +2,43 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>AI Football Analyst Pro</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Football Scout Pro</title>
     <style>
-        body { background: #0f172a; color: white; font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; padding: 20px; }
-        .container { width: 100%; max-width: 450px; text-align: center; }
-        .card { background: #1e293b; padding: 20px; margin: 15px 0; border-radius: 15px; box-shadow: 0 10px 20px rgba(0,0,0,0.3); }
-        input, select, button { width: 100%; padding: 12px; margin: 8px 0; border-radius: 8px; border: 1px solid #334155; box-sizing: border-box; }
-        button { background: #22c55e; color: white; font-weight: bold; cursor: pointer; border: none; }
-        .score-badge { font-size: 2.5em; font-weight: 900; color: #22c55e; margin: 10px 0; }
-        .momentum { font-size: 0.75em; padding: 3px 8px; border-radius: 4px; font-weight: bold; }
-        .hot { background: #22c55e; } .cold { background: #ef4444; }
-        .analysis { background: #334155; padding: 15px; border-radius: 10px; font-style: italic; border-left: 4px solid #22c55e; text-align: left; margin-top: 15px; }
-        .bar { height: 10px; border-radius: 5px; display: flex; overflow: hidden; margin: 15px 0; background: #475569; }
+        :root { --bg: #0f172a; --card: #1e293b; --accent: #22c55e; --text: #f8fafc; }
+        body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; display: flex; justify-content: center; padding: 20px; margin: 0; }
+        .container { width: 100%; max-width: 480px; }
+        .card { background: var(--card); padding: 24px; margin-bottom: 20px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.4); border: 1px solid #334155; }
+        h1 { font-weight: 800; letter-spacing: -1px; margin-bottom: 5px; }
+        input, select, button { width: 100%; padding: 14px; margin: 10px 0; border-radius: 10px; border: 1px solid #334155; box-sizing: border-box; font-size: 1rem; }
+        button { background: var(--accent); color: white; font-weight: 700; border: none; cursor: pointer; transition: 0.2s; }
+        button:hover { filter: brightness(1.1); transform: translateY(-1px); }
+        .score-badge { font-size: 3.5rem; font-weight: 900; color: var(--accent); display: block; margin: 10px 0; }
+        .bar { height: 12px; border-radius: 6px; display: flex; overflow: hidden; margin: 20px 0; background: #334155; }
+        .analysis-box { background: #0f172a; padding: 20px; border-radius: 12px; text-align: left; line-height: 1.6; border-left: 4px solid var(--accent); font-size: 0.95rem; color: #cbd5e1; }
+        .analysis-box strong { color: var(--accent); text-transform: uppercase; font-size: 0.75rem; display: block; margin-bottom: 8px; letter-spacing: 1px; }
+        .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
+        .metric-item { background: #0f172a; padding: 12px; border-radius: 10px; font-size: 0.8rem; color: #94a3b8; }
+        .metric-item b { display: block; font-size: 1.1rem; color: #3b82f6; }
     </style>
 </head>
 <body>
 <div class="container">
-    <h1>⚽ AI Predictor</h1>
+    <header style="margin-bottom: 30px;">
+        <h1>AI Predictor <span>PRO</span></h1>
+        <p style="color: #64748b; margin: 0;">Poisson-Momentum Hybrid Engine</p>
+    </header>
+
     <div class="card">
         <input type="date" id="date">
-        <button onclick="loadMatches()">Find Fixtures</button>
+        <button onclick="loadMatches()">SCAN FIXTURES</button>
     </div>
+
     <div class="card">
-        <select id="matches"><option value="">Select Date First</option></select>
-        <button onclick="predict()">Run Pro Analysis</button>
+        <select id="matches"><option value="">Select a date...</option></select>
+        <button onclick="predict()">RUN ANALYSIS</button>
     </div>
+
     <div id="output"></div>
 </div>
 
@@ -38,10 +50,10 @@
         const d = document.getElementById("date").value;
         const s = document.getElementById("matches");
         if(!d) return;
-        s.innerHTML = "<option>Loading...</option>";
+        s.innerHTML = "<option>Consulting API...</option>";
         const res = await fetch(`${API}/fixtures?date=${d}`);
         matchesData = await res.json();
-        s.innerHTML = "<option value=''>-- Select Match --</option>";
+        s.innerHTML = matchesData.length ? "<option value=''>-- Select Target Match --</option>" : "<option>No major matches found</option>";
         matchesData.forEach((m, i) => {
             let opt = document.createElement("option");
             opt.value = i;
@@ -55,37 +67,48 @@
         const out = document.getElementById("output");
         if(idx === "") return;
         const m = matchesData[idx];
-        out.innerHTML = "<div class='card'>Analyzing form and xG...</div>";
+        out.innerHTML = "<div class='card'>Running Monte Carlo Simulations...</div>";
 
-        const res = await fetch(`${API}/predict`, {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({home_id: m.home_id, away_id: m.away_id, competition: m.competition})
-        });
-        const d = await res.json();
+        try {
+            const res = await fetch(`${API}/predict`, {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({home_id: m.home_id, away_id: m.away_id, competition: m.competition})
+            });
+            const d = await res.json();
 
-        out.innerHTML = `
-            <div class="card">
-                <h3>${m.home} vs ${m.away}</h3>
-                <div style="display:flex; justify-content:space-around; align-items:center">
-                    <span class="momentum ${d.form.home >= 1 ? 'hot' : 'cold'}">Form: ${d.form.home}x</span>
-                    <div class="score-badge">${d.prediction}</div>
-                    <span class="momentum ${d.form.away >= 1 ? 'hot' : 'cold'}">Form: ${d.form.away}x</span>
+            out.innerHTML = `
+                <div class="card">
+                    <h2 style="margin:0 0 10px 0">${m.home} vs ${m.away}</h2>
+                    <div style="font-size: 0.7rem; color: #64748b; font-weight: bold;">MOST LIKELY SCORE</div>
+                    <span class="score-badge">${d.prediction}</span>
+                    
+                    <div class="bar">
+                        <div style="width:${d.probs.home}%; background:#3b82f6"></div>
+                        <div style="width:${d.probs.draw}%; background:#94a3b8"></div>
+                        <div style="width:${d.probs.away}%; background:#ef4444"></div>
+                    </div>
+
+                    <div style="display:flex; justify-content:space-between; font-size:0.85rem; font-weight:bold; margin-bottom:20px;">
+                        <span style="color:#3b82f6">Home ${d.probs.home}%</span>
+                        <span style="color:#94a3b8">Draw ${d.probs.draw}%</span>
+                        <span style="color:#ef4444">Away ${d.probs.away}%</span>
+                    </div>
+
+                    <div class="analysis-box">
+                        <strong>Deep Dive Analysis</strong>
+                        ${d.analysis}
+                    </div>
+
+                    <div class="metrics">
+                        <div class="metric-item">Home xG Proj. <b>${d.xg.home}</b></div>
+                        <div class="metric-item">Away xG Proj. <b>${d.xg.away}</b></div>
+                    </div>
                 </div>
-                <div class="bar">
-                    <div style="width:${d.probs.home}%; background:#3b82f6"></div>
-                    <div style="width:${d.probs.draw}%; background:#94a3b8"></div>
-                    <div style="width:${d.probs.away}%; background:#ef4444"></div>
-                </div>
-                <div style="display:flex; justify-content:space-between; font-size:0.8em">
-                    <span>Win: ${d.probs.home}%</span>
-                    <span>Draw: ${d.probs.draw}%</span>
-                    <span>Loss: ${d.probs.away}%</span>
-                </div>
-                <div class="analysis"><strong>AI Insight:</strong> ${d.analysis}</div>
-                <p style="font-size:0.7em; color:#64748b; margin-top:10px">xG Projection: ${d.xg.home} - ${d.xg.away}</p>
-            </div>
-        `;
+            `;
+        } catch (e) {
+            out.innerHTML = `<div class="card" style="border: 1px solid #ef4444;">Analysis Failed: Connection Error</div>`;
+        }
     }
 </script>
 </body>

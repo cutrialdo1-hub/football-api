@@ -10,18 +10,30 @@
         .container { width: 100%; max-width: 480px; }
         h1 { font-family: 'Orbitron'; color: var(--neon); text-align: center; letter-spacing: 5px; font-size: 1.2rem; margin-bottom: 30px; }
         .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; margin-bottom: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.4); text-align: center; }
-        input[type="date"] { width: 100%; background: #000; border: 1px solid var(--border); color: #fff; padding: 14px; border-radius: 10px; margin-bottom: 12px; font-size: 0.9rem; box-sizing: border-box; outline: none; }
-        input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1) brightness(1.5); cursor: pointer; }
+        
+        /* CALENDAR VISIBILITY FIX */
+        input[type="date"] { 
+            width: 100%; background: #000; border: 1px solid var(--border); color: #fff; padding: 14px; 
+            border-radius: 10px; margin-bottom: 12px; font-size: 0.9rem; box-sizing: border-box; outline: none; 
+        }
+        input[type="date"]::-webkit-calendar-picker-indicator {
+            filter: invert(1) brightness(1.5);
+            cursor: pointer;
+        }
+
         select, button { width: 100%; background: #000; border: 1px solid var(--border); color: #fff; padding: 14px; border-radius: 10px; margin-bottom: 12px; font-size: 0.9rem; box-sizing: border-box; outline: none; }
         button { background: var(--neon); color: #000; font-weight: 800; font-family: 'Orbitron'; border: none; cursor: pointer; transition: 0.2s; }
         button:disabled { background: #1a1a1a; color: #444; cursor: not-allowed; }
+        
         .score { font-family: 'Orbitron'; font-size: 4.5rem; color: #fff; margin: 10px 0; }
         .gaffer-box { background: rgba(0,255,157,0.05); padding: 20px; border-radius: 12px; border-left: 4px solid var(--neon); font-style: italic; line-height: 1.6; color: #cbd5e1; margin: 20px 0; text-align: left; }
         .gaffer-box::after { content: "— The Gaffer"; display: block; text-align: right; color: var(--neon); font-size: 0.7rem; margin-top: 10px; font-family: 'Orbitron'; }
+        
         .prob-bar { height: 28px; display: flex; background: #000; border-radius: 8px; overflow: hidden; margin: 20px 0; font-family: 'Orbitron'; font-size: 0.7rem; line-height: 28px;}
         .prob-h { background: var(--neon); color: #000; transition: width 1s; }
         .prob-d { background: var(--draw); color: #000; transition: width 1s; }
         .prob-a { background: var(--away); color: #000; transition: width 1s; }
+        
         .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
         .m-item { background: #0b0d14; padding: 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.75rem; color: #8892b0;}
         .m-val { color: #fff; font-weight: bold; font-size: 1rem; display: block; margin-top: 4px;}
@@ -42,10 +54,15 @@
     </div>
     <div id="output"></div>
 </div>
+
 <script>
     const API = "https://football-api-9e4p.onrender.com";
     let matches = [];
-    function checkSelection() { document.getElementById('predict_btn').disabled = document.getElementById('m_list').value === ""; }
+
+    function checkSelection() {
+        document.getElementById('predict_btn').disabled = document.getElementById('m_list').value === "";
+    }
+
     async function getFixtures() {
         const d = document.getElementById('m_date').value;
         if(!d) return;
@@ -56,6 +73,7 @@
         sel.innerHTML = matches.length ? '<option value="">-- Select Match --</option>' : '<option>No Games Found</option>';
         matches.forEach((m, i) => sel.innerHTML += `<option value="${i}">[${m.league}] ${m.home} vs ${m.away}</option>`);
     }
+
     async function predict() {
         const idx = document.getElementById('m_list').value;
         const out = document.getElementById('output');

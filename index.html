@@ -53,6 +53,7 @@ input, select, button {
     background:#000;
     border:1px solid var(--border);
     color:#fff;
+    box-sizing:border-box;
 }
 
 button {
@@ -140,13 +141,20 @@ function toggleBtn() {
 
 async function getFixtures() {
     const date = document.getElementById("date").value;
+    const select = document.getElementById("matches");
+
     if (!date) return;
 
-    const select = document.getElementById("matches");
     select.innerHTML = "<option>Loading...</option>";
 
     try {
         const res = await fetch(`${API}/fixtures?date=${date}`);
+
+        if (!res.ok) {
+            select.innerHTML = "<option>Error loading</option>";
+            return;
+        }
+
         fixtures = await res.json();
 
         if (!fixtures.length) {
@@ -163,7 +171,7 @@ async function getFixtures() {
                 </option>`;
         });
 
-    } catch (e) {
+    } catch (err) {
         select.innerHTML = "<option>Error loading</option>";
     }
 }
@@ -181,6 +189,11 @@ async function predict() {
             headers:{"Content-Type":"application/json"},
             body: JSON.stringify(fixtures[i])
         });
+
+        if (!res.ok) {
+            out.innerHTML = "<div class='card'>Prediction error</div>";
+            return;
+        }
 
         const d = await res.json();
 
@@ -206,7 +219,7 @@ async function predict() {
 
             <div class="gaffer-box">${d.insight}</div>
         </div>`;
-    } catch (e) {
+    } catch (err) {
         out.innerHTML = "<div class='card'>Server error</div>";
     }
 }

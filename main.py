@@ -1,170 +1,83 @@
-import math
 import os
-import time
+import math
 import requests
-from flask import Flask, jsonify, request
-from flask_cors import CORS
+from flask import Flask, render_template, request, jsonify
 from google import genai
+from dotenv import load_dotenv
 
+load_dotenv()
 app = Flask(__name__)
-CORS(app)
 
 # --- CONFIG ---
-FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+FOOTBALL_API_KEY = os.getenv("FOOTBALL_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+client = genai.Client(api_key=GEMINI_API_KEY)
 
-client = None
-if GEMINI_API_KEY:
+# --- THE MATH ---
+def poisson_probability(lmbda, k):
+    return (math.exp(-lmbda) * (lmbda**k)) / math.factorial(k)
+
+def calculate_match_probs(h_xg, a_xg):
+    h_win, draw, a_win = 0, 0, 0
+    for i in range(7): # Checking up to 6 goals
+        for j in range(7):
+            prob = poisson_probability(h_xg, i) * poisson_probability(a_xg, j)
+            if i > j: h_win += prob
+            elif j > i: a_win += prob
+            else: draw += prob
+    return h_win, draw, a_win
+
+# --- DATA FETCHING (Based on your provided docs) ---
+def get_stats(comp_code, team_id, side):
+    url = f"https://api.football-data.org/v4/competitions/{comp_code}/standings"
+    headers = {"X-Auth-Token": FOOTBALL_API_KEY}
     try:
-        client = genai.Client(api_key=GEMINI_API_KEY)
-    except Exception as e:
-        print(f"AI Client Init Failed: {e}")
-
-BASE_URL = "https://api.football-data.org/v4"
-HEADERS = {"X-Auth-Token": FOOTBALL_API_KEY}
-
-# --- LOGIC ---
-def poisson_probability(actual, expected):
-    if expected <= 0:
-        expected = 0.01
-    return (math.pow(expected, actual) * math.exp(-expected)) / math.factorial(actual)
-
-
-def get_stats(team_id):
-    default = {"rank": "N/A", "atk": 1.2, "df": 1.0}
-
-    try:
-        # NOTE: using Premier League as default fallback for stats
-        res = requests.get(
-            f"{BASE_URL}/competitions/PL/standings",
-            headers=HEADERS
-        )
-
-        data = res.json()
-
-        if "standings" not in data:
-            return default
-
-        table = data["standings"][0]["table"]
-
-        avg_g = sum(t["goalsFor"] for t in table) / max(sum(t["playedGames"] for t in table), 1)
-
-        for t in table:
-            if t["team"]["id"] == team_id:
+        response = requests.get(url, headers=headers).json()
+        standings = response.get('standings', [])
+        # Your documentation showed HOME/AWAY types in the standings array
+        table_data = next((s for s in standings if s['type'] == side), standings[0])['table']
+        
+        for entry in table_data:
+            if entry['team']['id'] == int(team_id):
                 return {
-                    "rank": t["position"],
-                    "atk": (t["goalsFor"] / max(t["playedGames"], 1)) / avg_g,
-                    "df": (t["goalsAgainst"] / max(t["playedGames"], 1)) / avg_g
+                    "avg_goals": entry['goalsFor'] / entry['playedGames'],
+                    "name": entry['team']['shortName'],
+                    "form": entry.get('form', '??')
                 }
-
     except Exception as e:
-        print("Stats error:", e)
+        print(f"Error: {e}")
+        return None
 
-    return default
+@app.route('/')
+def home():
+    return render_template('index.html')
 
-
-def gaffer_verdict(h_name, a_name, score):
-    if not client:
-        return "The Gaffer's busy in the dressing room."
-
-    prompt = f"Blunt manager prediction for {h_name} vs {a_name}. Score: {score}. Use football manager tone."
-
-    try:
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt
-        )
-        return response.text.strip()
-    except:
-        return "Play for the badge. Keep it simple."
-
-
-# --- FIXED FIXTURES ENDPOINT ---
-@app.route("/fixtures", methods=["GET"])
-def fixtures():
-    date = request.args.get("date")
-
-    if not date:
-        return jsonify([])
-
-    try:
-        res = requests.get(
-            f"{BASE_URL}/matches",
-            headers=HEADERS,
-            params={
-                "dateFrom": date,
-                "dateTo": date,
-                "status": "SCHEDULED"
-            }
-        )
-
-        data = res.json()
-
-        matches = data.get("matches", [])
-
-        return jsonify([
-            {
-                "home": m["homeTeam"]["name"],
-                "home_id": m["homeTeam"]["id"],
-                "away": m["awayTeam"]["name"],
-                "away_id": m["awayTeam"]["id"],
-                "comp": m["competition"]["code"],
-                "league": m["competition"]["name"]
-            }
-            for m in matches
-        ])
-
-    except Exception as e:
-        print("Fixtures error:", e)
-        return jsonify([])
-
-
-# --- PREDICT ---
-@app.route("/predict", methods=["POST"])
+@app.route('/predict', methods=['POST'])
 def predict():
-    data = request.get_json()
+    data = request.json
+    # Pull Home stats for Home team, Away stats for Away team
+    h_data = get_stats(data['league'], data['home_id'], "HOME")
+    a_data = get_stats(data['league'], data['away_id'], "AWAY")
+    
+    if not h_data or not a_data:
+        return jsonify({"error": "Could not fetch team data"}), 400
 
-    h_s = get_stats(data["home_id"])
-    a_s = get_stats(data["away_id"])
-
-    h_xg = h_s["atk"] * a_s["df"] * 1.3
-    a_xg = a_s["atk"] * h_s["df"] * 1.1
-
-    max_p = 0
-    score = "1-1"
-    h_w = d = a_w = 0
-
-    for h in range(5):
-        for a in range(5):
-            p = poisson_probability(h, h_xg) * poisson_probability(a, a_xg)
-
-            if p > max_p:
-                max_p = p
-                score = f"{h}-{a}"
-
-            if h > a:
-                h_w += p
-            elif h == a:
-                d += p
-            else:
-                a_w += p
-
+    h_win, draw, a_win = calculate_match_probs(h_data['avg_goals'], a_data['avg_goals'])
+    
+    # The Gaffer's AI Personality
+    prompt = f"You are a grumpy, old-school football manager. Give a 2-sentence tactical verdict on {h_data['name']} vs {a_data['name']}. Home win prob: {h_win:.0%}. Home form: {h_data['form']}, Away form: {a_data['form']}."
+    response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+    
     return jsonify({
-        "score": score,
+        "home_name": h_data['name'],
+        "away_name": a_data['name'],
+        "verdict": response.text,
         "probs": {
-            "home": round(h_w * 100),
-            "draw": round(d * 100),
-            "away": round(a_w * 100)
-        },
-        "insight": gaffer_verdict(data["home"], data["away"], score),
-        "h_rank": h_s["rank"],
-        "a_rank": a_s["rank"],
-        "metrics": {
-            "h_atk": round(h_s["atk"], 2),
-            "a_def": round(a_s["df"], 2)
+            "home": f"{h_win:.0%}",
+            "draw": f"{draw:.0%}",
+            "away": f"{a_win:.0%}"
         }
     })
 
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+if __name__ == '__main__':
+    app.run(debug=True)

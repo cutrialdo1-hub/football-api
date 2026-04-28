@@ -5,8 +5,9 @@ import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from datetime import datetime, timedelta
-# Switching to the more compatible legacy library
-import google.generativeai as genai
+# Import the library from the quickstart
+from google import genai
+from google.genai import types
 
 app = Flask(__name__)
 CORS(app)
@@ -15,15 +16,24 @@ CORS(app)
 FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY") or os.environ.get("API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# Configure Gemini
+# Initialize Client per Quickstart
+client = None
 if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+    try:
+        # Explicitly setting v1 to match your project's stable production requirements
+        client = genai.Client(
+            api_key=GEMINI_API_KEY,
+            http_options={'api_version': 'v1'}
+        )
+    except Exception as e:
+        print(f"CLIENT INIT ERROR: {e}")
 
 BASE_URL = "https://api.football-data.org/v4"
 HEADERS = {"X-Auth-Token": FOOTBALL_API_KEY}
 FREE_COMPS = "CL,PL,ELC,BL1,SA,PD,FL1,DED,PPL,BSA,EC,WC"
 standings_cache = {}
 
+# --- LOGIC ---
 def poisson_probability(actual, expected):
     if expected <= 0: expected = 0.01
     return (math.pow(expected, actual) * math.exp(-expected)) / math.factorial(actual)
@@ -38,22 +48,14 @@ def get_venue_stats(comp_code):
     data = res.json()
     try:
         t_table = next((s for s in data["standings"] if s["type"] == "TOTAL"), data["standings"][0])["table"]
-        h_table = next((s for s in data["standings"] if s["type"] == "HOME"), data["standings"][0])["table"]
-        a_table = next((s for s in data["standings"] if s["type"] == "AWAY"), data["standings"][0])["table"]
-        avg_h = sum(t["goalsFor"] for t in h_table) / max(sum(t["playedGames"] for t in h_table), 1)
-        avg_a = sum(t["goalsFor"] for t in a_table) / max(sum(t["playedGames"] for t in a_table), 1)
-        venue_data = {}
-        for t in t_table:
-            tid = t["team"]["id"]
-            venue_data[tid] = {"name": t["team"]["name"], "rank": t["position"]}
-        for t in h_table:
-            tid = t["team"]["id"]
-            if tid in venue_data:
-                venue_data[tid].update({"h_atk": (t["goalsFor"]/max(t["playedGames"],1))/avg_h, "h_def": (t["goalsAgainst"]/max(t["playedGames"],1))/avg_h})
-        for t in a_table:
-            tid = t["team"]["id"]
-            if tid in venue_data:
-                venue_data[tid].update({"a_atk": (t["goalsFor"]/max(t["playedGames"],1))/avg_a, "a_def": (t["goalsAgainst"]/max(t["playedGames"],1))/avg_a})
+        avg_g = sum(t["goalsFor"] for t in t_table) / max(sum(t["playedGames"] for t in t_table), 1)
+        venue_data = {t["team"]["id"]: {
+            "name": t["team"]["name"], "rank": t["position"],
+            "h_atk": (t["goalsFor"]/max(t["playedGames"],1))/avg_g,
+            "h_def": (t["goalsAgainst"]/max(t["playedGames"],1))/avg_g,
+            "a_atk": (t["goalsFor"]/max(t["playedGames"],1))/avg_g,
+            "a_def": (t["goalsAgainst"]/max(t["playedGames"],1))/avg_g
+        } for t in t_table}
         standings_cache[comp_code] = (now, venue_data)
         return venue_data
     except: return {}
@@ -65,16 +67,19 @@ def get_form(team_id):
     pts = sum(3 if (x["score"]["fullTime"]["home"] > x["score"]["fullTime"]["away"] and x["homeTeam"]["id"] == team_id) or (x["score"]["fullTime"]["away"] > x["score"]["fullTime"]["home"] and x["awayTeam"]["id"] == team_id) else 1 if x["score"]["fullTime"]["home"] == x["score"]["fullTime"]["away"] else 0 for x in m)
     return 0.85 + (pts/15 * 0.3), pts
 
+# --- THE GAFFER'S VERDICT ---
 def gaffer_ai_verdict(h_name, a_name, score):
-    if not GEMINI_API_KEY:
-        return "The Gaffer's lost his notepad. API Key is missing."
+    if not client:
+        return "The Gaffer's lost his notepad. API Key missing."
 
-    # Using 'gemini-pro' as a fallback because some accounts don't have flash enabled correctly
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    prompt = f"You are 'The Gaffer', a blunt football manager. In 2 short sentences, give a tactical verdict on {h_name} vs {a_name} (Predicted: {score}). Use manager slang."
+    # UPDATED FOR 2026: Using the current stable model
+    model_id = "gemini-2.5-flash" 
 
     try:
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model=model_id,
+            contents=f"You are 'The Gaffer', a blunt football manager. Give a 2-sentence tactical verdict on {h_name} vs {a_name} (Predicted: {score}). Use manager slang."
+        )
         return response.text.strip()
     except Exception as e:
         print(f"GAFFER ERROR: {e}")

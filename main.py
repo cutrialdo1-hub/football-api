@@ -80,20 +80,40 @@ def form(team_id):
 
     return 0.9 + (pts / 15), pts
 
+COMPETITIONS = [
+    "PL","CL","BL1","SA","PD","FL1","DED","PPL","BSA","ELC"
+]
+
 @app.route("/fixtures")
 def fixtures():
-    d = request.args.get("date")
-    d2 = (datetime.strptime(d, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+    date = request.args.get("date")
+    date_to = (datetime.strptime(date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
 
-    r = requests.get(
-        f"{BASE_URL}/matches",
-        headers=HEADERS,
-        params={"dateFrom": d, "dateTo": d2, "competitions": FREE_COMPS}
-    )
+    all_matches = []
 
-    matches = r.json().get("matches", [])
+    for comp in COMPETITIONS:
+        r = requests.get(
+            f"{BASE_URL}/competitions/{comp}/matches",
+            headers=HEADERS,
+            params={"dateFrom": date, "dateTo": date_to}
+        )
 
-    return jsonify([{
+        if r.status_code != 200:
+            continue
+
+        matches = r.json().get("matches", [])
+
+        for m in matches:
+            all_matches.append({
+                "home": m["homeTeam"]["name"],
+                "home_id": m["homeTeam"]["id"],
+                "away": m["awayTeam"]["name"],
+                "away_id": m["awayTeam"]["id"],
+                "comp": comp,
+                "league": m["competition"]["name"]
+            })
+
+    return jsonify(all_matches)
         "home": m["homeTeam"]["name"],
         "home_id": m["homeTeam"]["id"],
         "away": m["awayTeam"]["name"],

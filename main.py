@@ -93,27 +93,60 @@ def gaffer_verdict(h_name, a_name, score):
 def fixtures():
     d = request.args.get("date")
 
-    res = requests.get(
-        f"{BASE_URL}/matches",
-        headers=HEADERS,
-        params={
-            "dateFrom": d,
-            "dateTo": d,
-            "competitions": FREE_COMPS
-        }
-    )
+    # 🔴 Check API key
+    if not FOOTBALL_API_KEY:
+        return jsonify({"error": "Missing FOOTBALL_API_KEY"}), 500
 
-    return jsonify([
-        {
-            "home": m["homeTeam"]["name"],
-            "home_id": m["homeTeam"]["id"],
-            "away": m["awayTeam"]["name"],
-            "away_id": m["awayTeam"]["id"],
-            "comp": m["competition"]["code"],
-            "league": m["competition"]["name"]
-        }
-        for m in res.json().get("matches", [])
-    ])
+    if not d:
+        return jsonify({"error": "No date provided"}), 400
+
+    try:
+        res = requests.get(
+            f"{BASE_URL}/matches",
+            headers=HEADERS,
+            params={
+                "dateFrom": d,
+                "dateTo": d
+                # ⚠️ removed competitions filter (causes empty results)
+            }
+        )
+
+        print("STATUS:", res.status_code)
+        print("RAW RESPONSE:", res.text[:500])  # logs to Render
+
+        data = res.json()
+
+        # 🔴 football-data error handling
+        if "errorCode" in data:
+            return jsonify({
+                "error": "football-data API error",
+                "details": data
+            }), 500
+
+        matches = data.get("matches", [])
+
+        # 🔴 If still empty → tell us WHY
+        if not matches:
+            return jsonify({
+                "error": "No matches found",
+                "date": d
+            }), 404
+
+        return jsonify([
+            {
+                "home": m["homeTeam"]["name"],
+                "home_id": m["homeTeam"]["id"],
+                "away": m["awayTeam"]["name"],
+                "away_id": m["awayTeam"]["id"],
+                "comp": m["competition"]["code"],
+                "league": m["competition"]["name"]
+            }
+            for m in matches
+        ])
+
+    except Exception as e:
+        print("FIXTURES ERROR:", str(e))
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/predict", methods=["POST"])

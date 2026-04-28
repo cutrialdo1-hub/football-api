@@ -11,12 +11,23 @@ app = Flask(__name__)
 CORS(app)
 
 # --- CONFIG ---
-FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY")
+# This looks for BOTH names to be safe
+FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY") or os.environ.get("API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 # Initialize Gemini AI
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    # We add safety settings so the AI doesn't block the Gaffer's "tough" talk
+    model = genai.GenerativeModel(
+        model_name='gemini-1.5-flash',
+        safety_settings=[
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+        ]
+    )
+else:
+    model = None
 
 BASE_URL = "https://api.football-data.org/v4"
 HEADERS = {"X-Auth-Token": FOOTBALL_API_KEY}
@@ -31,25 +42,20 @@ def get_venue_stats(comp_code):
     now = time.time()
     if comp_code in standings_cache and (now - standings_cache[comp_code][0] < 86400):
         return standings_cache[comp_code][1]
-
     url = f"{BASE_URL}/competitions/{comp_code}/standings"
     res = requests.get(url, headers=HEADERS)
     if res.status_code != 200: return {}
-
     data = res.json()
     try:
         h_table = next((s for s in data["standings"] if s["type"] == "HOME"), data["standings"][0])["table"]
         a_table = next((s for s in data["standings"] if s["type"] == "AWAY"), data["standings"][0])["table"]
         t_table = next((s for s in data["standings"] if s["type"] == "TOTAL"), data["standings"][0])["table"]
-
         avg_h_goals = sum(t["goalsFor"] for t in h_table) / max(sum(t["playedGames"] for t in h_table), 1)
         avg_a_goals = sum(t["goalsFor"] for t in a_table) / max(sum(t["playedGames"] for t in a_table), 1)
-
         venue_data = {}
         for t in t_table:
             tid = t["team"]["id"]
             venue_data[tid] = {"name": t["team"]["name"], "rank": t["position"]}
-
         for t in h_table:
             tid = t["team"]["id"]
             if tid in venue_data:
@@ -75,20 +81,17 @@ def get_form(team_id):
     pts = sum(3 if (x["score"]["fullTime"]["home"] > x["score"]["fullTime"]["away"] and x["homeTeam"]["id"] == team_id) or (x["score"]["fullTime"]["away"] > x["score"]["fullTime"]["home"] and x["awayTeam"]["id"] == team_id) else 1 if x["score"]["fullTime"]["home"] == x["score"]["fullTime"]["away"] else 0 for x in m)
     return 0.85 + (pts/15 * 0.3), pts
 
-# --- UPGRADED AI GAFFER ---
 def gaffer_ai_verdict(h_name, a_name, h_s, a_s, h_pts, a_pts, score):
-    context = (
-        f"Match: {h_name} vs {a_name}. "
-        f"Table: {h_name} is {h_s['rank']}, {a_name} is {a_s['rank']}. "
-        f"Stats: {h_name} (Atk {h_s['h_atk']:.2f}, Def {h_s['h_def']:.2f}) | {a_name} (Atk {a_s['a_atk']:.2f}, Def {a_s['a_def']:.2f}). "
-        f"Recent Points: {h_name} {h_pts}, {a_name} {a_pts}. "
-        f"Computer Result: {score}."
-    )
+    if not model:
+        return "The Gaffer's gone missing. Check if the GEMINI_API_KEY is set in Render settings."
+
+    context = (f"Match: {h_name} vs {a_name}. Table: {h_name}({h_s['rank']}), {a_name}({a_s['rank']}). "
+               f"Form pts: {h_pts} vs {a_pts}. Prediction: {score}.")
 
     prompt = (
-        "You are 'The Gaffer', a blunt, legendary football manager with a dry wit. "
+        "You are 'The Gaffer', a blunt, legendary football manager. "
         "Analyze this match in 3 sentences using tactical manager-speak. "
-        "Don't mention raw numbers. Talk about 'low blocks', 'clinical finishers', 'six-pointers', or 'relegation dogfights'. "
+        "Use phrases like 'parking the bus', 'bottling it', or 'tactical masterclass'. "
         f"Context: {context}"
     )
 
@@ -96,12 +99,14 @@ def gaffer_ai_verdict(h_name, a_name, h_s, a_s, h_pts, a_pts, score):
         response = model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
-        print(f"GAFFER ERROR: {e}")
-        return "The Gaffer's in the dressing room giving them the hairdryer treatment. He's letting the numbers speak for themselves today."
+        # This will show the ACTUAL error in your Render logs
+        print(f"CRITICAL GAFFER ERROR: {e}")
+        return "The Gaffer's lost his temper with the fourth official. He's letting the numbers speak for themselves."
 
 @app.route("/fixtures", methods=["GET"])
 def fixtures():
     d = request.args.get("date")
+    if not d: return jsonify([])
     d_to = (datetime.strptime(d, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
     res = requests.get(f"{BASE_URL}/matches", headers=HEADERS, params={"dateFrom": d, "dateTo": d_to, "competitions": FREE_COMPS})
     matches = res.json().get("matches", [])
@@ -117,13 +122,10 @@ def predict():
     stats = get_venue_stats(data["comp"])
     h_s, a_s = stats.get(data["home_id"]), stats.get(data["away_id"])
     if not h_s or not a_s: return jsonify({"error": "Stats unavailable"})
-
     h_f, h_pts = get_form(data["home_id"])
     a_f, a_pts = get_form(data["away_id"])
-
     h_xg = h_s.get("h_atk", 1) * a_s.get("a_def", 1) * 1.35 * h_f
     a_xg = a_s.get("a_atk", 1) * h_s.get("h_def", 1) * 1.25 * a_f
-
     max_p, score, h_win, draw, a_win = 0, "1-1", 0, 0, 0
     for h in range(5):
         for a in range(5):
@@ -132,11 +134,8 @@ def predict():
             if h > a: h_win += p
             elif h == a: draw += p
             else: a_win += p
-
     total = h_win + draw + a_win
-    # Using the new AI function here:
     insight = gaffer_ai_verdict(data["home"], data["away"], h_s, a_s, h_pts, a_pts, score)
-
     return jsonify({
         "score": score,
         "probs": {"home": round(h_win/total*100), "draw": round(draw/total*100), "away": round(a_win/total*100)},

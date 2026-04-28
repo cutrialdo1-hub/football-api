@@ -4,7 +4,7 @@ import time
 import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from datetime import datetime
+from datetime import datetime, timedelta
 from google import genai
 
 app = Flask(__name__)
@@ -14,7 +14,7 @@ CORS(app)
 FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# 2026 SDK Setup
+# 2026 Google GenAI SDK Setup
 client = None
 if GEMINI_API_KEY:
     try:
@@ -32,6 +32,7 @@ def poisson_probability(actual, expected):
     return (math.pow(expected, actual) * math.exp(-expected)) / math.factorial(actual)
 
 def get_stats(comp_code, team_id):
+    # Fallback stats for knockouts/missing data
     default = {"rank": "N/A", "atk": 1.2, "df": 1.0}
     try:
         res = requests.get(f"{BASE_URL}/competitions/{comp_code}/standings", headers=HEADERS)
@@ -53,11 +54,17 @@ def get_stats(comp_code, team_id):
 
 def gaffer_verdict(h_name, a_name, score):
     if not client: return "The Gaffer's busy in the dressing room."
-    prompt = f"Blunt manager prediction for {h_name} vs {a_name}. Score: {score}. Use manager slang."
-    try:
-        response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
-        return response.text.strip()
-    except: return "Play for the badge. Stick to the basics."
+    
+    prompt = f"Blunt manager prediction for {h_name} vs {a_name}. Score: {score}. Use future tense and manager slang."
+    
+    for _ in range(2): # Retry once on 429
+        try:
+            response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+            return response.text.strip()
+        except Exception as e:
+            if "429" in str(e): time.sleep(2); continue
+            break
+    return "Play for the badge. Stick to the basics. No mistakes."
 
 @app.route("/fixtures", methods=["GET"])
 def fixtures():

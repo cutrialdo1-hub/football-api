@@ -2,88 +2,123 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>THE GAFFER | Tactical Analyst</title>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <title>THE GAFFER | Predictor Pro</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Inter:wght@300;400;700&display=swap" rel="stylesheet">
     <style>
-        :root { --accent: #00ff9d; --bg: #050505; --card: #12141c; }
-        body { background: var(--bg); color: #fff; font-family: 'Inter', sans-serif; display: flex; justify-content: center; padding: 20px; }
-        .container { width: 100%; max-width: 500px; }
-        h1 { font-family: 'Orbitron'; color: var(--accent); text-align: center; letter-spacing: 4px; margin-bottom: 30px; }
-        .card { background: var(--card); border: 1px solid #222; border-radius: 16px; padding: 20px; margin-bottom: 20px; }
-        select, input, button { width: 100%; padding: 15px; border-radius: 10px; border: 1px solid #333; background: #000; color: #fff; margin-bottom: 15px; }
-        button { background: var(--accent); color: #000; font-weight: 900; font-family: 'Orbitron'; cursor: pointer; border: none; }
-        .league-label { color: var(--accent); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 2px; margin-top: 10px; }
-        .score-hero { font-family: 'Orbitron'; font-size: 5rem; text-align: center; margin: 20px 0; color: #fff; }
-        .rank-badge { background: #1a1d29; padding: 10px; border-radius: 8px; font-size: 0.8rem; text-align: center; }
-        .gaffer-quote { border-left: 4px solid var(--accent); padding: 15px; background: rgba(255,255,255,0.03); font-style: italic; font-size: 0.95rem; line-height: 1.6; color: #ddd; }
-        optgroup { background: #000; color: var(--accent); font-family: 'Orbitron'; }
+        :root { --neon: #00ff9d; --bg: #050508; --card: #11131a; --border: #222530; }
+        body { background: var(--bg); color: #fff; font-family: 'Inter', sans-serif; display: flex; justify-content: center; padding: 20px; margin: 0; }
+        .container { width: 100%; max-width: 480px; }
+        h1 { font-family: 'Orbitron'; color: var(--neon); text-align: center; letter-spacing: 5px; font-size: 1.4rem; margin: 30px 0; }
+        .panel { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 24px; margin-bottom: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+        input, select, button { width: 100%; background: #000; border: 1px solid var(--border); color: #fff; padding: 14px; border-radius: 12px; margin-bottom: 12px; font-size: 0.95rem; box-sizing: border-box; }
+        button { background: var(--neon); color: #000; font-weight: 800; font-family: 'Orbitron'; border: none; cursor: pointer; transition: 0.2s; }
+        button:hover { filter: brightness(1.1); transform: translateY(-1px); }
+        .score-hero { font-family: 'Orbitron'; font-size: 5.5rem; text-align: center; margin: 20px 0; color: #fff; text-shadow: 0 0 20px rgba(0,255,157,0.2); }
+        .badge { background: #1a1d26; padding: 12px; border-radius: 12px; text-align: center; flex: 1; margin: 0 5px; }
+        .badge-title { font-size: 0.65rem; color: #64748b; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+        .gaffer-report { background: rgba(255,255,255,0.03); border-left: 4px solid var(--neon); padding: 18px; border-radius: 0 12px 12px 0; font-style: italic; font-size: 0.95rem; line-height: 1.6; color: #cbd5e1; position: relative; }
+        .gaffer-report::after { content: "— The Gaffer"; display: block; text-align: right; font-family: 'Orbitron'; color: var(--neon); font-size: 0.7rem; margin-top: 10px; }
+        .prob-bar { height: 8px; background: #222; border-radius: 4px; overflow: hidden; display: flex; margin: 20px 0; }
+        optgroup { background: #000; color: var(--neon); font-family: 'Orbitron'; font-size: 0.8rem; }
+        .loader { border: 3px solid #222; border-top: 3px solid var(--neon); border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 20px auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
 <div class="container">
     <h1>THE GAFFER</h1>
-    <div class="card">
-        <input type="date" id="match_date">
-        <button onclick="loadFixtures()">LOAD FIXTURES</button>
+    
+    <div class="panel">
+        <input type="date" id="date_input">
+        <button onclick="fetchFixtures()">SCAN LEAGUES</button>
     </div>
-    <div class="card">
-        <select id="fixture_select"><option>Waiting for Date...</option></select>
-        <button onclick="runAnalysis()">RUN ANALYTICS</button>
+
+    <div class="panel">
+        <select id="match_dropdown"><option>Select Date Above</option></select>
+        <button onclick="analyzeMatch()">CONSULT GAFFER</button>
     </div>
-    <div id="output"></div>
+
+    <div id="display_area"></div>
 </div>
 
 <script>
-    const API = "https://football-api-9e4p.onrender.com";
-    let gameMap = {};
+    const API_BASE = "https://football-api-9e4p.onrender.com";
 
-    async function loadFixtures() {
-        const d = document.getElementById('match_date').value;
-        const res = await fetch(`${API}/fixtures?date=${d}`);
+    async function fetchFixtures() {
+        const date = document.getElementById('date_input').value;
+        if(!date) return;
+        const res = await fetch(`${API_BASE}/fixtures?date=${date}`);
         const data = await res.json();
-        const sel = document.getElementById('fixture_select');
-        sel.innerHTML = "";
         
+        const dropdown = document.getElementById('match_dropdown');
+        dropdown.innerHTML = "";
+        
+        if (Object.keys(data).length === 0) {
+            dropdown.innerHTML = "<option>No Games Today</option>";
+            return;
+        }
+
         for (const [league, games] of Object.entries(data)) {
             const group = document.createElement('optgroup');
-            group.label = league;
+            group.label = league.toUpperCase();
             games.forEach(g => {
                 const opt = document.createElement('option');
                 opt.value = JSON.stringify(g);
                 opt.textContent = `${g.home} vs ${g.away}`;
                 group.appendChild(opt);
             });
-            sel.appendChild(group);
+            dropdown.appendChild(group);
         }
     }
 
-    async function runAnalysis() {
-        const val = document.getElementById('fixture_select').value;
-        const out = document.getElementById('output');
-        out.innerHTML = "<div class='card'>Scouting the opposition...</div>";
+    async function analyzeMatch() {
+        const selection = document.getElementById('match_dropdown').value;
+        if(!selection || selection.startsWith("Select")) return;
         
-        const res = await fetch(`${API}/predict`, {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: val
-        });
-        const d = await res.json();
-        const match = JSON.parse(val);
+        const display = document.getElementById('display_area');
+        display.innerHTML = '<div class="loader"></div>';
+        
+        try {
+            const res = await fetch(`${API_BASE}/predict`, {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: selection
+            });
+            const d = await res.json();
+            const match = JSON.parse(selection);
 
-        out.innerHTML = `
-            <div class="card">
-                <div style="display:flex; justify-content:space-between">
-                    <div class="rank-badge">${match.home}<br><b>Pos: ${d.h_rank}</b></div>
-                    <div class="rank-badge">${match.away}<br><b>Pos: ${d.a_rank}</b></div>
+            display.innerHTML = `
+                <div class="panel">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:20px">
+                        <div class="badge"><div class="badge-title">Position</div><b>${d.h_rank}</b><br><small>${match.home}</small></div>
+                        <div class="badge"><div class="badge-title">Position</div><b>${d.a_rank}</b><br><small>${match.away}</small></div>
+                    </div>
+
+                    <div style="font-size:0.7rem; color:var(--neon); text-align:center; letter-spacing:2px">PROBABLE SCORE</div>
+                    <div class="score-hero">${d.score}</div>
+
+                    <div class="prob-bar">
+                        <div style="width:${d.probs.home}%; background:var(--neon)"></div>
+                        <div style="width:${d.probs.draw}%; background:#444"></div>
+                        <div style="width:${d.probs.away}%; background:#3b82f6"></div>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size:0.7rem; color:#64748b; margin-bottom:20px">
+                        <span>H: ${d.probs.home}%</span>
+                        <span>D: ${d.probs.draw}%</span>
+                        <span>A: ${d.probs.away}%</span>
+                    </div>
+
+                    <div class="gaffer-report">${d.insight}</div>
+
+                    <div style="display:flex; gap:10px; margin-top:20px">
+                        <div class="badge"><div class="badge-title">Form (Last 5)</div><b style="color:var(--neon)">${d.h_form} Pts</b></div>
+                        <div class="badge"><div class="badge-title">Form (Last 5)</div><b style="color:var(--neon)">${d.a_form} Pts</b></div>
+                    </div>
                 </div>
-                <div class="score-hero">${d.score}</div>
-                <div class="gaffer-quote">${d.insight}</div>
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:20px">
-                    <div class="rank-badge">Home Form (Last 5)<br><b style="color:var(--accent)">${d.h_form} Pts</b></div>
-                    <div class="rank-badge">Away Form (Last 5)<br><b style="color:var(--accent)">${d.a_form} Pts</b></div>
-                </div>
-            </div>
-        `;
+            `;
+        } catch (e) {
+            display.innerHTML = '<div class="panel">Error connecting to the Gaffer.</div>';
+        }
     }
 </script>
 </body>

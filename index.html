@@ -3,227 +3,99 @@
 <head>
 <meta charset="UTF-8">
 <title>THE GAFFER | Tactical Intelligence</title>
-
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@300;500;700&display=swap" rel="stylesheet">
-
 <style>
-:root {
-    --neon:#00ff9d;
-    --bg:#0a0b10;
-    --card:#151821;
-    --border:#2a2d3a;
-    --away:#ff3366;
-    --draw:#8892b0;
-}
-
-body {
-    background:var(--bg);
-    color:#fff;
-    font-family:Inter,sans-serif;
-    display:flex;
-    justify-content:center;
-    padding:20px;
-}
-
+:root { --neon:#00ff9d; --bg:#0a0b10; --card:#151821; --border:#2a2d3a; --away:#ff3366; --draw:#8892b0; }
+body { background:var(--bg); color:#fff; font-family:Inter,sans-serif; display:flex; justify-content:center; padding:20px; }
 .container { width:100%; max-width:480px; }
-
-h1 {
-    font-family:Orbitron;
-    color:var(--neon);
-    text-align:center;
-    letter-spacing:5px;
-    font-size:1.2rem;
-    margin-bottom:30px;
-}
-
-.card {
-    background:var(--card);
-    border:1px solid var(--border);
-    border-radius:16px;
-    padding:20px;
-    margin-bottom:20px;
-    text-align:center;
-}
-
-input, select, button {
-    width:100%;
-    padding:14px;
-    margin-bottom:12px;
-    border-radius:10px;
-    background:#000;
-    border:1px solid var(--border);
-    color:#fff;
-    box-sizing:border-box;
-}
-
-button {
-    background:var(--neon);
-    color:#000;
-    font-weight:800;
-    font-family:Orbitron;
-    cursor:pointer;
-}
-
-button:disabled {
-    background:#1a1a1a;
-    color:#444;
-    cursor:not-allowed;
-}
-
-.score { font-family:Orbitron; font-size:4rem; }
-
-.prob-bar {
-    display:flex;
-    height:28px;
-    border-radius:8px;
-    overflow:hidden;
-    margin:20px 0;
-    font-family:Orbitron;
-    font-size:0.7rem;
-}
-
+h1 { font-family:Orbitron; color:var(--neon); text-align:center; letter-spacing:5px; font-size:1.2rem; margin-bottom:30px; }
+.card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:20px; text-align:center; }
+input, select, button { width:100%; padding:14px; margin-bottom:12px; border-radius:10px; background:#000; border:1px solid var(--border); color:#fff; box-sizing:border-box; }
+button { background:var(--neon); color:#000; font-weight:800; font-family:Orbitron; cursor:pointer; border:none; }
+button:disabled { background:#1a1a1a; color:#444; cursor:not-allowed; }
+.score { font-family:Orbitron; font-size:4rem; margin: 10px 0; }
+.prob-bar { display:flex; height:28px; border-radius:8px; overflow:hidden; margin:20px 0; font-family:Orbitron; font-size:0.7rem; line-height:28px; }
 .prob-h { background:var(--neon); color:#000; }
 .prob-d { background:var(--draw); color:#000; }
 .prob-a { background:var(--away); color:#000; }
-
-.gaffer-box {
-    background:rgba(0,255,157,0.05);
-    border-left:4px solid var(--neon);
-    padding:20px;
-    text-align:left;
-    font-style:italic;
-}
-
-.loader {
-    border:3px solid #222;
-    border-top:3px solid var(--neon);
-    border-radius:50%;
-    width:30px;
-    height:30px;
-    margin:20px auto;
-    animation:spin 1s linear infinite;
-}
-
-@keyframes spin {
-    to { transform:rotate(360deg); }
-}
+.gaffer-box { background:rgba(0,255,157,0.05); border-left:4px solid var(--neon); padding:20px; text-align:left; font-style:italic; font-size:0.9rem; }
+.loader { border:3px solid #222; border-top:3px solid var(--neon); border-radius:50%; width:30px; height:30px; margin:20px auto; animation:spin 1s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
 </style>
 </head>
-
 <body>
-
 <div class="container">
     <h1>THE GAFFER</h1>
-
     <div class="card">
         <input type="date" id="date">
         <button onclick="getFixtures()">SCAN FIXTURES</button>
     </div>
-
     <div class="card">
         <select id="matches" onchange="toggleBtn()">
-            <option value="">Waiting...</option>
+            <option value="">Waiting for Scan...</option>
         </select>
         <button id="btn" onclick="predict()" disabled>GET VERDICT</button>
     </div>
-
     <div id="output"></div>
 </div>
-
 <script>
 const API = "https://football-api-9e4p.onrender.com";
 let fixtures = [];
 
 function toggleBtn() {
-    document.getElementById("btn").disabled =
-        document.getElementById("matches").value === "";
+    document.getElementById("btn").disabled = document.getElementById("matches").value === "";
 }
 
 async function getFixtures() {
     const date = document.getElementById("date").value;
     const select = document.getElementById("matches");
-
     if (!date) return;
-
-    select.innerHTML = "<option>Loading...</option>";
-
+    select.innerHTML = "<option>Scanning Docs...</option>";
     try {
         const res = await fetch(`${API}/fixtures?date=${date}`);
-
-        if (!res.ok) {
-            select.innerHTML = "<option>Error loading</option>";
-            return;
-        }
-
         fixtures = await res.json();
-
         if (!fixtures.length) {
-            select.innerHTML = "<option>No Games</option>";
+            select.innerHTML = "<option>No Tier-1 Games</option>";
             return;
         }
-
         select.innerHTML = "<option value=''>Select Match</option>";
-
         fixtures.forEach((m, i) => {
-            select.innerHTML += `
-                <option value="${i}">
-                    [${m.league}] ${m.home} vs ${m.away}
-                </option>`;
+            select.innerHTML += `<option value="${i}">[${m.comp}] ${m.home} vs ${m.away}</option>`;
         });
-
     } catch (err) {
-        select.innerHTML = "<option>Error loading</option>";
+        select.innerHTML = "<option>Connection Error</option>";
     }
 }
 
 async function predict() {
     const i = document.getElementById("matches").value;
-    if (i === "") return;
-
     const out = document.getElementById("output");
     out.innerHTML = "<div class='loader'></div>";
-
     try {
         const res = await fetch(`${API}/predict`, {
             method:"POST",
             headers:{"Content-Type":"application/json"},
             body: JSON.stringify(fixtures[i])
         });
-
-        if (!res.ok) {
-            out.innerHTML = "<div class='card'>Prediction error</div>";
-            return;
-        }
-
         const d = await res.json();
-
-        if (d.error) {
-            out.innerHTML = `<div class="card">${d.error}</div>`;
-            return;
-        }
-
         out.innerHTML = `
         <div class="card">
-            <div style="display:flex;justify-content:space-between;font-size:0.75rem">
+            <div style="display:flex;justify-content:space-between;font-size:0.75rem; color:var(--draw)">
                 <div><b>${fixtures[i].home}</b><br>Rank ${d.h_rank}</div>
                 <div><b>${fixtures[i].away}</b><br>Rank ${d.a_rank}</div>
             </div>
-
             <div class="score">${d.score}</div>
-
             <div class="prob-bar">
                 <div class="prob-h" style="width:${d.probs.home}%">${d.probs.home}%</div>
                 <div class="prob-d" style="width:${d.probs.draw}%">${d.probs.draw}%</div>
                 <div class="prob-a" style="width:${d.probs.away}%">${d.probs.away}%</div>
             </div>
-
             <div class="gaffer-box">${d.insight}</div>
         </div>`;
     } catch (err) {
-        out.innerHTML = "<div class='card'>Server error</div>";
+        out.innerHTML = "<div class='card'>Analysis error</div>";
     }
 }
 </script>
-
 </body>
 </html>

@@ -42,7 +42,7 @@
 </div>
 
 <script>
-    const API = "https://football-api-9e4p.onrender.com"; // Your Render URL
+    const API = "https://football-api-9e4p.onrender.com"; 
     let matches = [];
 
     function checkSelection() {
@@ -67,36 +67,40 @@
         out.innerHTML = `
             <div class="card">
                 <div class="loader"></div>
-                <p style="font-family:'Orbitron'; font-size:0.7rem; color:var(--neon); margin-top:10px;">ANALYZING TACTICS...</p>
+                <p style="font-family:'Orbitron'; font-size:0.7rem; color:var(--neon); margin-top:10px;">CONSULTING THE GAFFER...</p>
             </div>
         `;
 
-        const res = await fetch(`${API}/predict`, {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify(matches[idx])
-        });
-        const d = await res.json();
+        try {
+            const res = await fetch(`${API}/predict`, {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify(matches[idx])
+            });
+            const d = await res.json();
 
-        out.innerHTML = `
-            <div class="card">
-                <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:var(--draw); margin-bottom:15px;">
-                    <span style="text-align:left"><b>${matches[idx].home}</b><br>Rank: ${d.h_rank}</span>
-                    <span style="text-align:right"><b>${matches[idx].away}</b><br>Rank: ${d.a_rank}</span>
+            out.innerHTML = `
+                <div class="card">
+                    <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:var(--draw); margin-bottom:15px;">
+                        <span style="text-align:left"><b>${matches[idx].home}</b><br>Rank: ${d.h_rank}</span>
+                        <span style="text-align:right"><b>${matches[idx].away}</b><br>Rank: ${d.a_rank}</span>
+                    </div>
+                    <div class="score">${d.score}</div>
+                    <div class="prob-bar">
+                        <div class="prob-h" style="width:${d.probs.home}%">${d.probs.home}%</div>
+                        <div class="prob-d" style="width:${d.probs.draw}%">${d.probs.draw}%</div>
+                        <div class="prob-a" style="width:${d.probs.away}%">${d.probs.away}%</div>
+                    </div>
+                    <div class="gaffer-box">${d.insight}</div>
+                    <div class="metrics">
+                        <div class="m-item">H. Attack Power<br><span class="m-val" style="color:var(--neon)">${d.metrics.h_atk}</span></div>
+                        <div class="m-item">A. Def Vulnerability<br><span class="m-val" style="color:var(--away)">${d.metrics.a_def}</span></div>
+                    </div>
                 </div>
-                <div class="score">${d.score}</div>
-                <div class="prob-bar">
-                    <div class="prob-h" style="width:${d.probs.home}%">${d.probs.home}%</div>
-                    <div class="prob-d" style="width:${d.probs.draw}%">${d.probs.draw}%</div>
-                    <div class="prob-a" style="width:${d.probs.away}%">${d.probs.away}%</div>
-                </div>
-                <div class="gaffer-box">${d.insight}</div>
-                <div class="metrics">
-                    <div class="m-item">H. Attack Power<br><span class="m-val" style="color:var(--neon)">${d.metrics.h_atk}</span></div>
-                    <div class="m-item">A. Def Vulnerability<br><span class="m-val" style="color:var(--away)">${d.metrics.a_def}</span></div>
-                </div>
-            </div>
-        `;
+            `;
+        } catch (e) {
+            out.innerHTML = '<div class="card">The connection timed out. Wake the Gaffer up and try again!</div>';
+        }
     }
 </script>
 </body>

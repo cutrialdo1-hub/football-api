@@ -1,95 +1,216 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>THE GAFFER</title>
-    <style>
-        :root { --neon:#00ff9d; --bg:#0a0b10; --card:#151821; --border:#2a2d3a; --away:#ff3366; --draw:#8892b0; }
-        body { background:var(--bg); color:#fff; font-family: sans-serif; display:flex; justify-content:center; padding:20px; }
-        .container { width:100%; max-width:450px; }
-        .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:20px; margin-bottom:15px; }
-        input, select, button { width:100%; padding:12px; margin-top:10px; border-radius:8px; border:1px solid var(--border); background:#000; color:#fff; font-size: 1rem; }
-        button { background:var(--neon); color:#000; font-weight:bold; cursor:pointer; border:none; text-transform: uppercase; }
-        button:disabled { background:#222; color:#555; }
-        .score { font-size:4rem; text-align:center; font-weight: bold; margin: 10px 0; color: #fff; }
-        .prob-bar { display:flex; height:14px; border-radius:7px; overflow:hidden; margin-top:15px; background:#222; }
-        .prob-h { background:var(--neon); height:100%; }
-        .prob-d { background:var(--draw); height:100%; }
-        .prob-a { background:var(--away); height:100%; }
-        .gaffer-box { margin-top:15px; padding-left:12px; border-left:3px solid var(--neon); color:#cbd5e1; font-style:italic; line-height: 1.4; }
-    </style>
+<meta charset="UTF-8">
+<title>THE GAFFER | Tactical Intelligence</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@300;500;700&display=swap" rel="stylesheet">
+
+<style>
+:root {
+    --neon:#00ff9d;
+    --bg:#0a0b10;
+    --card:#151821;
+    --border:#2a2d3a;
+    --away:#ff3366;
+    --draw:#8892b0;
+}
+
+body {
+    background:var(--bg);
+    color:#fff;
+    font-family:Inter,sans-serif;
+    display:flex;
+    justify-content:center;
+    padding:20px;
+}
+
+.container { width:100%; max-width:480px; }
+
+h1 {
+    font-family:Orbitron;
+    color:var(--neon);
+    text-align:center;
+    letter-spacing:5px;
+    font-size:1.2rem;
+    margin-bottom:30px;
+}
+
+.card {
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:20px;
+    margin-bottom:20px;
+    text-align:center;
+}
+
+input, select, button {
+    width:100%;
+    padding:14px;
+    margin-bottom:12px;
+    border-radius:10px;
+    background:#000;
+    border:1px solid var(--border);
+    color:#fff;
+}
+
+button {
+    background:var(--neon);
+    color:#000;
+    font-weight:800;
+    font-family:Orbitron;
+    cursor:pointer;
+}
+
+button:disabled {
+    background:#1a1a1a;
+    color:#444;
+    cursor:not-allowed;
+}
+
+.score { font-family:Orbitron; font-size:4rem; }
+
+.prob-bar {
+    display:flex;
+    height:28px;
+    border-radius:8px;
+    overflow:hidden;
+    margin:20px 0;
+    font-family:Orbitron;
+    font-size:0.7rem;
+}
+
+.prob-h { background:var(--neon); color:#000; }
+.prob-d { background:var(--draw); color:#000; }
+.prob-a { background:var(--away); color:#000; }
+
+.gaffer-box {
+    background:rgba(0,255,157,0.05);
+    border-left:4px solid var(--neon);
+    padding:20px;
+    text-align:left;
+    font-style:italic;
+}
+
+.loader {
+    border:3px solid #222;
+    border-top:3px solid var(--neon);
+    border-radius:50%;
+    width:30px;
+    height:30px;
+    margin:20px auto;
+    animation:spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform:rotate(360deg); }
+}
+</style>
 </head>
+
 <body>
+
 <div class="container">
-    <h1 style="color:var(--neon); text-align:center; letter-spacing:3px;">THE GAFFER</h1>
+    <h1>THE GAFFER</h1>
+
     <div class="card">
-        <input type="date" id="m_date">
+        <input type="date" id="date">
         <button onclick="getFixtures()">SCAN FIXTURES</button>
     </div>
+
     <div class="card">
-        <select id="m_list" onchange="document.getElementById('p_btn').disabled=false">
-            <option value="">Select match</option>
+        <select id="matches" onchange="toggleBtn()">
+            <option value="">Waiting...</option>
         </select>
-        <button id="p_btn" onclick="predict()" disabled>GET VERDICT</button>
+        <button id="btn" onclick="predict()" disabled>GET VERDICT</button>
     </div>
+
     <div id="output"></div>
 </div>
 
 <script>
-    const API = "https://football-api-9e4p.onrender.com";
-    let matches = [];
+const API = "https://football-api-9e4p.onrender.com";
+let fixtures = [];
 
-    async function getFixtures() {
-        const d = document.getElementById("m_date").value;
-        const sel = document.getElementById("m_list");
-        if(!d) return;
-        sel.innerHTML = "<option>Scanning...</option>";
-        try {
-            const res = await fetch(`${API}/fixtures?date=${d}`);
-            matches = await res.json();
-            if(matches.length === 0) {
-                sel.innerHTML = "<option>No major games found</option>";
-            } else {
-                sel.innerHTML = "<option value=''>-- Choose Match --</option>";
-                matches.forEach((m, i) => {
-                    sel.innerHTML += `<option value="${i}">${m.home} vs ${m.away}</option>`;
-                });
-            }
-        } catch(e) { sel.innerHTML = "<option>Server waking up... Try again</option>"; }
-    }
+function toggleBtn() {
+    document.getElementById("btn").disabled =
+        document.getElementById("matches").value === "";
+}
 
-    async function predict() {
-        const idx = document.getElementById("m_list").value;
-        const out = document.getElementById("output");
-        out.innerHTML = "<div class='card' style='text-align:center'>Consulting the tactical board...</div>";
-        try {
-            const res = await fetch(`${API}/predict`, {
-                method:"POST",
-                headers:{"Content-Type":"application/json"},
-                body: JSON.stringify(matches[idx])
-            });
-            const d = await res.json();
-            out.innerHTML = `
-            <div class="card">
-                <div style="display:flex; justify-content:space-between; font-size:0.7rem; color:var(--draw); margin-bottom:5px;">
-                    <span>${matches[idx].home} (Rank ${d.h_rank})</span>
-                    <span>${matches[idx].away} (Rank ${d.a_rank})</span>
-                </div>
-                <div class="score">${d.score}</div>
-                <div class="prob-bar">
-                    <div class="prob-h" style="width:${d.probs.home}%"></div>
-                    <div class="prob-d" style="width:${d.probs.draw}%"></div>
-                    <div class="prob-a" style="width:${d.probs.away}%"></div>
-                </div>
-                <div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-top:8px; font-weight:bold;">
-                    <span style="color:var(--neon)">HOME: ${d.probs.home}%</span>
-                    <span style="color:var(--draw)">DRAW: ${d.probs.draw}%</span>
-                    <span style="color:var(--away)">AWAY: ${d.probs.away}%</span>
-                </div>
-                <div class="gaffer-box">${d.insight}</div>
-            </div>`;
-        } catch(e) { out.innerHTML = "<div class='card'>Tactical error. Try again.</div>"; }
+async function getFixtures() {
+    const date = document.getElementById("date").value;
+    if (!date) return;
+
+    const select = document.getElementById("matches");
+    select.innerHTML = "<option>Loading...</option>";
+
+    try {
+        const res = await fetch(`${API}/fixtures?date=${date}`);
+        fixtures = await res.json();
+
+        if (!fixtures.length) {
+            select.innerHTML = "<option>No Games</option>";
+            return;
+        }
+
+        select.innerHTML = "<option value=''>Select Match</option>";
+
+        fixtures.forEach((m, i) => {
+            select.innerHTML += `
+                <option value="${i}">
+                    [${m.league}] ${m.home} vs ${m.away}
+                </option>`;
+        });
+
+    } catch (e) {
+        select.innerHTML = "<option>Error loading</option>";
     }
+}
+
+async function predict() {
+    const i = document.getElementById("matches").value;
+    if (i === "") return;
+
+    const out = document.getElementById("output");
+    out.innerHTML = "<div class='loader'></div>";
+
+    try {
+        const res = await fetch(`${API}/predict`, {
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body: JSON.stringify(fixtures[i])
+        });
+
+        const d = await res.json();
+
+        if (d.error) {
+            out.innerHTML = `<div class="card">${d.error}</div>`;
+            return;
+        }
+
+        out.innerHTML = `
+        <div class="card">
+            <div style="display:flex;justify-content:space-between;font-size:0.75rem">
+                <div><b>${fixtures[i].home}</b><br>Rank ${d.h_rank}</div>
+                <div><b>${fixtures[i].away}</b><br>Rank ${d.a_rank}</div>
+            </div>
+
+            <div class="score">${d.score}</div>
+
+            <div class="prob-bar">
+                <div class="prob-h" style="width:${d.probs.home}%">${d.probs.home}%</div>
+                <div class="prob-d" style="width:${d.probs.draw}%">${d.probs.draw}%</div>
+                <div class="prob-a" style="width:${d.probs.away}%">${d.probs.away}%</div>
+            </div>
+
+            <div class="gaffer-box">${d.insight}</div>
+        </div>`;
+    } catch (e) {
+        out.innerHTML = "<div class='card'>Server error</div>";
+    }
+}
 </script>
+
 </body>
 </html>

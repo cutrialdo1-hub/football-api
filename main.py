@@ -13,99 +13,65 @@ API_KEY = os.getenv("FOOTBALL_API_KEY")
 BASE_URL = "https://api.football-data.org/v4"
 HEADERS = {"X-Auth-Token": API_KEY}
 
-# -----------------------------
-# CACHE
-# -----------------------------
-competitions_cache = {"t": 0, "data": []}
-standings_cache = {}
+# FULL 12 FREE COMPETITIONS
+COMPETITIONS = [
+    "CL", "PL", "BL1", "SA", "PD", "FL1",
+    "DED", "PPL", "BSA", "ELC", "WC", "EC"
+]
 
-# -----------------------------
-# API HELPERS
-# -----------------------------
+cache = {}
+
+# ---------------------------
+# POISSON
+# ---------------------------
 def poisson(k, lam):
-    lam = max(lam, 0.01)
-    return (lam ** k * math.exp(-lam)) / math.factorial(k)
+    lam = max(min(lam, 3.5), 0.2)  # IMPORTANT FIX (prevents 4-4 chaos)
+    return (lam**k * math.exp(-lam)) / math.factorial(k)
 
-def clamp(x, low=0.4, high=2.5):
-    return max(low, min(x, high))
-
-# -----------------------------
-# COMPETITIONS (FIXED PROPERLY)
-# -----------------------------
-def get_free_competitions():
-    r = requests.get(f"{BASE_URL}/competitions", headers=HEADERS)
-    if r.status_code != 200:
-        return []
-
-    comps = r.json().get("competitions", [])
-
-    free = [
-        c["code"]
-        for c in comps
-        if c.get("plan") == "TIER_ONE"
-        and c.get("code")
-    ]
-
-    return free
-
-def get_competitions_cached():
-    now = time.time()
-
-    if competitions_cache["data"] and now - competitions_cache["t"] < 86400:
-        return competitions_cache["data"]
-
-    data = get_free_competitions()
-
-    competitions_cache["t"] = now
-    competitions_cache["data"] = data
-
-    return data
-
-# -----------------------------
+# ---------------------------
 # STANDINGS
-# -----------------------------
+# ---------------------------
 def get_standings(code):
     now = time.time()
 
-    if code in standings_cache and now - standings_cache[code]["t"] < 86400:
-        return standings_cache[code]["d"]
+    if code in cache and now - cache[code]["t"] < 86400:
+        return cache[code]["d"]
 
-    r = requests.get(
-        f"{BASE_URL}/competitions/{code}/standings",
-        headers=HEADERS
-    )
-
+    r = requests.get(f"{BASE_URL}/competitions/{code}/standings", headers=HEADERS)
     if r.status_code != 200:
         return {}
 
+    data = r.json()
+
     try:
-        total = next(
-            s for s in r.json()["standings"]
-            if s["type"] == "TOTAL"
-        )["table"]
+        total = next(s for s in data["standings"] if s["type"] == "TOTAL")["table"]
 
         out = {}
 
         for t in total:
             tid = t["team"]["id"]
+
             played = max(t["playedGames"], 1)
+
+            gf = t["goalsFor"] / played
+            ga = t["goalsAgainst"] / played
 
             out[tid] = {
                 "name": t["team"]["name"],
                 "rank": t["position"],
-                "gf": t["goalsFor"] / played,
-                "ga": t["goalsAgainst"] / played
+                "gf": gf,
+                "ga": ga
             }
 
-        standings_cache[code] = {"t": now, "d": out}
+        cache[code] = {"t": now, "d": out}
         return out
 
     except:
         return {}
 
-# -----------------------------
-# FORM MODEL
-# -----------------------------
+# ---------------------------
+# FORM (FIXED WEIGHTING)
+# ---------------------------
 def form(team_id):
     r = requests.get(
         f"{BASE_URL}/teams/{team_id}/matches?status=FINISHED&limit=5",
@@ -116,6 +82,7 @@ def form(team_id):
         return 1.0, 0
 
     matches = r.json().get("matches", [])
+
     pts = 0
 
     for m in matches:
@@ -129,51 +96,50 @@ def form(team_id):
         elif hs == aw:
             pts += 1
 
-    return 0.85 + (pts / 20), pts
+    strength = 0.85 + (pts / 15) * 0.25  # tighter scaling
+    return strength, pts
 
-# -----------------------------
-# FIXTURES (NOW COMPLETE)
-# -----------------------------
+# ---------------------------
+# FIXTURES (ALL 12 COMPETITIONS)
+# ---------------------------
 @app.route("/fixtures")
 def fixtures():
     date = request.args.get("date")
-
-    if not date:
-        return jsonify([])
-
-    date_to = (
-        datetime.strptime(date, "%Y-%m-%d") + timedelta(days=1)
-    ).strftime("%Y-%m-%d")
-
-    competitions = get_competitions_cached()
+    date_to = (datetime.strptime(date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
 
     all_matches = []
 
-    for comp in competitions:
-        r = requests.get(
-            f"{BASE_URL}/competitions/{comp}/matches",
-            headers=HEADERS,
-            params={"dateFrom": date, "dateTo": date_to}
-        )
+    for comp in COMPETITIONS:
+        try:
+            r = requests.get(
+                f"{BASE_URL}/competitions/{comp}/matches",
+                headers=HEADERS,
+                params={"dateFrom": date, "dateTo": date_to}
+            )
 
-        if r.status_code != 200:
+            if r.status_code != 200:
+                continue
+
+            matches = r.json().get("matches", [])
+
+            for m in matches:
+                all_matches.append({
+                    "home": m["homeTeam"]["name"],
+                    "home_id": m["homeTeam"]["id"],
+                    "away": m["awayTeam"]["name"],
+                    "away_id": m["awayTeam"]["id"],
+                    "comp": comp,
+                    "league": m["competition"]["name"]
+                })
+
+        except:
             continue
-
-        for m in r.json().get("matches", []):
-            all_matches.append({
-                "home": m["homeTeam"]["name"],
-                "home_id": m["homeTeam"]["id"],
-                "away": m["awayTeam"]["name"],
-                "away_id": m["awayTeam"]["id"],
-                "comp": comp,
-                "league": m["competition"]["name"]
-            })
 
     return jsonify(all_matches)
 
-# -----------------------------
-# PREDICTION ENGINE (STABLE)
-# -----------------------------
+# ---------------------------
+# PREDICTION (FIXED MODEL)
+# ---------------------------
 @app.route("/predict", methods=["POST"])
 def predict():
     data = request.json
@@ -189,21 +155,20 @@ def predict():
     hf, hp = form(data["home_id"])
     af, ap = form(data["away_id"])
 
-    HOME_ADV = 1.10
+    # FIXED XG MODEL (more stable football logic)
+    home_adv = 1.10
 
-    # --- Expected Goals ---
-    hxg = (h["gf"] * a["ga"]) * hf * HOME_ADV
+    hxg = (h["gf"] * a["ga"]) * hf * home_adv
     axg = (a["gf"] * h["ga"]) * af
 
-    # clamp to stop unrealistic scorelines
-    hxg = clamp(hxg)
-    axg = clamp(axg)
+    hxg = max(min(hxg, 3.0), 0.3)
+    axg = max(min(axg, 3.0), 0.3)
 
     best, score = 0, "1-1"
     hw = dw = aw = 0
 
-    for i in range(5):
-        for j in range(5):
+    for i in range(6):
+        for j in range(6):
             p = poisson(i, hxg) * poisson(j, axg)
 
             if p > best:
@@ -222,17 +187,17 @@ def predict():
     return jsonify({
         "score": score,
         "probs": {
-            "home": round(hw / total * 100),
-            "draw": round(dw / total * 100),
-            "away": round(aw / total * 100)
+            "home": round(hw/total*100),
+            "draw": round(dw/total*100),
+            "away": round(aw/total*100)
         },
         "h_rank": h["rank"],
         "a_rank": a["rank"],
-        "insight": f"{data['home']} vs {data['away']} now uses full free-tier dataset with stabilised xG modelling."
+        "insight": f"{data['home']} vs {data['away']} tactical model stabilised."
     })
 
-# -----------------------------
-# START SERVER
-# -----------------------------
+# ---------------------------
+# RUN
+# ---------------------------
 if __name__ == "__main__":
-    app.run()
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))

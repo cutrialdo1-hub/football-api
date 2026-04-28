@@ -1,219 +1,127 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>THE GAFFER | Tactical Intelligence</title>
+<meta charset="UTF-8">
+<title>THE GAFFER | Tactical Intelligence</title>
 
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@300;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@300;500;700&display=swap" rel="stylesheet">
 
-    <style>
-        :root {
-            --neon: #00ff9d;
-            --bg: #0a0b10;
-            --card: #151821;
-            --border: #2a2d3a;
-            --away: #ff3366;
-            --draw: #8892b0;
-        }
+<style>
+:root {
+    --neon:#00ff9d;
+    --bg:#0a0b10;
+    --card:#151821;
+    --border:#2a2d3a;
+    --away:#ff3366;
+    --draw:#8892b0;
+}
 
-        body {
-            background: var(--bg);
-            color: #fff;
-            font-family: 'Inter', sans-serif;
-            display: flex;
-            justify-content: center;
-            padding: 20px;
-        }
+body {
+    background: var(--bg);
+    color: #fff;
+    font-family: Inter, sans-serif;
+    display:flex;
+    justify-content:center;
+    padding:20px;
+}
 
-        .container {
-            width: 100%;
-            max-width: 480px;
-        }
+.container { width:100%; max-width:480px; }
 
-        h1 {
-            font-family: 'Orbitron';
-            color: var(--neon);
-            text-align: center;
-            letter-spacing: 5px;
-            font-size: 1.2rem;
-            margin-bottom: 30px;
-        }
+h1 {
+    font-family: Orbitron;
+    color: var(--neon);
+    text-align:center;
+    letter-spacing:5px;
+}
 
-        .card {
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
-            text-align: center;
-        }
+.card {
+    background: var(--card);
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:20px;
+    margin-bottom:20px;
+}
 
-        /* CALENDAR VISIBILITY FIX */
-        input[type="date"] {
-            width: 100%;
-            background: #000;
-            border: 1px solid var(--border);
-            color: #fff;
-            padding: 14px;
-            border-radius: 10px;
-            margin-bottom: 12px;
-            font-size: 0.9rem;
-            box-sizing: border-box;
-            outline: none;
-        }
+input, select, button {
+    width:100%;
+    padding:14px;
+    margin-bottom:12px;
+    border-radius:10px;
+    border:1px solid var(--border);
+    background:#000;
+    color:#fff;
+}
 
-        input[type="date"]::-webkit-calendar-picker-indicator {
-            filter: invert(1) brightness(1.5);
-            cursor: pointer;
-        }
+button {
+    background:var(--neon);
+    color:#000;
+    font-weight:800;
+    font-family:Orbitron;
+    cursor:pointer;
+}
 
-        select, button {
-            width: 100%;
-            background: #000;
-            border: 1px solid var(--border);
-            color: #fff;
-            padding: 14px;
-            border-radius: 10px;
-            margin-bottom: 12px;
-            font-size: 0.9rem;
-            box-sizing: border-box;
-            outline: none;
-        }
+button:disabled {
+    background:#222;
+    color:#555;
+    cursor:not-allowed;
+}
 
-        button {
-            background: var(--neon);
-            color: #000;
-            font-weight: 800;
-            font-family: 'Orbitron';
-            border: none;
-            cursor: pointer;
-            transition: 0.2s;
-        }
+.score {
+    font-family:Orbitron;
+    font-size:3rem;
+    text-align:center;
+}
 
-        button:disabled {
-            background: #1a1a1a;
-            color: #444;
-            cursor: not-allowed;
-        }
+.prob-bar {
+    display:flex;
+    height:28px;
+    margin:20px 0;
+    font-family:Orbitron;
+}
 
-        .score {
-            font-family: 'Orbitron';
-            font-size: 4.5rem;
-            color: #fff;
-            margin: 10px 0;
-        }
+.prob-h { background:var(--neon); color:#000; }
+.prob-d { background:var(--draw); }
+.prob-a { background:var(--away); }
 
-        .gaffer-box {
-            background: rgba(0,255,157,0.05);
-            padding: 20px;
-            border-radius: 12px;
-            border-left: 4px solid var(--neon);
-            font-style: italic;
-            line-height: 1.6;
-            color: #cbd5e1;
-            margin: 20px 0;
-            text-align: left;
-        }
+.prob-h, .prob-d, .prob-a {
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:0.7rem;
+}
 
-        .gaffer-box::after {
-            content: "— The Gaffer";
-            display: block;
-            text-align: right;
-            color: var(--neon);
-            font-size: 0.7rem;
-            margin-top: 10px;
-            font-family: 'Orbitron';
-        }
+.loader {
+    border:3px solid #222;
+    border-top:3px solid var(--neon);
+    border-radius:50%;
+    width:30px;
+    height:30px;
+    animation:spin 1s linear infinite;
+    margin:20px auto;
+}
 
-        .prob-bar {
-            height: 28px;
-            display: flex;
-            background: #000;
-            border-radius: 8px;
-            overflow: hidden;
-            margin: 20px 0;
-            font-family: 'Orbitron';
-            font-size: 0.7rem;
-            line-height: 28px;
-        }
-
-        .prob-h {
-            background: var(--neon);
-            color: #000;
-            transition: width 1s;
-        }
-
-        .prob-d {
-            background: var(--draw);
-            color: #000;
-            transition: width 1s;
-        }
-
-        .prob-a {
-            background: var(--away);
-            color: #000;
-            transition: width 1s;
-        }
-
-        .metrics {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin-top: 20px;
-        }
-
-        .m-item {
-            background: #0b0d14;
-            padding: 10px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            font-size: 0.75rem;
-            color: #8892b0;
-        }
-
-        .m-val {
-            color: #fff;
-            font-weight: bold;
-            font-size: 1rem;
-            display: block;
-            margin-top: 4px;
-        }
-
-        .loader {
-            border: 3px solid #222;
-            border-top: 3px solid var(--neon);
-            border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            animation: spin 1s linear infinite;
-            margin: 20px auto;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-    </style>
+@keyframes spin {
+    100% { transform:rotate(360deg); }
+}
+</style>
 </head>
 
 <body>
+
 <div class="container">
     <h1>THE GAFFER</h1>
 
     <div class="card">
-        <input type="date" id="m_date">
+        <input type="date" id="date">
         <button onclick="getFixtures()">SCAN FIXTURES</button>
     </div>
 
     <div class="card">
-        <select id="m_list" onchange="checkSelection()">
-            <option value="">Waiting for Scan...</option>
+        <select id="matches" onchange="check()">
+            <option value="">Waiting...</option>
         </select>
 
-        <button id="predict_btn" onclick="predict()" disabled>
-            GET THE VERDICT
-        </button>
+        <button id="btn" onclick="predict()" disabled>GET VERDICT</button>
     </div>
 
     <div id="output"></div>
@@ -223,79 +131,55 @@
 const API = "https://football-api-9e4p.onrender.com";
 let matches = [];
 
-function checkSelection() {
-    document.getElementById('predict_btn').disabled =
-        document.getElementById('m_list').value === "";
+function check(){
+    document.getElementById("btn").disabled =
+        document.getElementById("matches").value === "";
 }
 
-async function getFixtures() {
-    const d = document.getElementById('m_date').value;
-    if (!d) return;
+async function getFixtures(){
+    const date = document.getElementById("date").value;
+    const sel = document.getElementById("matches");
 
-    const sel = document.getElementById('m_list');
-    sel.innerHTML = '<option>Loading...</option>';
+    sel.innerHTML = "<option>Loading...</option>";
 
-    const res = await fetch(`${API}/fixtures?date=${d}`);
+    const res = await fetch(`${API}/fixtures?date=${date}`);
     matches = await res.json();
 
-    sel.innerHTML = matches.length
-        ? '<option value="">-- Select Match --</option>'
-        : '<option>No Games Found</option>';
+    sel.innerHTML = "<option value=''>Select Match</option>";
 
-    matches.forEach((m, i) => {
-        sel.innerHTML += `<option value="${i}">[${m.league}] ${m.home} vs ${m.away}</option>`;
+    matches.forEach((m,i)=>{
+        sel.innerHTML += `<option value="${i}">${m.home} vs ${m.away}</option>`;
     });
 }
 
-async function predict() {
-    const idx = document.getElementById('m_list').value;
-    const out = document.getElementById('output');
+async function predict(){
+    const i = document.getElementById("matches").value;
+    const out = document.getElementById("output");
 
-    out.innerHTML = '<div class="loader"></div>';
+    out.innerHTML = "<div class='loader'></div>";
 
-    try {
-        const res = await fetch(`${API}/predict`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(matches[idx])
-        });
+    const res = await fetch(`${API}/predict`, {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(matches[i])
+    });
 
-        const d = await res.json();
+    const d = await res.json();
 
-        out.innerHTML = `
-            <div class="card">
-                <div style="display:flex; justify-content:space-between; font-size:0.7rem; color:var(--draw); margin-bottom:10px;">
-                    <span><b>${matches[idx].home}</b> (Rank: ${d.h_rank})</span>
-                    <span><b>${matches[idx].away}</b> (Rank: ${d.a_rank})</span>
-                </div>
+    out.innerHTML = `
+    <div class="card">
+        <div class="score">${d.score}</div>
 
-                <div class="score">${d.score}</div>
+        <div class="prob-bar">
+            <div class="prob-h" style="width:${d.probs.home}%">${d.probs.home}%</div>
+            <div class="prob-d" style="width:${d.probs.draw}%">${d.probs.draw}%</div>
+            <div class="prob-a" style="width:${d.probs.away}%">${d.probs.away}%</div>
+        </div>
 
-                <div class="prob-bar">
-                    <div class="prob-h" style="width:${d.probs.home}%">${d.probs.home}%</div>
-                    <div class="prob-d" style="width:${d.probs.draw}%">${d.probs.draw}%</div>
-                    <div class="prob-a" style="width:${d.probs.away}%">${d.probs.away}%</div>
-                </div>
-
-                <div class="gaffer-box">${d.insight}</div>
-
-                <div class="metrics">
-                    <div class="m-item">
-                        Home Attack<br>
-                        <span class="m-val">${d.metrics.h_atk}</span>
-                    </div>
-
-                    <div class="m-item">
-                        Away Def Vulnerability<br>
-                        <span class="m-val">${d.metrics.a_def}</span>
-                    </div>
-                </div>
-            </div>
-        `;
-    } catch (e) {
-        out.innerHTML = '<div class="card">API Offline. Check Render logs.</div>';
-    }
+        <p>${d.insight}</p>
+    </div>`;
 }
 </script>
+
 </body>
 </html>

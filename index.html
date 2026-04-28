@@ -16,10 +16,11 @@ button:disabled { background:#1a1a1a; color:#444; }
 .score { font-family:Orbitron; font-size:4rem; text-align:center; margin:10px 0; color:var(--neon); }
 .prob-bar { display:flex; height:24px; border-radius:6px; overflow:hidden; margin:20px 0; font-family:Orbitron; font-size:0.7rem; line-height:24px; text-align:center; }
 .p-h { background:var(--neon); color:#000; } .p-d { background:var(--draw); color:#000; } .p-a { background:var(--away); color:#000; }
-.form-row { display:flex; gap:4px; justify-content:center; margin-top:8px; }
-.dot { width:20px; height:20px; border-radius:50%; font-size:10px; line-height:20px; text-align:center; font-weight:bold; color:#000; }
+.form-section { display:flex; gap:4px; margin-top:8px; }
+.dot { width:22px; height:22px; border-radius:4px; font-size:10px; line-height:22px; text-align:center; font-weight:bold; color:#000; }
 .W { background:var(--neon); } .D { background:var(--draw); } .L { background:var(--away); }
-.gaffer-box { background:rgba(0,255,157,0.05); border-left:4px solid var(--neon); padding:15px; margin-top:20px; font-style:italic; font-size:0.9rem; line-height:1.5; }
+.gaffer-box { background:rgba(0,255,157,0.05); border-left:4px solid var(--neon); padding:15px; margin-top:20px; font-style:italic; font-size:0.95rem; line-height:1.6; position: relative; }
+.signature { font-family:Orbitron; color:var(--neon); font-size:0.8rem; text-align:right; margin-top:15px; letter-spacing:2px; font-weight:700; border-top: 1px solid rgba(0,255,157,0.1); padding-top:10px; }
 .loader { border:3px solid #222; border-top:3px solid var(--neon); border-radius:50%; width:30px; height:30px; margin:20px auto; animation:spin 1s linear infinite; }
 @keyframes spin { to { transform:rotate(360deg); } }
 </style>
@@ -52,7 +53,7 @@ async function getFixtures() {
 }
 
 function renderForm(str) {
-    return `<div class="form-row">${str.split('').map(c => `<div class="dot ${c}">${c}</div>`).join('')}</div>`;
+    return `<div class="form-section">${str.split('').map(c => `<div class="dot ${c}">${c}</div>`).join('')}</div>`;
 }
 
 async function predict() {
@@ -65,9 +66,17 @@ async function predict() {
     const d = await res.json();
     out.innerHTML = `
     <div class="card">
-        <div style="display:flex;justify-content:space-between;font-size:0.8rem">
-            <div style="text-align:left"><b>${fixtures[i].home}</b><br>Rank: ${d.h_rank}${renderForm(d.h_form)}</div>
-            <div style="text-align:right"><b>${fixtures[i].away}</b><br>Rank: ${d.a_rank}${renderForm(d.a_form)}</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+            <div style="text-align:left; width: 45%;">
+                <div style="font-size:0.9rem; font-weight:700;">${fixtures[i].home}</div>
+                <div style="font-size:0.7rem; color:var(--draw)">Rank: ${d.h_rank}</div>
+                ${renderForm(d.h_form)}
+            </div>
+            <div style="text-align:right; width: 45%;">
+                <div style="font-size:0.9rem; font-weight:700;">${fixtures[i].away}</div>
+                <div style="font-size:0.7rem; color:var(--draw)">Rank: ${d.a_rank}</div>
+                ${renderForm(d.a_form)}
+            </div>
         </div>
         <div class="score">${d.score}</div>
         <div class="prob-bar">
@@ -75,7 +84,11 @@ async function predict() {
             <div class="p-d" style="width:${d.probs.draw}%">${d.probs.draw}%</div>
             <div class="p-a" style="width:${d.probs.away}%">${d.probs.away}%</div>
         </div>
-        <div class="gaffer-box"><b>THE GAFFER:</b><br>${d.insight}</div>
+        <div class="gaffer-box">
+            <b>SCOUTING REPORT:</b><br>
+            ${d.insight}
+            <div class="signature">THE GAFFER</div>
+        </div>
     </div>`;
 }
 </script>

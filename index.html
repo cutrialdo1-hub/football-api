@@ -11,14 +11,13 @@
         h1 { font-family: 'Orbitron'; color: var(--neon); text-align: center; letter-spacing: 5px; font-size: 1.2rem; margin-bottom: 30px; }
         .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; margin-bottom: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.4); text-align: center; }
         
-        /* CALENDAR VISIBILITY FIX */
+        /* DATE INPUT & CALENDAR ICON FIX */
         input[type="date"] { 
             width: 100%; background: #000; border: 1px solid var(--border); color: #fff; padding: 14px; 
             border-radius: 10px; margin-bottom: 12px; font-size: 0.9rem; box-sizing: border-box; outline: none; 
         }
         input[type="date"]::-webkit-calendar-picker-indicator {
-            filter: invert(1) brightness(1.5);
-            cursor: pointer;
+            filter: invert(1) brightness(1.5); cursor: pointer;
         }
 
         select, button { width: 100%; background: #000; border: 1px solid var(--border); color: #fff; padding: 14px; border-radius: 10px; margin-bottom: 12px; font-size: 0.9rem; box-sizing: border-box; outline: none; }
@@ -26,17 +25,19 @@
         button:disabled { background: #1a1a1a; color: #444; cursor: not-allowed; }
         
         .score { font-family: 'Orbitron'; font-size: 4.5rem; color: #fff; margin: 10px 0; }
-        .gaffer-box { background: rgba(0,255,157,0.05); padding: 20px; border-radius: 12px; border-left: 4px solid var(--neon); font-style: italic; line-height: 1.6; color: #cbd5e1; margin: 20px 0; text-align: left; }
+        .gaffer-box { background: rgba(0,255,157,0.05); padding: 20px; border-radius: 12px; border-left: 4px solid var(--neon); font-style: italic; line-height: 1.6; color: #cbd5e1; margin: 20px 0; text-align: left; white-space: pre-line; }
         .gaffer-box::after { content: "— The Gaffer"; display: block; text-align: right; color: var(--neon); font-size: 0.7rem; margin-top: 10px; font-family: 'Orbitron'; }
         
-        .prob-bar { height: 28px; display: flex; background: #000; border-radius: 8px; overflow: hidden; margin: 20px 0; font-family: 'Orbitron'; font-size: 0.7rem; line-height: 28px;}
+        .prob-bar { height: 28px; display: flex; background: #000; border-radius: 8px; overflow: hidden; margin: 20px 0; font-family: 'Orbitron'; font-size: 0.7rem; line-height: 28px; font-weight: bold; }
         .prob-h { background: var(--neon); color: #000; transition: width 1s; }
         .prob-d { background: var(--draw); color: #000; transition: width 1s; }
         .prob-a { background: var(--away); color: #000; transition: width 1s; }
         
+        /* RESTORED METRICS GRID */
         .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
-        .m-item { background: #0b0d14; padding: 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.75rem; color: #8892b0;}
+        .m-item { background: #0b0d14; padding: 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.75rem; color: #8892b0; text-align: left;}
         .m-val { color: #fff; font-weight: bold; font-size: 1rem; display: block; margin-top: 4px;}
+        
         .loader { border: 3px solid #222; border-top: 3px solid var(--neon); border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 20px auto; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
@@ -87,9 +88,9 @@
             const d = await res.json();
             out.innerHTML = `
                 <div class="card">
-                    <div style="display:flex; justify-content:space-between; font-size:0.7rem; color:var(--draw); margin-bottom:10px;">
-                        <span><b>${matches[idx].home}</b> (Rank: ${d.h_rank})</span>
-                        <span><b>${matches[idx].away}</b> (Rank: ${d.a_rank})</span>
+                    <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:var(--draw); margin-bottom:15px;">
+                        <span style="text-align:left"><b>${matches[idx].home}</b><br>Rank: ${d.h_rank}</span>
+                        <span style="text-align:right"><b>${matches[idx].away}</b><br>Rank: ${d.a_rank}</span>
                     </div>
                     <div class="score">${d.score}</div>
                     <div class="prob-bar">
@@ -98,12 +99,17 @@
                         <div class="prob-a" style="width:${d.probs.away}%">${d.probs.away}%</div>
                     </div>
                     <div class="gaffer-box">${d.insight}</div>
+                    
                     <div class="metrics">
-                        <div class="m-item">Home Attack<br><span class="m-val">${d.metrics.h_atk}</span></div>
-                        <div class="m-item">Away Def Vulnerability<br><span class="m-val">${d.metrics.a_def}</span></div>
+                        <div class="m-item">H. Attack Power<br><span class="m-val" style="color:var(--neon)">${d.metrics.h_atk}</span></div>
+                        <div class="m-item">H. Def Solidity<br><span class="m-val" style="color:var(--draw)">${d.metrics.h_def}</span></div>
+                        <div class="m-item">A. Attack Power<br><span class="m-val" style="color:var(--draw)">${d.metrics.a_atk}</span></div>
+                        <div class="m-item">A. Def Vulnerability<br><span class="m-val" style="color:var(--away)">${d.metrics.a_def}</span></div>
+                        <div class="m-item">Home Form (Last 5)<br><span class="m-val">${d.metrics.h_form} pts</span></div>
+                        <div class="m-item">Away Form (Last 5)<br><span class="m-val">${d.metrics.a_form} pts</span></div>
                     </div>
                 </div>`;
-        } catch (e) { out.innerHTML = '<div class="card">API Offline. Check Render logs.</div>'; }
+        } catch (e) { out.innerHTML = '<div class="card">The Gaffer is offline.</div>'; }
     }
 </script>
 </body>

@@ -6,15 +6,18 @@ import random
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from datetime import datetime, timedelta
+from google import genai
 
 app = Flask(__name__)
 CORS(app)
 
 # --- CONFIG ---
 API_KEY = os.environ.get("FOOTBALL_API_KEY")
+# Initialize Gemini Client
+client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+
 BASE_URL = "https://api.football-data.org/v4"
 HEADERS = {"X-Auth-Token": API_KEY}
-
 FREE_COMPS = "CL,PL,ELC,BL1,SA,PD,FL1,DED,PPL,BSA,EC,WC"
 standings_cache = {}
 
@@ -70,56 +73,37 @@ def get_form(team_id):
     pts = sum(3 if (x["score"]["fullTime"]["home"] > x["score"]["fullTime"]["away"] and x["homeTeam"]["id"] == team_id) or (x["score"]["fullTime"]["away"] > x["score"]["fullTime"]["home"] and x["awayTeam"]["id"] == team_id) else 1 if x["score"]["fullTime"]["home"] == x["score"]["fullTime"]["away"] else 0 for x in m)
     return 0.85 + (pts/15 * 0.3), pts
 
-def gaffer_logic(h_name, a_name, h_s, a_s, h_pts, a_pts, score):
-    h_rank, a_rank = h_s.get('rank', 10), a_s.get('rank', 10)
-    h_atk, h_def = h_s.get('h_atk', 1), h_s.get('h_def', 1)
-    a_atk, a_def = a_s.get('a_atk', 1), a_s.get('a_def', 1)
+def gaffer_ai_verdict(h_name, a_name, h_s, a_s, h_pts, a_pts, score):
+    # Fact sheet for the AI
+    context = f"""
+    Matchup: {h_name} vs {a_name}
+    Table Positions: {h_name} is {h_s['rank']}, {a_name} is {a_s['rank']}
+    Stats: 
+    - {h_name}: Atk Rating {h_s['h_atk']}, Def Rating {h_s['h_def']}, Form {h_pts}pts/15
+    - {a_name}: Atk Rating {a_s['a_atk']}, Def Rating {a_s['a_def']}, Form {a_pts}pts/15
+    Mathematical Prediction: {score}
+    """
+
+    prompt = f"""
+    You are 'The Gaffer', a legendary, blunt, and highly experienced football manager. 
+    Analyze this game in 3 concise sentences.
     
-    # --- PART 1: THE STAKES (Table Context) ---
-    if h_rank <= 6 and a_rank <= 6:
-        stakes = "This is a massive six-pointer at the sharp end of the table. Promotion and European spots are defined by fixtures like this."
-    elif h_rank >= 16 and a_rank >= 16:
-        stakes = "Pure desperation today. It's a six-pointer at the bottom of the table where fear of losing often overrides the desire to win."
-    elif h_rank <= 4 and a_rank >= 14:
-        stakes = f"{h_name} will expect nothing less than three points here, but {a_name} are fighting for their lives and could be dangerous."
-    elif a_rank <= 4 and h_rank >= 14:
-        stakes = f"The visitors are flying high, but trips to struggling sides like {h_name} are classic potential banana skins."
-    elif abs(h_rank - a_rank) <= 3:
-        stakes = "These two are neck-and-neck in the standings. Expect a fiercely contested, cagey affair."
-    else:
-        stakes = f"{h_name} are looking to bridge the gap in the table against a stubborn {a_name} outfit."
-
-    # --- PART 2: TACTICAL INSIGHT (Data-to-English Synthesis) ---
-    insight = ""
-    # Analyze Home Momentum
-    if h_pts >= 10 and h_atk < 1.0:
-        insight += f"{h_name} aren't exactly blowing teams away, but they've mastered the art of grinding out ugly results lately. "
-    elif h_pts >= 10 and h_atk >= 1.2:
-        insight += f"{h_name} are absolutely purring. Their attacking fluidity is perfectly matching their points haul. "
-    elif h_pts <= 5 and h_atk >= 1.1:
-        insight += f"Don't let the recent form fool you; {h_name} are creating enough chances, they just need to find a clinical edge. "
-        
-    # Analyze the Clash
-    if h_atk > 1.1 and a_def > 1.1:
-        insight += f"I suspect the home side will find plenty of joy in the final third against a leaky visiting defense."
-    elif a_atk > 1.1 and h_def > 1.1:
-        insight += f"{a_name} pack a real punch on the road, and the home defense looks highly vulnerable to being caught in transition."
-    elif h_atk < 0.9 and a_atk < 0.9:
-        insight += "With both attacks misfiring recently, the first goal today is going to be absolutely monumental."
-    elif h_def < 0.8 and a_def < 0.8:
-        insight += "We're looking at two highly disciplined defensive units here. Space will be at a premium."
-
-    # --- PART 3: THE VERDICT (Tying predicted score to the narrative) ---
-    h_goals, a_goals = int(score.split('-')[0]), int(score.split('-')[1])
+    1. Don't repeat the raw numbers.
+    2. Contextualize the stakes (e.g., if they are Top 6, mention promotion/playoffs; if Bottom 4, mention the drop).
+    3. Explain the tactical reason why the predicted score of {score} is the likely outcome.
     
-    if h_goals > a_goals:
-        v = f"I'm backing a comfortable {score} home win." if (h_goals - a_goals >= 2) else f"It'll be tight, but I'm calling a {score} home victory."
-    elif a_goals > h_goals:
-        v = f"A dominant {score} away performance is on the cards." if (a_goals - h_goals >= 2) else f"I've got a sneaky feeling for the visitors to nick a {score} win."
-    else:
-        v = "It's got a 0-0 bore draw written all over it." if score == "0-0" else f"I'll sit on the fence with a {score} draw—both sides have enough to hurt each other."
+    Data: {context}
+    """
 
-    return f"{stakes} {insight} {v}"
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-lite", 
+            contents=prompt
+        )
+        return response.text.strip()
+    except Exception as e:
+        print(f"AI Error: {e}")
+        return "The Gaffer is lost in the tactical room. We'll have to rely on the numbers alone for this one."
 
 @app.route("/fixtures", methods=["GET"])
 def fixtures():
@@ -156,10 +140,14 @@ def predict():
             else: a_win += p
 
     total = h_win + draw + a_win
+    
+    # Get the AI verdict
+    insight = gaffer_ai_verdict(data["home"], data["away"], h_s, a_s, h_pts, a_pts, score)
+
     return jsonify({
         "score": score,
         "probs": {"home": round(h_win/total*100), "draw": round(draw/total*100), "away": round(a_win/total*100)},
-        "insight": gaffer_logic(data["home"], data["away"], h_s, a_s, h_pts, a_pts, score),
+        "insight": insight,
         "h_rank": h_s['rank'], "a_rank": a_s['rank'],
         "metrics": {"h_atk": round(h_s.get('h_atk', 1),2), "h_def": round(h_s.get('h_def', 1),2), 
                     "a_atk": round(a_s.get('a_atk', 1),2), "a_def": round(a_s.get('a_def', 1),2), 

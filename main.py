@@ -4,7 +4,7 @@ import time
 import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from datetime import datetime, timedelta
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
@@ -13,7 +13,7 @@ API_KEY = os.getenv("FOOTBALL_API_KEY")
 BASE_URL = "https://api.football-data.org/v4"
 HEADERS = {"X-Auth-Token": API_KEY}
 
-# FULL 12 FREE COMPETITIONS
+# THE 12 COMPETITIONS AVAILABLE ON THE FREE TIER PER LOOKUP TABLES
 COMPETITIONS = [
     "CL", "PL", "BL1", "SA", "PD", "FL1",
     "DED", "PPL", "BSA", "ELC", "WC", "EC"
@@ -21,169 +21,120 @@ COMPETITIONS = [
 
 cache = {}
 
-# ---------------------------
-# POISSON
-# ---------------------------
 def poisson(k, lam):
-    lam = max(min(lam, 3.5), 0.2)  # IMPORTANT FIX (prevents 4-4 chaos)
-    return (lam**k * math.exp(-lam)) / math.factorial(k)
+    lam = max(min(lam, 4.0), 0.1) 
+    return (math.pow(lam, k) * math.exp(-lam)) / math.factorial(k)
 
-# ---------------------------
-# STANDINGS
-# ---------------------------
 def get_standings(code):
     now = time.time()
-
     if code in cache and now - cache[code]["t"] < 86400:
         return cache[code]["d"]
 
-    r = requests.get(f"{BASE_URL}/competitions/{code}/standings", headers=HEADERS)
-    if r.status_code != 200:
-        return {}
-
-    data = r.json()
-
     try:
-        total = next(s for s in data["standings"] if s["type"] == "TOTAL")["table"]
-
+        r = requests.get(f"{BASE_URL}/competitions/{code}/standings", headers=HEADERS, timeout=5)
+        if r.status_code != 200: return {}
+        data = r.json()
+        
+        # Doc adaptation: Navigate 'standings' list to find 'TOTAL' type
+        table_data = next(s for s in data["standings"] if s["type"] == "TOTAL")["table"]
         out = {}
-
-        for t in total:
+        for t in table_data:
             tid = t["team"]["id"]
-
             played = max(t["playedGames"], 1)
-
-            gf = t["goalsFor"] / played
-            ga = t["goalsAgainst"] / played
-
             out[tid] = {
                 "name": t["team"]["name"],
                 "rank": t["position"],
-                "gf": gf,
-                "ga": ga
+                "gf": t["goalsFor"] / played,
+                "ga": t["goalsAgainst"] / played
             }
-
         cache[code] = {"t": now, "d": out}
         return out
-
     except:
         return {}
 
-# ---------------------------
-# FORM (FIXED WEIGHTING)
-# ---------------------------
-def form(team_id):
-    r = requests.get(
-        f"{BASE_URL}/teams/{team_id}/matches?status=FINISHED&limit=5",
-        headers=HEADERS
-    )
+def get_form(team_id):
+    try:
+        # Doc adaptation: limit=5 as per sample requests
+        r = requests.get(f"{BASE_URL}/teams/{team_id}/matches?status=FINISHED&limit=5", headers=HEADERS, timeout=5)
+        if r.status_code != 200: return 1.0
+        matches = r.json().get("matches", [])
+        pts = 0
+        for m in matches:
+            hs = m["score"]["fullTime"]["home"]
+            aw = m["score"]["fullTime"]["away"]
+            if m["homeTeam"]["id"] == team_id:
+                pts += 3 if hs > aw else 1 if hs == aw else 0
+            else:
+                pts += 3 if aw > hs else 1 if hs == aw else 0
+        return 0.9 + (pts / 15) * 0.2
+    except:
+        return 1.0
 
-    if r.status_code != 200:
-        return 1.0, 0
-
-    matches = r.json().get("matches", [])
-
-    pts = 0
-
-    for m in matches:
-        hs = m["score"]["fullTime"]["home"]
-        aw = m["score"]["fullTime"]["away"]
-
-        if m["homeTeam"]["id"] == team_id and hs > aw:
-            pts += 3
-        elif m["awayTeam"]["id"] == team_id and aw > hs:
-            pts += 3
-        elif hs == aw:
-            pts += 1
-
-    strength = 0.85 + (pts / 15) * 0.25  # tighter scaling
-    return strength, pts
-
-# ---------------------------
-# FIXTURES (ALL 12 COMPETITIONS)
-# ---------------------------
 @app.route("/fixtures")
 def fixtures():
     date = request.args.get("date")
-    date_to = (datetime.strptime(date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
-
+    if not date: return jsonify([])
+    
     all_matches = []
-
     for comp in COMPETITIONS:
         try:
+            # Filtering by date as per /match documentation
             r = requests.get(
                 f"{BASE_URL}/competitions/{comp}/matches",
                 headers=HEADERS,
-                params={"dateFrom": date, "dateTo": date_to}
+                params={"dateFrom": date, "dateTo": date},
+                timeout=5
             )
-
-            if r.status_code != 200:
-                continue
-
-            matches = r.json().get("matches", [])
-
-            for m in matches:
-                all_matches.append({
-                    "home": m["homeTeam"]["name"],
-                    "home_id": m["homeTeam"]["id"],
-                    "away": m["awayTeam"]["name"],
-                    "away_id": m["awayTeam"]["id"],
-                    "comp": comp,
-                    "league": m["competition"]["name"]
-                })
-
+            if r.status_code == 200:
+                matches = r.json().get("matches", [])
+                for m in matches:
+                    all_matches.append({
+                        "home": m["homeTeam"]["name"],
+                        "home_id": m["homeTeam"]["id"],
+                        "away": m["awayTeam"]["name"],
+                        "away_id": m["awayTeam"]["id"],
+                        "comp": comp,
+                        "league": m["competition"]["name"]
+                    })
+            # Policy adaptation: throttle to avoid 429 errors
+            time.sleep(0.2) 
         except:
             continue
-
     return jsonify(all_matches)
 
-# ---------------------------
-# PREDICTION (FIXED MODEL)
-# ---------------------------
 @app.route("/predict", methods=["POST"])
 def predict():
     data = request.json
-
     stats = get_standings(data["comp"])
+    
+    h_team = stats.get(str(data["home_id"])) or stats.get(data["home_id"])
+    a_team = stats.get(str(data["away_id"])) or stats.get(data["away_id"])
 
-    h = stats.get(data["home_id"])
-    a = stats.get(data["away_id"])
+    # Fallback for teams with no current standing data
+    if not h_team or not a_team:
+        h_team = h_team or {"gf": 1.2, "ga": 1.2, "rank": "N/A"}
+        a_team = a_team or {"gf": 1.0, "ga": 1.3, "rank": "N/A"}
 
-    if not h or not a:
-        return jsonify({"error": "No stats available"}), 400
+    hf = get_form(data["home_id"])
+    af = get_form(data["away_id"])
 
-    hf, hp = form(data["home_id"])
-    af, ap = form(data["away_id"])
+    hxg = (h_team["gf"] * a_team["ga"]) * hf * 1.15
+    axg = (a_team["gf"] * h_team["ga"]) * af
 
-    # FIXED XG MODEL (more stable football logic)
-    home_adv = 1.10
-
-    hxg = (h["gf"] * a["ga"]) * hf * home_adv
-    axg = (a["gf"] * h["ga"]) * af
-
-    hxg = max(min(hxg, 3.0), 0.3)
-    axg = max(min(axg, 3.0), 0.3)
-
-    best, score = 0, "1-1"
+    best_p, score = 0, "1-1"
     hw = dw = aw = 0
 
     for i in range(6):
         for j in range(6):
             p = poisson(i, hxg) * poisson(j, axg)
-
-            if p > best:
-                best = p
+            if p > best_p:
+                best_p, score = p, f"{h}-{a}"
                 score = f"{i}-{j}"
-
-            if i > j:
-                hw += p
-            elif i == j:
-                dw += p
-            else:
-                aw += p
+            if i > j: hw += p
+            elif i == j: dw += p
+            else: aw += p
 
     total = hw + dw + aw
-
     return jsonify({
         "score": score,
         "probs": {
@@ -191,13 +142,10 @@ def predict():
             "draw": round(dw/total*100),
             "away": round(aw/total*100)
         },
-        "h_rank": h["rank"],
-        "a_rank": a["rank"],
-        "insight": f"{data['home']} vs {data['away']} tactical model stabilised."
+        "h_rank": h_team["rank"],
+        "a_rank": a_team["rank"],
+        "insight": f"Gaffer Analysis: {data['home']} vs {data['away']}. Probability bars reflect Poisson distribution and current form."
     })
 
-# ---------------------------
-# RUN
-# ---------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))

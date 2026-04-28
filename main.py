@@ -15,6 +15,9 @@ API_KEY = os.environ.get("FOOTBALL_API_KEY")
 BASE_URL = "https://api.football-data.org/v4"
 HEADERS = {"X-Auth-Token": API_KEY}
 
+# List of all 12 Free Tier Competitions
+FREE_COMPS = "CL,PL,ELC,BL1,SA,PD,FL1,DED,PPL,BSA,EC,WC"
+
 standings_cache = {}
 
 def poisson_probability(actual, expected):
@@ -33,116 +36,112 @@ def get_venue_stats(comp_code):
     data = res.json()
     h_table = next((s for s in data["standings"] if s["type"] == "HOME"), data["standings"][0])["table"]
     a_table = next((s for s in data["standings"] if s["type"] == "AWAY"), data["standings"][0])["table"]
+    full_table = next((s for s in data["standings"] if s["type"] == "TOTAL"), data["standings"][0])["table"]
 
     avg_h_goals = sum(t["goalsFor"] for t in h_table) / max(sum(t["playedGames"] for t in h_table), 1)
     avg_a_goals = sum(t["goalsFor"] for t in a_table) / max(sum(t["playedGames"] for t in a_table), 1)
 
     venue_data = {}
-    for t in h_table:
+    for t in full_table:
         tid = t["team"]["id"]
         venue_data[tid] = {
             "name": t["team"]["name"],
+            "rank": t["position"],
+            "points": t["points"],
+            "played": t["playedGames"]
+        }
+    
+    for t in h_table:
+        venue_data[t["team"]["id"]].update({
             "h_atk": (t["goalsFor"] / max(t["playedGames"], 1)) / avg_h_goals,
             "h_def": (t["goalsAgainst"] / max(t["playedGames"], 1)) / avg_h_goals
-        }
+        })
     for t in a_table:
-        tid = t["team"]["id"]
-        if tid in venue_data:
-            venue_data[tid].update({
-                "a_atk": (t["goalsFor"] / max(t["playedGames"], 1)) / avg_a_goals,
-                "a_def": (t["goalsAgainst"] / max(t["playedGames"], 1)) / avg_a_goals
-            })
+        venue_data[t["team"]["id"]].update({
+            "a_atk": (t["goalsFor"] / max(t["playedGames"], 1)) / avg_a_goals,
+            "a_def": (t["goalsAgainst"] / max(t["playedGames"], 1)) / avg_a_goals
+        })
+        
     standings_cache[comp_code] = (now, venue_data)
     return venue_data
 
-def get_form_multiplier(team_id):
-    res = requests.get(f"{BASE_URL}/teams/{team_id}/matches?status=FINISHED&limit=5", headers=HEADERS)
-    if res.status_code != 200: return 1.0, 0
-    matches = res.json().get("matches", [])
-    pts = sum(3 if (m["homeTeam"]["id"] == team_id and m["score"]["fullTime"]["home"] > m["score"]["fullTime"]["away"]) or (m["awayTeam"]["id"] == team_id and m["score"]["fullTime"]["away"] > m["score"]["fullTime"]["home"]) else (1 if m["score"]["fullTime"]["home"] == m["score"]["fullTime"]["away"] else 0) for m in matches)
-    return 0.85 + (pts / 15 * 0.3), pts
-
-def gaffer_logic(h_name, a_name, h_s, a_s, h_f, a_f, score):
-    h_goals, a_goals = map(int, score.split('-'))
+def gaffer_logic(h_s, a_s, score, h_pts, a_pts):
+    h_name, a_name = h_s['name'], a_s['name']
+    h_rank, a_rank = h_s['rank'], a_s['rank']
     
-    # Opening Phrase Pools
-    open_balanced = [
-        "This one's got a bit of a scrap in the middle written all over it.",
-        "Neither manager will want to give an inch early on here.",
-        "On paper, there's nothing between them. It'll come down to a bit of magic or a mistake.",
-        "Expect a proper tactical battle today. It might not be pretty, but it'll be intense."
-    ]
-    open_h_dom = [
-        f"Make no mistake, {h_name} are going to be right in their faces from the whistle.",
-        f"{h_name} have made this place a fortress. The visitors will be chasing shadows.",
-        f"The home fans will be up for this. {h_name} are usually clinical in these conditions.",
-        f"I've looked at the stats, and {h_name} are just bullying teams at home lately."
-    ]
-    open_a_threat = [
-        f"I've seen {a_name} on the road—they're dangerous, like a coiled spring.",
-        f"If {h_name} get complacent, the visitors will hit them like a lightning bolt on the break.",
-        f"{a_name} have that 'road warrior' mentality. They won't be intimidated by the noise.",
-        f"The pressure is all on the home side. That's exactly how {a_name} like it."
+    # 1. Situation Analysis
+    if h_rank <= 4 and a_rank <= 4:
+        sit = f"This is a massive six-pointer at the top of the table. A proper heavyweight clash."
+    elif h_rank >= 17 or a_rank >= 17:
+        sit = f"It's a scrap at the bottom. Neither side can afford to drop points here if they want to stay up."
+    elif abs(h_rank - a_rank) < 3:
+        sit = f"These two are neck-and-neck in the standings. It’s going to be a cagey affair."
+    else:
+        sit = f"{h_name} are sitting {abs(h_rank - a_rank)} places apart from {a_name}, but don't let the table fool you."
+
+    # 2. Tactical Phrase Pools
+    tactics = [
+        f"I've watched {h_name} recently; they love to overload the flanks.",
+        f"If {a_name} can weather the early storm, they'll find gaps in behind.",
+        f"It'll come down to a bit of individual brilliance or a set-piece.",
+        f"Both managers will be telling their lads to keep it tight for the first twenty."
     ]
 
-    # Form Phrase Pools
-    form_good = ["They're playing like a team that knows exactly where the back of the net is.", "Confidence is high in that dressing room, you can see it in the way they move."]
-    form_mid = ["They've been a bit hit-and-miss lately, to be honest.", "They're hovering around that 'average' mark, just looking for a spark."]
-    form_poor = ["They've been struggling for rhythm, and it might show today.", "They need to show some real character after their recent run."]
+    # 3. Form Analysis (Last 5 games)
+    if h_pts >= 12:
+        form = f"The home side is on an absolute tear lately, collecting {h_pts} points from their last five."
+    elif a_pts >= 12:
+        form = f"The visitors are the form team here, they're playing with real swagger."
+    else:
+        form = "Both teams have been a bit patchy, struggling for consistency in recent weeks."
 
-    # Selection Logic
-    if h_s['h_atk'] > 1.25: opener = random.choice(open_h_dom)
-    elif a_s['a_atk'] > 1.25: opener = random.choice(open_a_threat)
-    else: opener = random.choice(open_balanced)
-
-    momentum = random.choice(form_good) if (h_f > 1.1 or a_f > 1.1) else random.choice(form_mid)
-
-    # Verdict Logic
-    if h_goals > a_goals: verdict = f"My money's on {h_name} to find a way. Let's go with {score}."
-    elif a_goals > h_goals: verdict = f"I've got a sneaky feeling about {a_name} here. I'm calling it {score}."
-    else: verdict = f"I can't separate 'em. It’s got a {score} draw written all over it."
-
-    return f"{opener} {momentum} {verdict}"
+    verdict = f"I’m calling it {score}. Take it or leave it."
+    
+    return f"{sit} {random.choice(tactics)} {form} {verdict}"
 
 @app.route("/fixtures", methods=["GET"])
 def fixtures():
     d = request.args.get("date")
-    d_to = (datetime.strptime(d, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
-    res = requests.get(f"{BASE_URL}/matches", headers=HEADERS, params={"dateFrom": d, "dateTo": d_to, "competitions": "PL,BL1,SA,PD,FL1"})
-    return jsonify([{"home": m["homeTeam"]["name"], "home_id": m["homeTeam"]["id"], "away": m["awayTeam"]["name"], "away_id": m["awayTeam"]["id"], "competition": m["competition"]["code"]} for m in res.json().get("matches", [])])
+    res = requests.get(f"{BASE_URL}/matches", headers=HEADERS, params={"dateFrom": d, "dateTo": d, "competitions": FREE_COMPS})
+    
+    # Grouping Logic
+    grouped = {}
+    for m in res.json().get("matches", []):
+        c_name = m["competition"]["name"]
+        if c_name not in grouped: grouped[c_name] = []
+        grouped[c_name].append({
+            "home": m["homeTeam"]["name"], "home_id": m["homeTeam"]["id"],
+            "away": m["awayTeam"]["name"], "away_id": m["awayTeam"]["id"],
+            "competition": m["competition"]["code"]
+        })
+    return jsonify(grouped)
 
 @app.route("/predict", methods=["POST"])
 def predict():
     data = request.get_json()
     stats = get_venue_stats(data["competition"])
     h_s, a_s = stats.get(data["home_id"]), stats.get(data["away_id"])
-    if not h_s or not a_s: return jsonify({"error": "Data Missing"})
+    
+    res = requests.get(f"{BASE_URL}/teams/{data['home_id']}/matches?status=FINISHED&limit=5", headers=HEADERS)
+    h_f_pts = sum(3 if (m["score"]["fullTime"]["home"] > m["score"]["fullTime"]["away"] and m["homeTeam"]["id"] == data["home_id"]) else 1 if m["score"]["fullTime"]["home"] == m["score"]["fullTime"]["away"] else 0 for m in res.json().get("matches", []))
+    
+    res = requests.get(f"{BASE_URL}/teams/{data['away_id']}/matches?status=FINISHED&limit=5", headers=HEADERS)
+    a_f_pts = sum(3 if (m["score"]["fullTime"]["away"] > m["score"]["fullTime"]["home"] and m["awayTeam"]["id"] == data["away_id"]) else 1 if m["score"]["fullTime"]["home"] == m["score"]["fullTime"]["away"] else 0 for m in res.json().get("matches", []))
 
-    h_f, h_pts = get_form_multiplier(data["home_id"])
-    a_f, a_pts = get_form_multiplier(data["away_id"])
+    h_xg = h_s["h_atk"] * a_s["a_def"] * 1.35 * (0.85 + (h_f_pts/15 * 0.3))
+    a_xg = a_s["a_atk"] * h_s["h_def"] * 1.25 * (0.85 + (a_f_pts/15 * 0.3))
 
-    h_xg = h_s["h_atk"] * a_s["a_def"] * 1.38 * h_f
-    a_xg = a_s["a_atk"] * h_s["h_def"] * 1.22 * a_f
-
-    max_p, score, h_win, draw, a_win = 0, "1-1", 0, 0, 0
-    for h in range(6):
-        for a in range(6):
+    max_p, score = 0, "1-1"
+    for h in range(5):
+        for a in range(5):
             p = poisson_probability(h, h_xg) * poisson_probability(a, a_xg)
             if p > max_p: max_p, score = p, f"{h}-{a}"
-            if h > a: h_win += p
-            elif h == a: draw += p
-            else: a_win += p
-
-    total = h_win + draw + a_win
-    # Confidence is higher when probabilities are less 'split'
-    confidence = random.randint(78, 96) if max(h_win, draw, a_win)/total > 0.5 else random.randint(55, 77)
 
     return jsonify({
         "score": score,
-        "probs": {"home": round(h_win/total*100), "draw": round(draw/total*100), "away": round(a_win/total*100)},
-        "insight": gaffer_logic(h_s['name'], a_s['name'], h_s, a_s, h_f, a_f, score),
-        "confidence": confidence,
-        "metrics": {"h_atk": round(h_s['h_atk'],2), "a_def": round(a_s['a_def'],2), "h_form": h_pts, "a_form": a_pts}
+        "insight": gaffer_logic(h_s, a_s, score, h_f_pts, a_f_pts),
+        "h_rank": h_s["rank"], "a_rank": a_s["rank"],
+        "h_form": h_f_pts, "a_form": a_f_pts
     })
 
 if __name__ == "__main__":

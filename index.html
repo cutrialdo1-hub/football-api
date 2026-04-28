@@ -3,106 +3,100 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ScoutAI Pro | Tactical Engine</title>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@300;500;700&display=swap" rel="stylesheet">
+    <title>THE GAFFER | Tactical Analyst</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@300;400;700&display=swap" rel="stylesheet">
     <style>
-        :root { --neon: #00f2ff; --neon-pink: #ff00c1; --glass: rgba(255, 255, 255, 0.05); --border: rgba(255, 255, 255, 0.1); }
-        body { margin: 0; background: radial-gradient(circle at top right, #1a1a2e, #0f0c29); color: #fff; font-family: 'Inter', sans-serif; display: flex; justify-content: center; min-height: 100vh; overflow-x: hidden; }
-        .dashboard { width: 100%; max-width: 500px; padding: 20px; }
-        .glass-card { background: var(--glass); backdrop-filter: blur(15px); border: 1px solid var(--border); border-radius: 24px; padding: 25px; margin-bottom: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); transition: 0.3s; }
-        h1 { font-family: 'Orbitron', sans-serif; text-transform: uppercase; letter-spacing: 3px; font-size: 1.5rem; text-align: center; color: var(--neon); text-shadow: 0 0 10px var(--neon); }
-        input, select { background: rgba(0,0,0,0.3); border: 1px solid var(--border); color: #fff; padding: 12px; border-radius: 12px; width: 100%; box-sizing: border-box; margin-bottom: 10px; }
-        button { background: linear-gradient(45deg, var(--neon), #0061ff); border: none; color: white; padding: 15px; border-radius: 12px; width: 100%; font-weight: 700; font-family: 'Orbitron'; cursor: pointer; text-shadow: 0 2px 4px rgba(0,0,0,0.3); }
-        button:hover { filter: brightness(1.2); transform: translateY(-2px); }
-        .score-display { font-family: 'Orbitron'; font-size: 4rem; color: #fff; text-shadow: 0 0 20px var(--neon); margin: 15px 0; }
-        .prob-bar { height: 10px; border-radius: 5px; display: flex; overflow: hidden; margin: 20px 0; background: rgba(255,255,255,0.1); }
-        .insight-box { background: rgba(0,0,0,0.4); padding: 15px; border-radius: 15px; font-size: 0.85rem; line-height: 1.6; border-left: 3px solid var(--neon-pink); }
-        .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px; }
-        .stat-badge { background: var(--glass); padding: 12px; border-radius: 12px; text-align: center; border: 1px solid var(--border); }
-        .stat-label { font-size: 0.65rem; color: #888; text-transform: uppercase; margin-bottom: 4px; }
-        .stat-val { font-weight: 700; color: var(--neon); font-size: 1.1rem; }
-        .loader { width: 40px; height: 40px; border: 4px solid var(--neon); border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite; margin: 20px auto; }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        :root { --accent: #00ff9d; --bg: #050505; --card: #0f1218; --glass: rgba(255,255,255,0.03); }
+        body { background: var(--bg); color: #e0e0e0; font-family: 'Inter', sans-serif; display: flex; justify-content: center; min-height: 100vh; padding: 20px; }
+        .app-container { width: 100%; max-width: 480px; }
+        h1 { font-family: 'Orbitron'; font-size: 1.2rem; letter-spacing: 4px; color: var(--accent); text-align: center; border-bottom: 1px solid #333; padding-bottom: 15px; }
+        .panel { background: var(--card); border: 1px solid #222; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        select, input { width: 100%; background: #000; border: 1px solid #333; color: #fff; padding: 12px; border-radius: 8px; margin-bottom: 10px; font-size: 0.9rem; }
+        button { width: 100%; background: var(--accent); color: #000; font-family: 'Orbitron'; font-weight: bold; border: none; padding: 15px; border-radius: 8px; cursor: pointer; transition: 0.2s; }
+        button:hover { filter: brightness(1.2); }
+        .score-box { font-family: 'Orbitron'; font-size: 4.5rem; color: #fff; text-shadow: 0 0 15px var(--accent); margin: 10px 0; }
+        .gaffer-report { background: var(--glass); padding: 20px; border-radius: 12px; border-left: 4px solid var(--accent); position: relative; font-style: italic; color: #ccc; }
+        .gaffer-report::after { content: "- The Gaffer"; display: block; text-align: right; margin-top: 10px; font-family: 'Orbitron'; font-size: 0.7rem; color: var(--accent); }
+        .prob-bar { height: 8px; border-radius: 4px; background: #222; overflow: hidden; display: flex; margin: 15px 0; }
+        .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
+        .m-tile { background: #000; border: 1px solid #222; padding: 10px; border-radius: 8px; text-align: center; }
+        .m-label { font-size: 0.6rem; color: #666; text-transform: uppercase; }
+        .m-val { font-weight: bold; color: var(--accent); font-size: 1rem; }
     </style>
 </head>
 <body>
-<div class="dashboard">
-    <h1>ScoutAI <span style="color:var(--neon-pink)">Pro</span></h1>
+<div class="app-container">
+    <h1>THE GAFFER</h1>
     
-    <div class="glass-card">
-        <input type="date" id="date_picker">
-        <button onclick="fetchGames()">SCAN FIXTURES</button>
+    <div class="panel">
+        <input type="date" id="match_date">
+        <button onclick="getFixtures()">SCAN FIXTURES</button>
     </div>
 
-    <div class="glass-card">
-        <select id="game_select"><option>Initialize System First</option></select>
-        <button onclick="runAI()">GENERATE PREDICTION</button>
+    <div class="panel">
+        <select id="fixture_list"><option>System Offline</option></select>
+        <button onclick="getPrediction()">GET THE WORD</button>
     </div>
 
-    <div id="result_area"></div>
+    <div id="result_display"></div>
 </div>
 
 <script>
-    const API_URL = "https://football-api-9e4p.onrender.com";
-    let matches = [];
+    const API = "https://football-api-9e4p.onrender.com";
+    let gameData = [];
 
-    async function fetchGames() {
-        const date = document.getElementById('date_picker').value;
-        if(!date) return;
-        const res = await fetch(`${API_URL}/fixtures?date=${date}`);
-        matches = await res.json();
-        const sel = document.getElementById('game_select');
-        sel.innerHTML = matches.length ? '<option value="">-- Target Match --</option>' : '<option>No Active Missions</option>';
-        matches.forEach((m, i) => {
-            sel.innerHTML += `<option value="${i}">${m.home} vs ${m.away}</option>`;
-        });
+    async function getFixtures() {
+        const d = document.getElementById('match_date').value;
+        if(!d) return;
+        const res = await fetch(`${API}/fixtures?date=${d}`);
+        gameData = await res.json();
+        const sel = document.getElementById('fixture_list');
+        sel.innerHTML = gameData.length ? '<option value="">-- Select Fixture --</option>' : '<option>No Matches Found</option>';
+        gameData.forEach((m, i) => sel.innerHTML += `<option value="${i}">${m.home} vs ${m.away}</option>`);
     }
 
-    async function runAI() {
-        const idx = document.getElementById('game_select').value;
-        if(idx === "") return;
-        const out = document.getElementById('result_area');
-        out.innerHTML = '<div class="loader"></div>';
+    async function getPrediction() {
+        const i = document.getElementById('fixture_list').value;
+        if(i === "") return;
+        const out = document.getElementById('result_display');
+        out.innerHTML = '<div class="panel" style="text-align:center">Consulting the charts...</div>';
 
-        try {
-            const res = await fetch(`${API_URL}/predict`, {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify(matches[idx])
-            });
-            const d = await res.json();
+        const res = await fetch(`${API}/predict`, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(gameData[i])
+        });
+        const d = await res.json();
 
-            out.innerHTML = `
-                <div class="glass-card" style="text-align:center">
-                    <div style="font-size:0.8rem; letter-spacing:2px; color:#888">PROJECTED SCORE</div>
-                    <div class="score-display">${d.score}</div>
-                    
-                    <div class="prob-bar">
-                        <div style="width:${d.probs.home}%; background:var(--neon)"></div>
-                        <div style="width:${d.probs.draw}%; background:#999"></div>
-                        <div style="width:${d.probs.away}%; background:var(--neon-pink)"></div>
-                    </div>
-                    
-                    <div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-bottom:20px">
-                        <span>H: ${d.probs.home}%</span>
-                        <span>D: ${d.probs.draw}%</span>
-                        <span>A: ${d.probs.away}%</span>
-                    </div>
-
-                    <div class="insight-box">
-                        <b style="color:var(--neon); display:block; margin-bottom:5px">SYSTEM ANALYSIS:</b>
-                        ${d.insight}
-                    </div>
-
-                    <div class="metric-grid">
-                        <div class="stat-badge"><div class="stat-label">H-Attack</div><div class="stat-val">${d.metrics?.h_atk || '1.0'}</div></div>
-                        <div class="stat-badge"><div class="stat-label">A-Defense</div><div class="stat-val">${d.metrics?.a_def || '1.0'}</div></div>
-                        <div class="stat-badge"><div class="stat-label">H-Form (Pts)</div><div class="stat-val">${d.metrics?.h_form}/15</div></div>
-                        <div class="stat-badge"><div class="stat-label">A-Form (Pts)</div><div class="stat-val">${d.metrics?.a_form}/15</div></div>
-                    </div>
+        out.innerHTML = `
+            <div class="panel" style="text-align:center">
+                <div style="font-size:0.7rem; color:#666; letter-spacing:2px">EXPECTED OUTCOME</div>
+                <div class="score-box">${d.score}</div>
+                
+                <div class="prob-bar">
+                    <div style="width:${d.probs.home}%; background:var(--accent)"></div>
+                    <div style="width:${d.probs.draw}%; background:#555"></div>
+                    <div style="width:${d.probs.away}%; background:#007bff"></div>
                 </div>
-            `;
-        } catch(e) { out.innerHTML = '<div class="glass-card">Error: Connection Lost</div>'; }
+                
+                <div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-bottom:20px">
+                    <span>H: ${d.probs.home}%</span>
+                    <span>D: ${d.probs.draw}%</span>
+                    <span>A: ${d.probs.away}%</span>
+                </div>
+
+                <div class="gaffer-report">
+                    ${d.insight}
+                </div>
+
+                <div class="metrics">
+                    <div class="m-tile"><div class="m-label">H-Atk</div><div class="m-val">${d.metrics?.h_atk}</div></div>
+                    <div class="m-tile"><div class="m-label">A-Def</div><div class="m-val">${d.metrics?.a_def}</div></div>
+                    <div class="m-tile"><div class="m-label">H-Form</div><div class="m-val">${d.metrics?.h_form}/15</div></div>
+                    <div class="m-tile"><div class="m-label">A-Form</div><div class="m-val">${d.metrics?.a_form}/15</div></div>
+                </div>
+            </div>
+        `;
     }
 </script>
 </body>

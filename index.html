@@ -2,129 +2,101 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Football Predictor Pro</title>
+    <title>AI Football Predictor Pro</title>
     <style>
-        body { background: #0f172a; color: white; font-family: 'Segoe UI', sans-serif; text-align: center; padding: 20px; }
-        .card { background: #1e293b; padding: 20px; margin: 15px auto; max-width: 400px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
-        select, input, button { padding: 12px; margin: 8px; width: 100%; max-width: 320px; border-radius: 8px; border: 1px solid #334155; }
-        input, select { background: #0f172a; color: white; }
-        button { background: #22c55e; color: white; font-weight: bold; border: none; cursor: pointer; transition: 0.2s; }
-        button:hover { background: #16a34a; }
-        .prob-bar { background: #334155; height: 20px; border-radius: 10px; margin: 15px 0; overflow: hidden; display: flex; }
-        .h-fill { background: #3b82f6; height: 100%; }
-        .d-fill { background: #94a3b8; height: 100%; }
-        .a-fill { background: #ef4444; height: 100%; }
-        hr { border: 0; border-top: 1px solid #334155; margin: 20px 0; }
+        body { background: #0f172a; color: white; font-family: 'Segoe UI', sans-serif; padding: 20px; }
+        .container { max-width: 500px; margin: auto; text-align: center; }
+        .card { background: #1e293b; padding: 20px; margin: 15px 0; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        button { background: #22c55e; color: white; border: none; padding: 12px; width: 100%; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        input, select { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; background: #0f172a; color: white; border: 1px solid #334155; box-sizing: border-box; }
+        
+        .score-badge { font-size: 2.5em; font-weight: 800; color: #22c55e; margin: 10px 0; letter-spacing: 2px; }
+        .analysis-box { background: #334155; padding: 15px; border-radius: 10px; font-style: italic; font-size: 0.95em; line-height: 1.5; color: #cbd5e1; border-left: 4px solid #22c55e; text-align: left; }
+        
+        .bar-container { background: #334155; height: 12px; border-radius: 6px; display: flex; overflow: hidden; margin: 15px 0; }
+        .h-f { background: #3b82f6; } .d-f { background: #94a3b8; } .a-f { background: #ef4444; }
     </style>
 </head>
 <body>
 
-    <h1>⚽ Poisson Match Predictor</h1>
-    <p style="color: #94a3b8;">PL, La Liga, Serie A, Bundesliga, Ligue 1</p>
+<div class="container">
+    <h1>⚽ AI Predictor</h1>
 
     <div class="card">
-        <label for="date">Select Match Date:</label><br>
         <input type="date" id="date">
         <button onclick="loadMatches()">Load Fixtures</button>
     </div>
 
     <div class="card">
-        <select id="matches">
-            <option value="">-- Load Fixtures First --</option>
-        </select>
-        <button onclick="predict()">Calculate Probability</button>
+        <select id="matches"><option>Select Date First</option></select>
+        <button onclick="predict()">Generate AI Analysis</button>
     </div>
 
     <div id="output"></div>
+</div>
 
-    <script>
-        // REPLACE with your actual Render URL (no trailing slash)
-        const API = "https://football-api-9e4p.onrender.com"; 
-        let matchesData = [];
+<script>
+    const API = "https://football-api-9e4p.onrender.com";
+    let matchesData = [];
 
-        async function loadMatches() {
-            const date = document.getElementById("date").value;
-            const select = document.getElementById("matches");
-            if (!date) return alert("Please select a date first.");
+    async function loadMatches() {
+        const date = document.getElementById("date").value;
+        const select = document.getElementById("matches");
+        if(!date) return;
+        select.innerHTML = "<option>Loading...</option>";
+        const res = await fetch(`${API}/fixtures?date=${date}`);
+        matchesData = await res.json();
+        select.innerHTML = matchesData.length ? "<option value=''>-- Select Match --</option>" : "<option>No Matches Found</option>";
+        matchesData.forEach((m, i) => {
+            let opt = document.createElement("option");
+            opt.value = i;
+            opt.textContent = `${m.home} vs ${m.away}`;
+            select.appendChild(opt);
+        });
+    }
 
-            select.innerHTML = "<option>Fetching matches...</option>";
-            
-            try {
-                // We send ?date= to match the Python request.args.get("date")
-                const res = await fetch(`${API}/fixtures?date=${date}`);
-                if (!res.ok) throw new Error(`Server returned ${res.status}`);
+    async function predict() {
+        const idx = document.getElementById("matches").value;
+        const out = document.getElementById("output");
+        if(idx === "") return;
+        const m = matchesData[idx];
+        out.innerHTML = "<div class='card'>AI is analyzing team strengths...</div>";
+
+        const res = await fetch(`${API}/predict`, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({home_id: m.home_id, away_id: m.away_id, competition: m.competition})
+        });
+        const d = await res.json();
+
+        out.innerHTML = `
+            <div class="card">
+                <h3 style="margin-top:0">${m.home} vs ${m.away}</h3>
+                <div style="font-size:0.8em; color:#94a3b8">PREDICTED SCORE</div>
+                <div class="score-badge">${d.prediction}</div>
                 
-                const data = await res.json();
+                <div class="bar-container">
+                    <div class="h-f" style="width:${d.probs.home}%"></div>
+                    <div class="d-f" style="width:${d.probs.draw}%"></div>
+                    <div class="a-f" style="width:${d.probs.away}%"></div>
+                </div>
                 
-                matchesData = data;
-                select.innerHTML = "";
+                <div style="display:flex; justify-content:space-between; font-size:0.85em; margin-bottom:15px">
+                    <span>Win: ${d.probs.home}%</span>
+                    <span>Draw: ${d.probs.draw}%</span>
+                    <span>Away: ${d.probs.away}%</span>
+                </div>
 
-                if (matchesData.length === 0) {
-                    select.innerHTML = "<option value=''>No matches found for this date</option>";
-                    return;
-                }
-
-                select.innerHTML = "<option value=''>-- Select a Match --</option>";
-                matchesData.forEach((m, i) => {
-                    const opt = document.createElement("option");
-                    opt.value = i;
-                    opt.textContent = `[${m.competition}] ${m.home} vs ${m.away}`;
-                    select.appendChild(opt);
-                });
-            } catch (e) {
-                select.innerHTML = "<option>Error: Could not connect to API</option>";
-                console.error("Fetch Error:", e);
-                alert("API is currently offline or loading. Check console for details.");
-            }
-        }
-
-        async function predict() {
-            const idx = document.getElementById("matches").value;
-            const out = document.getElementById("output");
-            if (idx === "") return alert("Please select a match.");
-
-            const m = matchesData[idx];
-            out.innerHTML = "<div class='card'>Running Monte Carlo Simulation...</div>";
-
-            try {
-                const res = await fetch(`${API}/predict`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        home_id: m.home_id,
-                        away_id: m.away_id,
-                        competition: m.competition
-                    })
-                });
+                <div class="analysis-box">
+                    <strong>AI Insight:</strong><br>
+                    ${d.analysis}
+                </div>
                 
-                const d = await res.json();
-                if (d.error) throw new Error(d.error);
+                <p style="font-size:0.7em; color:#64748b; margin-top:15px">xG Projection: ${d.xg.home} - ${d.xg.away}</p>
+            </div>
+        `;
+    }
+</script>
 
-                out.innerHTML = `
-                    <div class="card">
-                        <h3>${m.home} vs ${m.away}</h3>
-                        <p><b>Expected Goals:</b> ${d.home_xg} - ${d.away_xg}</p>
-                        
-                        <div class="prob-bar">
-                            <div class="h-fill" style="width:${d.probabilities.home}%"></div>
-                            <div class="d-fill" style="width:${d.probabilities.draw}%"></div>
-                            <div class="a-fill" style="width:${d.probabilities.away}%"></div>
-                        </div>
-
-                        <div style="display:flex; justify-content:space-between; font-size:0.9em; font-weight:bold;">
-                            <span style="color:#3b82f6">Home: ${d.probabilities.home}%</span>
-                            <span style="color:#94a3b8">Draw: ${d.probabilities.draw}%</span>
-                            <span style="color:#ef4444">Away: ${d.probabilities.away}%</span>
-                        </div>
-                        <p style="font-size: 0.7em; color: #64748b; margin-top: 15px;">Model: ${d.model}</p>
-                    </div>
-                `;
-            } catch (e) {
-                out.innerHTML = `<div class="card" style="border: 1px solid red;">Error: ${e.message}</div>`;
-                console.error("Prediction Error:", e);
-            }
-        }
-    </script>
 </body>
 </html>

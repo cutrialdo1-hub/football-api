@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 app = Flask(__name__)
 CORS(app)
 
+# ================= CONFIG =================
 API_KEY = os.environ.get("FOOTBALL_API_KEY")
 BASE_URL = "https://api.football-data.org/v4"
 HEADERS = {"X-Auth-Token": API_KEY}
@@ -16,10 +17,12 @@ FREE_COMPS = "PL,PD,SA,BL1,FL1,DED,CL,EL"
 
 cache = {}
 
+# ================= MATH =================
 def poisson_probability(actual, expected):
     expected = max(expected, 0.01)
     return (expected ** actual) * math.exp(-expected) / math.factorial(actual)
 
+# ================= STATS =================
 def get_venue_stats(comp_code):
     now = time.time()
     if comp_code in cache and (now - cache[comp_code][0] < 86400):
@@ -32,7 +35,7 @@ def get_venue_stats(comp_code):
     data = res.json()
     try:
         standings = data.get("standings", [])
-        # Fallback: If HOME/AWAY not found, just use the TOTAL table
+        # Fail-safe: Try to find specific tables, or just take the first one available
         h_table = next((s for s in standings if s["type"] == "HOME"), standings[0])["table"]
         a_table = next((s for s in standings if s["type"] == "AWAY"), standings[0])["table"]
         t_table = next((s for s in standings if s["type"] == "TOTAL"), standings[0])["table"]
@@ -58,8 +61,9 @@ def get_venue_stats(comp_code):
 
         cache[comp_code] = (now, venue)
         return venue
-    except Exception: return {}
+    except: return {}
 
+# ================= FORM =================
 def get_form(team_id):
     url = f"{BASE_URL}/teams/{team_id}/matches"
     res = requests.get(url, headers=HEADERS, params={"status": "FINISHED", "limit": 5})
@@ -74,6 +78,7 @@ def get_form(team_id):
             pts += 3 if ag > hg else 1 if hg == ag else 0
     return 0.85 + (pts / 15 * 0.3), pts
 
+# ================= ROUTES =================
 @app.route("/fixtures")
 def fixtures():
     d = request.args.get("date")
@@ -86,7 +91,7 @@ def predict():
     data = request.get_json()
     stats = get_venue_stats(data["comp"])
     
-    # FALLBACK: If team data is missing, use neutral 1.0 baseline instead of erroring
+    # Neutral fallbacks if stats are missing
     h_s = stats.get(data["home_id"], {"rank": "??", "h_atk": 1.0, "h_def": 1.0})
     a_s = stats.get(data["away_id"], {"rank": "??", "a_atk": 1.0, "a_def": 1.0})
 
@@ -107,10 +112,9 @@ def predict():
 
     total = h_win + d_win + a_win
     
-    # Simple Insight Logic
     insight = f"Tactical standoff. {data['home']} (Rank {h_s['rank']}) vs {data['away']} (Rank {a_s['rank']})."
-    if h_win/total > 0.5: insight = f"Strong home advantage for {data['home']}. Expected to dominate."
-    elif a_win/total > 0.5: insight = f"Tough road trip for {data['home']}. {data['away']} are clear favorites."
+    if h_win/total > 0.45: insight = f"{data['home']} looking strong at home. Expect a high-intensity shift."
+    elif a_win/total > 0.45: insight = f"Tough road trip for the home side. {data['away']} have the tactical edge."
 
     return jsonify({
         "score": score,

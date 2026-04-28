@@ -2,98 +2,102 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>THE GAFFER | Tactical Analyst</title>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@300;400;700&display=swap" rel="stylesheet">
+    <title>THE GAFFER | Tactical Intelligence</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@300;500;700&display=swap" rel="stylesheet">
     <style>
-        :root { --accent: #00ff9d; --bg: #050505; --card: #0f1218; --glass: rgba(255,255,255,0.03); }
-        body { background: var(--bg); color: #e0e0e0; font-family: 'Inter', sans-serif; display: flex; justify-content: center; min-height: 100vh; padding: 20px; }
-        .app-container { width: 100%; max-width: 480px; }
-        h1 { font-family: 'Orbitron'; font-size: 1.2rem; letter-spacing: 4px; color: var(--accent); text-align: center; border-bottom: 1px solid #333; padding-bottom: 15px; }
-        .panel { background: var(--card); border: 1px solid #222; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        select, input { width: 100%; background: #000; border: 1px solid #333; color: #fff; padding: 12px; border-radius: 8px; margin-bottom: 10px; font-size: 0.9rem; }
-        button { width: 100%; background: var(--accent); color: #000; font-family: 'Orbitron'; font-weight: bold; border: none; padding: 15px; border-radius: 8px; cursor: pointer; transition: 0.2s; }
-        button:hover { filter: brightness(1.2); }
-        .score-box { font-family: 'Orbitron'; font-size: 4.5rem; color: #fff; text-shadow: 0 0 15px var(--accent); margin: 10px 0; }
-        .gaffer-report { background: var(--glass); padding: 20px; border-radius: 12px; border-left: 4px solid var(--accent); position: relative; font-style: italic; color: #ccc; }
-        .gaffer-report::after { content: "- The Gaffer"; display: block; text-align: right; margin-top: 10px; font-family: 'Orbitron'; font-size: 0.7rem; color: var(--accent); }
-        .prob-bar { height: 8px; border-radius: 4px; background: #222; overflow: hidden; display: flex; margin: 15px 0; }
-        .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
-        .m-tile { background: #000; border: 1px solid #222; padding: 10px; border-radius: 8px; text-align: center; }
-        .m-label { font-size: 0.6rem; color: #666; text-transform: uppercase; }
-        .m-val { font-weight: bold; color: var(--accent); font-size: 1rem; }
+        :root { --neon: #00ff9d; --bg: #0a0b10; --card: #151821; --border: #2a2d3a; }
+        body { background: var(--bg); color: #fff; font-family: 'Inter', sans-serif; display: flex; justify-content: center; padding: 20px; }
+        .container { width: 100%; max-width: 480px; }
+        h1 { font-family: 'Orbitron'; color: var(--neon); text-align: center; letter-spacing: 5px; font-size: 1.2rem; margin-bottom: 30px; }
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; margin-bottom: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.4); }
+        input, select, button { width: 100%; background: #000; border: 1px solid var(--border); color: #fff; padding: 14px; border-radius: 10px; margin-bottom: 12px; font-size: 0.9rem; box-sizing: border-box; }
+        button { background: var(--neon); color: #000; font-weight: 800; font-family: 'Orbitron'; border: none; cursor: pointer; transition: 0.3s; }
+        button:hover { filter: brightness(1.2); box-shadow: 0 0 15px var(--neon); }
+        .score { font-family: 'Orbitron'; font-size: 4.5rem; color: #fff; margin: 10px 0; text-shadow: 0 0 20px rgba(0,255,157,0.3); }
+        .gaffer-box { background: rgba(0,0,0,0.3); padding: 20px; border-radius: 12px; border-left: 4px solid var(--neon); font-style: italic; line-height: 1.6; color: #cbd5e1; position: relative; }
+        .gaffer-box::after { content: "— The Gaffer"; display: block; text-align: right; font-family: 'Orbitron'; color: var(--neon); font-size: 0.7rem; margin-top: 10px; }
+        .conf-label { font-size: 0.7rem; color: #64748b; letter-spacing: 2px; margin-bottom: 5px; }
+        .conf-bar { height: 4px; background: #222; border-radius: 2px; overflow: hidden; margin-bottom: 20px; }
+        .conf-fill { height: 100%; background: var(--neon); transition: 1s ease-out; }
+        .prob-row { display: flex; justify-content: space-between; font-size: 0.7rem; color: #94a3b8; font-family: 'Orbitron'; margin: 15px 0 5px 0; }
+        .metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 25px; }
+        .m-item { background: #000; padding: 12px; border-radius: 8px; border: 1px solid var(--border); text-align: center; }
+        .m-title { font-size: 0.6rem; color: #64748b; text-transform: uppercase; margin-bottom: 4px; }
+        .m-val { color: var(--neon); font-weight: 700; font-size: 1.1rem; }
+        .loader { border: 3px solid #222; border-top: 3px solid var(--neon); border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 20px auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
-<div class="app-container">
+<div class="container">
     <h1>THE GAFFER</h1>
     
-    <div class="panel">
+    <div class="card">
         <input type="date" id="match_date">
         <button onclick="getFixtures()">SCAN FIXTURES</button>
     </div>
 
-    <div class="panel">
-        <select id="fixture_list"><option>System Offline</option></select>
-        <button onclick="getPrediction()">GET THE WORD</button>
+    <div class="card">
+        <select id="match_list"><option>System Standby</option></select>
+        <button onclick="predict()">GET THE VERDICT</button>
     </div>
 
-    <div id="result_display"></div>
+    <div id="output"></div>
 </div>
 
 <script>
     const API = "https://football-api-9e4p.onrender.com";
-    let gameData = [];
+    let activeGames = [];
 
     async function getFixtures() {
         const d = document.getElementById('match_date').value;
         if(!d) return;
         const res = await fetch(`${API}/fixtures?date=${d}`);
-        gameData = await res.json();
-        const sel = document.getElementById('fixture_list');
-        sel.innerHTML = gameData.length ? '<option value="">-- Select Fixture --</option>' : '<option>No Matches Found</option>';
-        gameData.forEach((m, i) => sel.innerHTML += `<option value="${i}">${m.home} vs ${m.away}</option>`);
+        activeGames = await res.json();
+        const sel = document.getElementById('match_list');
+        sel.innerHTML = activeGames.length ? '<option value="">-- Choose Match --</option>' : '<option>No Matches Found</option>';
+        activeGames.forEach((m, i) => sel.innerHTML += `<option value="${i}">${m.home} vs ${m.away}</option>`);
     }
 
-    async function getPrediction() {
-        const i = document.getElementById('fixture_list').value;
-        if(i === "") return;
-        const out = document.getElementById('result_display');
-        out.innerHTML = '<div class="panel" style="text-align:center">Consulting the charts...</div>';
+    async function predict() {
+        const idx = document.getElementById('match_list').value;
+        if(idx === "") return;
+        const out = document.getElementById('output');
+        out.innerHTML = '<div class="loader"></div>';
 
         const res = await fetch(`${API}/predict`, {
             method: "POST",
             headers: {"Content-Type": "application/json"},
-            body: JSON.stringify(gameData[i])
+            body: JSON.stringify(activeGames[idx])
         });
         const d = await res.json();
 
         out.innerHTML = `
-            <div class="panel" style="text-align:center">
-                <div style="font-size:0.7rem; color:#666; letter-spacing:2px">EXPECTED OUTCOME</div>
-                <div class="score-box">${d.score}</div>
+            <div class="card" style="text-align:center">
+                <div class="conf-label">GAFFER'S CONFIDENCE: ${d.confidence}%</div>
+                <div class="conf-bar"><div class="conf-fill" style="width:${d.confidence}%"></div></div>
                 
-                <div class="prob-bar">
-                    <div style="width:${d.probs.home}%; background:var(--accent)"></div>
-                    <div style="width:${d.probs.draw}%; background:#555"></div>
-                    <div style="width:${d.probs.away}%; background:#007bff"></div>
-                </div>
-                
-                <div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-bottom:20px">
+                <div style="font-size: 0.7rem; color: #64748b; letter-spacing: 2px">EXPECTED SCORE</div>
+                <div class="score">${d.score}</div>
+
+                <div class="prob-row">
                     <span>H: ${d.probs.home}%</span>
                     <span>D: ${d.probs.draw}%</span>
                     <span>A: ${d.probs.away}%</span>
                 </div>
-
-                <div class="gaffer-report">
-                    ${d.insight}
+                <div class="conf-bar" style="height:6px; display:flex">
+                    <div style="width:${d.probs.home}%; background:var(--neon)"></div>
+                    <div style="width:${d.probs.draw}%; background:#444"></div>
+                    <div style="width:${d.probs.away}%; background:#3b82f6"></div>
                 </div>
 
+                <div class="gaffer-box">${d.insight}</div>
+
                 <div class="metrics">
-                    <div class="m-tile"><div class="m-label">H-Atk</div><div class="m-val">${d.metrics?.h_atk}</div></div>
-                    <div class="m-tile"><div class="m-label">A-Def</div><div class="m-val">${d.metrics?.a_def}</div></div>
-                    <div class="m-tile"><div class="m-label">H-Form</div><div class="m-val">${d.metrics?.h_form}/15</div></div>
-                    <div class="m-tile"><div class="m-label">A-Form</div><div class="m-val">${d.metrics?.a_form}/15</div></div>
+                    <div class="m-item"><div class="m-title">H-ATK</div><div class="m-val">${d.metrics.h_atk}</div></div>
+                    <div class="m-item"><div class="m-title">A-DEF</div><div class="m-val">${d.metrics.a_def}</div></div>
+                    <div class="m-item"><div class="m-title">H-Form</div><div class="m-val">${d.metrics.h_form}pts</div></div>
+                    <div class="m-item"><div class="m-title">A-Form</div><div class="m-val">${d.metrics.a_form}pts</div></div>
                 </div>
             </div>
         `;

@@ -5,6 +5,7 @@ import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from datetime import datetime, timedelta
+# Use the modern library
 from google import genai
 from google.genai import types
 
@@ -15,6 +16,7 @@ CORS(app)
 FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY") or os.environ.get("API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
+# Initialize Client
 client = None
 if GEMINI_API_KEY:
     try:
@@ -30,6 +32,7 @@ HEADERS = {"X-Auth-Token": FOOTBALL_API_KEY}
 FREE_COMPS = "CL,PL,ELC,BL1,SA,PD,FL1,DED,PPL,BSA,EC,WC"
 standings_cache = {}
 
+# --- MATHEMATICAL LOGIC ---
 def poisson_probability(actual, expected):
     if expected <= 0: expected = 0.01
     return (math.pow(expected, actual) * math.exp(-expected)) / math.factorial(actual)
@@ -41,25 +44,22 @@ def get_venue_stats(comp_code):
     
     url = f"{BASE_URL}/competitions/{comp_code}/standings"
     res = requests.get(url, headers=HEADERS)
-    venue_data = {}
     
-    # FALLBACK: If CL Knockouts have no standings, provide neutral base stats
-    if res.status_code != 200 or not res.json().get("standings"):
+    # Handle Knockout Stages (Like CL Semi-Finals in April)
+    data = res.json()
+    if res.status_code != 200 or not data.get("standings"):
         return "KNOCKOUT_MODE" 
 
-    data = res.json()
     try:
         t_table = data["standings"][0]["table"]
         avg_g = sum(t["goalsFor"] for t in t_table) / max(sum(t["playedGames"] for t in t_table), 1)
-        for t in t_table:
-            tid = t["team"]["id"]
-            venue_data[tid] = {
-                "name": t["team"]["name"], "rank": t["position"],
-                "h_atk": (t["goalsFor"]/max(t["playedGames"],1))/avg_g,
-                "h_def": (t["goalsAgainst"]/max(t["playedGames"],1))/avg_g,
-                "a_atk": (t["goalsFor"]/max(t["playedGames"],1))/avg_g,
-                "a_def": (t["goalsAgainst"]/max(t["playedGames"],1))/avg_g
-            }
+        venue_data = {t["team"]["id"]: {
+            "name": t["team"]["name"], "rank": t["position"],
+            "h_atk": (t["goalsFor"]/max(t["playedGames"],1))/avg_g,
+            "h_def": (t["goalsAgainst"]/max(t["playedGames"],1))/avg_g,
+            "a_atk": (t["goalsFor"]/max(t["playedGames"],1))/avg_g,
+            "a_def": (t["goalsAgainst"]/max(t["playedGames"],1))/avg_g
+        } for t in t_table}
         standings_cache[comp_code] = (now, venue_data)
         return venue_data
     except:
@@ -72,55 +72,57 @@ def get_form(team_id):
     pts = sum(3 if (x["score"]["fullTime"]["home"] > x["score"]["fullTime"]["away"] and x["homeTeam"]["id"] == team_id) or (x["score"]["fullTime"]["away"] > x["score"]["fullTime"]["home"] and x["awayTeam"]["id"] == team_id) else 1 if x["score"]["fullTime"]["home"] == x["score"]["fullTime"]["away"] else 0 for x in m)
     return 0.85 + (pts/15 * 0.3), pts
 
-# --- IMPROVED GAFFER PROMPT ---
+# --- THE GAFFER'S VERDICT (WITH RETRIES) ---
 def gaffer_ai_verdict(h_name, a_name, score):
     if not client:
         return "The Gaffer's lost his notepad. API Key missing."
 
-    # Model update
     model_id = "gemini-2.0-flash" 
-
-    # We explicitly tell him it's a PREDICTION for the FUTURE
     prompt = (
         f"You are 'The Gaffer', a blunt, old-school football manager. "
         f"Provide a 2-sentence PREDICTION for the UPCOMING match: {h_name} vs {a_name}. "
-        f"Your tactical computer expects a {score} scoreline. "
-        f"Speak in the FUTURE TENSE about what will happen. Use blunt manager slang."
+        f"The stats suggest a {score} scoreline. "
+        f"Predict what WILL happen using manager slang and future tense. Be blunt."
     )
 
-    try:
-        response = client.models.generate_content(
-            model=model_id,
-            contents=prompt
-        )
-        return response.text.strip()
-    except Exception as e:
-        print(f"GAFFER ERROR: {e}")
-        return "The Gaffer's fuming. He's letting the numbers speak for themselves."
+    for attempt in range(3):
+        try:
+            response = client.models.generate_content(
+                model=model_id,
+                contents=prompt
+            )
+            return response.text.strip()
+        except Exception as e:
+            if "429" in str(e):
+                time.sleep(2) # Wait and retry
+                continue
+            print(f"GAFFER ERROR: {e}")
+            break
+            
+    return "The Gaffer's in a meeting. He says watch the wings and play for the badge."
 
+# --- ROUTES ---
 @app.route("/fixtures", methods=["GET"])
 def fixtures():
     d = request.args.get("date")
     if not d: return jsonify([])
     d_to = (datetime.strptime(d, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
     res = requests.get(f"{BASE_URL}/matches", headers=HEADERS, params={"dateFrom": d, "dateTo": d_to, "competitions": FREE_COMPS})
-    # Safe check for team names
     data = res.json()
-    return jsonify([{"home": m["homeTeam"].get("name", "Unknown"), "home_id": m["homeTeam"]["id"], "away": m["awayTeam"].get("name", "Unknown"), "away_id": m["awayTeam"]["id"], "comp": m["competition"]["code"], "league": m["competition"]["name"]} for m in data.get("matches", [])])
+    return jsonify([{"home": m["homeTeam"].get("name", "Unknown Team"), "home_id": m["homeTeam"]["id"], "away": m["awayTeam"].get("name", "Unknown Team"), "away_id": m["awayTeam"]["id"], "comp": m["competition"]["code"], "league": m["competition"]["name"]} for m in data.get("matches", [])])
 
 @app.route("/predict", methods=["POST"])
 def predict():
     data = request.get_json()
     stats = get_venue_stats(data["comp"])
     
-    # Handle the "KNOCKOUT_MODE" fallback for Champions League
-    if stats == "KNOCKOUT_MODE":
-        h_s = {"rank": "N/A", "h_atk": 1.2, "h_def": 1.0, "a_atk": 1.0, "a_def": 1.0}
-        a_s = {"rank": "N/A", "h_atk": 1.2, "h_def": 1.0, "a_atk": 1.0, "a_def": 1.0}
+    # Logic for Knockout rounds or missing stats
+    if stats == "KNOCKOUT_MODE" or not stats:
+        h_s = {"rank": "N/A", "h_atk": 1.1, "h_def": 1.0, "a_atk": 1.0, "a_def": 1.0}
+        a_s = {"rank": "N/A", "h_atk": 1.1, "h_def": 1.0, "a_atk": 1.0, "a_def": 1.0}
     else:
-        h_s, a_s = stats.get(data["home_id"]), stats.get(data["away_id"])
-    
-    if not h_s or not a_s: return jsonify({"error": "Stats unavailable"})
+        h_s = stats.get(data["home_id"], {"rank": "N/A", "h_atk": 1.0, "h_def": 1.0})
+        a_s = stats.get(data["away_id"], {"rank": "N/A", "a_atk": 1.0, "a_def": 1.0})
     
     h_f, h_pts = get_form(data["home_id"])
     a_f, a_pts = get_form(data["away_id"])
@@ -145,8 +147,8 @@ def predict():
         "probs": {"home": round(h_win/total*100), "draw": round(draw/total*100), "away": round(a_win/total*100)},
         "insight": insight, 
         "h_rank": h_s.get('rank', 'N/A'), "a_rank": a_s.get('rank', 'N/A'),
-        "metrics": {"h_atk": round(h_s.get('h_atk', 1),2), "h_def": round(h_s.get('h_def', 1),2), "a_atk": round(a_s.get('a_atk', 1),2), "a_def": round(a_s.get('a_def', 1),2), "h_form": h_pts, "a_form": a_pts}
+        "metrics": {"h_atk": round(h_s.get('h_atk', 1.0),2), "h_def": round(h_s.get('h_def', 1.0),2), "a_atk": round(a_s.get('a_atk', 1.0),2), "a_def": round(a_s.get('a_def', 1.0),2), "h_form": h_pts, "a_form": a_pts}
     })
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))

@@ -15,9 +15,9 @@ button { background:var(--neon); color:#000; font-weight:800; font-family:Orbitr
 button:disabled { background:#1a1a1a; color:#444; cursor:not-allowed; }
 .score { font-family:Orbitron; font-size:4rem; margin: 10px 0; }
 .prob-bar { display:flex; height:28px; border-radius:8px; overflow:hidden; margin:20px 0; font-family:Orbitron; font-size:0.7rem; line-height:28px; }
-.prob-h { background:var(--neon); color:#000; }
-.prob-d { background:var(--draw); color:#000; }
-.prob-a { background:var(--away); color:#000; }
+.prob-h { background:var(--neon); color:#000; transition: width 0.5s ease; }
+.prob-d { background:var(--draw); color:#000; transition: width 0.5s ease; }
+.prob-a { background:var(--away); color:#000; transition: width 0.5s ease; }
 .gaffer-box { background:rgba(0,255,157,0.05); border-left:4px solid var(--neon); padding:20px; text-align:left; font-style:italic; font-size:0.9rem; }
 .loader { border:3px solid #222; border-top:3px solid var(--neon); border-radius:50%; width:30px; height:30px; margin:20px auto; animation:spin 1s linear infinite; }
 @keyframes spin { to { transform:rotate(360deg); } }
@@ -50,12 +50,12 @@ async function getFixtures() {
     const date = document.getElementById("date").value;
     const select = document.getElementById("matches");
     if (!date) return;
-    select.innerHTML = "<option>Scanning Docs...</option>";
+    select.innerHTML = "<option>Analyzing Calendar...</option>";
     try {
         const res = await fetch(`${API}/fixtures?date=${date}`);
         fixtures = await res.json();
         if (!fixtures.length) {
-            select.innerHTML = "<option>No Tier-1 Games</option>";
+            select.innerHTML = "<option>No Games Found</option>";
             return;
         }
         select.innerHTML = "<option value=''>Select Match</option>";
@@ -93,7 +93,7 @@ async function predict() {
             <div class="gaffer-box">${d.insight}</div>
         </div>`;
     } catch (err) {
-        out.innerHTML = "<div class='card'>Analysis error</div>";
+        out.innerHTML = "<div class='card'>Prediction Error. Check Server.</div>";
     }
 }
 </script>

@@ -13,13 +13,16 @@ FOOTBALL_API_KEY = os.getenv("FOOTBALL_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=GEMINI_API_KEY)
 
+# The 12 Free Tier Competitions
+FREE_LEAGUES = ['PL', 'PD', 'SA', 'BL1', 'FL1', 'CL', 'DED', 'PPL', 'ELC', 'BSA', 'WC', 'EC']
+
 # --- THE MATH ---
 def poisson_probability(lmbda, k):
     return (math.exp(-lmbda) * (lmbda**k)) / math.factorial(k)
 
 def calculate_match_probs(h_xg, a_xg):
     h_win, draw, a_win = 0, 0, 0
-    for i in range(7): # Checking up to 6 goals
+    for i in range(7): 
         for j in range(7):
             prob = poisson_probability(h_xg, i) * poisson_probability(a_xg, j)
             if i > j: h_win += prob
@@ -27,16 +30,13 @@ def calculate_match_probs(h_xg, a_xg):
             else: draw += prob
     return h_win, draw, a_win
 
-# --- DATA FETCHING (Based on your provided docs) ---
 def get_stats(comp_code, team_id, side):
     url = f"https://api.football-data.org/v4/competitions/{comp_code}/standings"
     headers = {"X-Auth-Token": FOOTBALL_API_KEY}
     try:
         response = requests.get(url, headers=headers).json()
         standings = response.get('standings', [])
-        # Your documentation showed HOME/AWAY types in the standings array
         table_data = next((s for s in standings if s['type'] == side), standings[0])['table']
-        
         for entry in table_data:
             if entry['team']['id'] == int(team_id):
                 return {
@@ -44,39 +44,52 @@ def get_stats(comp_code, team_id, side):
                     "name": entry['team']['shortName'],
                     "form": entry.get('form', '??')
                 }
-    except Exception as e:
-        print(f"Error: {e}")
-        return None
+    except: return None
 
+# --- ROUTES ---
 @app.route('/')
 def home():
     return render_template('index.html')
 
+@app.route('/get_matches', methods=['GET'])
+def get_matches():
+    headers = {"X-Auth-Token": FOOTBALL_API_KEY}
+    all_fixtures = []
+    # Loop through the free leagues to find scheduled games
+    for league in FREE_LEAGUES:
+        url = f"https://api.football-data.org/v4/competitions/{league}/matches?status=SCHEDULED"
+        try:
+            res = requests.get(url, headers=headers).json()
+            for m in res.get('matches', [])[:10]: # Top 10 per league
+                all_fixtures.append({
+                    "home": m['homeTeam']['shortName'],
+                    "home_id": m['homeTeam']['id'],
+                    "away": m['awayTeam']['shortName'],
+                    "away_id": m['awayTeam']['id'],
+                    "league": league,
+                    "date": m['utcDate'][:10]
+                })
+        except: continue
+    return jsonify(sorted(all_fixtures, key=lambda x: x['date']))
+
 @app.route('/predict', methods=['POST'])
 def predict():
     data = request.json
-    # Pull Home stats for Home team, Away stats for Away team
     h_data = get_stats(data['league'], data['home_id'], "HOME")
     a_data = get_stats(data['league'], data['away_id'], "AWAY")
     
     if not h_data or not a_data:
-        return jsonify({"error": "Could not fetch team data"}), 400
+        return jsonify({"error": "Data unavailable"}), 400
 
     h_win, draw, a_win = calculate_match_probs(h_data['avg_goals'], a_data['avg_goals'])
     
-    # The Gaffer's AI Personality
-    prompt = f"You are a grumpy, old-school football manager. Give a 2-sentence tactical verdict on {h_data['name']} vs {a_data['name']}. Home win prob: {h_win:.0%}. Home form: {h_data['form']}, Away form: {a_data['form']}."
+    prompt = f"You are a grumpy football manager. Verdict on {h_data['name']} vs {a_data['name']}. Home Win: {h_win:.0%}. Form: {h_data['form']} vs {a_data['form']}."
     response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
     
     return jsonify({
-        "home_name": h_data['name'],
-        "away_name": a_data['name'],
+        "home_name": h_data['name'], "away_name": a_data['name'],
         "verdict": response.text,
-        "probs": {
-            "home": f"{h_win:.0%}",
-            "draw": f"{draw:.0%}",
-            "away": f"{a_win:.0%}"
-        }
+        "probs": {"home": f"{h_win:.0%}", "draw": f"{draw:.0%}", "away": f"{a_win:.0%}"}
     })
 
 if __name__ == '__main__':

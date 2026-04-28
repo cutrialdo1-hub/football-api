@@ -2,36 +2,31 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>AI Football Predictor Pro</title>
+    <title>AI Football Analyst Pro</title>
     <style>
-        body { background: #0f172a; color: white; font-family: 'Segoe UI', sans-serif; padding: 20px; }
-        .container { max-width: 500px; margin: auto; text-align: center; }
-        .card { background: #1e293b; padding: 20px; margin: 15px 0; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-        button { background: #22c55e; color: white; border: none; padding: 12px; width: 100%; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 10px; }
-        input, select { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; background: #0f172a; color: white; border: 1px solid #334155; box-sizing: border-box; }
-        
-        .score-badge { font-size: 2.5em; font-weight: 800; color: #22c55e; margin: 10px 0; letter-spacing: 2px; }
-        .analysis-box { background: #334155; padding: 15px; border-radius: 10px; font-style: italic; font-size: 0.95em; line-height: 1.5; color: #cbd5e1; border-left: 4px solid #22c55e; text-align: left; }
-        
-        .bar-container { background: #334155; height: 12px; border-radius: 6px; display: flex; overflow: hidden; margin: 15px 0; }
-        .h-f { background: #3b82f6; } .d-f { background: #94a3b8; } .a-f { background: #ef4444; }
+        body { background: #0f172a; color: white; font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; padding: 20px; }
+        .container { width: 100%; max-width: 450px; text-align: center; }
+        .card { background: #1e293b; padding: 20px; margin: 15px 0; border-radius: 15px; box-shadow: 0 10px 20px rgba(0,0,0,0.3); }
+        input, select, button { width: 100%; padding: 12px; margin: 8px 0; border-radius: 8px; border: 1px solid #334155; box-sizing: border-box; }
+        button { background: #22c55e; color: white; font-weight: bold; cursor: pointer; border: none; }
+        .score-badge { font-size: 2.5em; font-weight: 900; color: #22c55e; margin: 10px 0; }
+        .momentum { font-size: 0.75em; padding: 3px 8px; border-radius: 4px; font-weight: bold; }
+        .hot { background: #22c55e; } .cold { background: #ef4444; }
+        .analysis { background: #334155; padding: 15px; border-radius: 10px; font-style: italic; border-left: 4px solid #22c55e; text-align: left; margin-top: 15px; }
+        .bar { height: 10px; border-radius: 5px; display: flex; overflow: hidden; margin: 15px 0; background: #475569; }
     </style>
 </head>
 <body>
-
 <div class="container">
     <h1>⚽ AI Predictor</h1>
-
     <div class="card">
         <input type="date" id="date">
-        <button onclick="loadMatches()">Load Fixtures</button>
+        <button onclick="loadMatches()">Find Fixtures</button>
     </div>
-
     <div class="card">
-        <select id="matches"><option>Select Date First</option></select>
-        <button onclick="predict()">Generate AI Analysis</button>
+        <select id="matches"><option value="">Select Date First</option></select>
+        <button onclick="predict()">Run Pro Analysis</button>
     </div>
-
     <div id="output"></div>
 </div>
 
@@ -40,18 +35,18 @@
     let matchesData = [];
 
     async function loadMatches() {
-        const date = document.getElementById("date").value;
-        const select = document.getElementById("matches");
-        if(!date) return;
-        select.innerHTML = "<option>Loading...</option>";
-        const res = await fetch(`${API}/fixtures?date=${date}`);
+        const d = document.getElementById("date").value;
+        const s = document.getElementById("matches");
+        if(!d) return;
+        s.innerHTML = "<option>Loading...</option>";
+        const res = await fetch(`${API}/fixtures?date=${d}`);
         matchesData = await res.json();
-        select.innerHTML = matchesData.length ? "<option value=''>-- Select Match --</option>" : "<option>No Matches Found</option>";
+        s.innerHTML = "<option value=''>-- Select Match --</option>";
         matchesData.forEach((m, i) => {
             let opt = document.createElement("option");
             opt.value = i;
             opt.textContent = `${m.home} vs ${m.away}`;
-            select.appendChild(opt);
+            s.appendChild(opt);
         });
     }
 
@@ -60,7 +55,7 @@
         const out = document.getElementById("output");
         if(idx === "") return;
         const m = matchesData[idx];
-        out.innerHTML = "<div class='card'>AI is analyzing team strengths...</div>";
+        out.innerHTML = "<div class='card'>Analyzing form and xG...</div>";
 
         const res = await fetch(`${API}/predict`, {
             method: "POST",
@@ -71,32 +66,27 @@
 
         out.innerHTML = `
             <div class="card">
-                <h3 style="margin-top:0">${m.home} vs ${m.away}</h3>
-                <div style="font-size:0.8em; color:#94a3b8">PREDICTED SCORE</div>
-                <div class="score-badge">${d.prediction}</div>
-                
-                <div class="bar-container">
-                    <div class="h-f" style="width:${d.probs.home}%"></div>
-                    <div class="d-f" style="width:${d.probs.draw}%"></div>
-                    <div class="a-f" style="width:${d.probs.away}%"></div>
+                <h3>${m.home} vs ${m.away}</h3>
+                <div style="display:flex; justify-content:space-around; align-items:center">
+                    <span class="momentum ${d.form.home >= 1 ? 'hot' : 'cold'}">Form: ${d.form.home}x</span>
+                    <div class="score-badge">${d.prediction}</div>
+                    <span class="momentum ${d.form.away >= 1 ? 'hot' : 'cold'}">Form: ${d.form.away}x</span>
                 </div>
-                
-                <div style="display:flex; justify-content:space-between; font-size:0.85em; margin-bottom:15px">
+                <div class="bar">
+                    <div style="width:${d.probs.home}%; background:#3b82f6"></div>
+                    <div style="width:${d.probs.draw}%; background:#94a3b8"></div>
+                    <div style="width:${d.probs.away}%; background:#ef4444"></div>
+                </div>
+                <div style="display:flex; justify-content:space-between; font-size:0.8em">
                     <span>Win: ${d.probs.home}%</span>
                     <span>Draw: ${d.probs.draw}%</span>
-                    <span>Away: ${d.probs.away}%</span>
+                    <span>Loss: ${d.probs.away}%</span>
                 </div>
-
-                <div class="analysis-box">
-                    <strong>AI Insight:</strong><br>
-                    ${d.analysis}
-                </div>
-                
-                <p style="font-size:0.7em; color:#64748b; margin-top:15px">xG Projection: ${d.xg.home} - ${d.xg.away}</p>
+                <div class="analysis"><strong>AI Insight:</strong> ${d.analysis}</div>
+                <p style="font-size:0.7em; color:#64748b; margin-top:10px">xG Projection: ${d.xg.home} - ${d.xg.away}</p>
             </div>
         `;
     }
 </script>
-
 </body>
 </html>

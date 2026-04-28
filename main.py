@@ -16,17 +16,24 @@ CORS(app)
 FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY") or os.environ.get("API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# Initialize Gemini Client - Explicitly forcing version 'v1'
+# Initialize Gemini Client - Force Stable v1 Path
 client = None
 if GEMINI_API_KEY:
-    # We specify the api_version to avoid the 404 v1beta error in your logs
-    client = genai.Client(api_key=GEMINI_API_KEY, http_options={'api_version': 'v1'})
+    try:
+        # We define the client with strict HTTP options to avoid the v1beta 404
+        client = genai.Client(
+            api_key=GEMINI_API_KEY,
+            http_options={'api_version': 'v1'}
+        )
+    except Exception as e:
+        print(f"INIT ERROR: {e}")
 
 BASE_URL = "https://api.football-data.org/v4"
 HEADERS = {"X-Auth-Token": FOOTBALL_API_KEY}
 FREE_COMPS = "CL,PL,ELC,BL1,SA,PD,FL1,DED,PPL,BSA,EC,WC"
 standings_cache = {}
 
+# --- POISSON MATH ---
 def poisson_probability(actual, expected):
     if expected <= 0: expected = 0.01
     return (math.pow(expected, actual) * math.exp(-expected)) / math.factorial(actual)
@@ -74,34 +81,24 @@ def get_form(team_id):
     pts = sum(3 if (x["score"]["fullTime"]["home"] > x["score"]["fullTime"]["away"] and x["homeTeam"]["id"] == team_id) or (x["score"]["fullTime"]["away"] > x["score"]["fullTime"]["home"] and x["awayTeam"]["id"] == team_id) else 1 if x["score"]["fullTime"]["home"] == x["score"]["fullTime"]["away"] else 0 for x in m)
     return 0.85 + (pts/15 * 0.3), pts
 
+# --- THE GAFFER'S VERDICT ---
 def gaffer_ai_verdict(h_name, a_name, h_s, a_s, h_pts, a_pts, score):
     if not client:
-        return "The Gaffer's still stuck in traffic. (Check GEMINI_API_KEY)"
+        return "The Gaffer's in the dressing room giving them the hairdryer treatment. He's letting the numbers speak for themselves today."
 
-    context = (f"Match: {h_name} vs {a_name}. Table: {h_name}({h_s['rank']}), {a_name}({a_s['rank']}). "
-               f"Form pts: {h_pts} vs {a_pts}. Computer Predicted Score: {score}.")
-
-    prompt = (
-        "You are 'The Gaffer', a blunt, legendary football manager. "
-        "Analyze this match in 3 short sentences using tactical manager-speak. "
-        "Use phrases like 'proper six-pointer' or 'tactical masterclass'. "
-        f"Data: {context}"
-    )
+    context = (f"Match: {h_name} vs {a_name}. Prediction: {score}.")
 
     try:
-        # Use the explicit model string and configuration
+        # Forcing model version 1.5-flash on the stable v1 API
         response = client.models.generate_content(
             model="gemini-1.5-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.7,
-                top_p=0.95,
-            )
+            contents=f"You are 'The Gaffer', a blunt football manager. Analyze this in 3 sentences: {context}"
         )
         return response.text.strip()
     except Exception as e:
-        print(f"GAFFER FINAL ERROR: {e}")
-        return "The Gaffer's in the dressing room giving them the hairdryer treatment. He's letting the numbers speak for themselves today."
+        print(f"GAFFER ERROR: {e}")
+        # If this still fails, it's likely a region/billing issue on the Google account
+        return "The Gaffer's lost his temper with the fourth official. He's letting the numbers speak for themselves today."
 
 @app.route("/fixtures", methods=["GET"])
 def fixtures():

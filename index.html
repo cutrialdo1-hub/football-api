@@ -4,97 +4,75 @@
     <meta charset="UTF-8">
     <title>AI Football Scout Pro</title>
     <style>
-        :root { --bg: #0f172a; --card: #1e293b; --accent: #22c55e; --text: #f8fafc; }
-        body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; display: flex; justify-content: center; padding: 20px; }
-        .container { width: 100%; max-width: 480px; }
-        .card { background: var(--card); padding: 24px; margin-bottom: 20px; border-radius: 16px; border: 1px solid #334155; text-align: center; }
-        input, select, button { width: 100%; padding: 14px; margin: 10px 0; border-radius: 10px; border: 1px solid #334155; box-sizing: border-box; }
-        button { background: var(--accent); color: white; font-weight: 700; border: none; cursor: pointer; }
-        .score-badge { font-size: 3.5rem; font-weight: 900; color: var(--accent); }
-        .analysis-box { background: #0f172a; padding: 20px; border-radius: 12px; text-align: left; line-height: 1.6; border-left: 4px solid var(--accent); color: #cbd5e1; font-size: 0.9rem; }
-        .bar { height: 12px; border-radius: 6px; display: flex; overflow: hidden; margin: 20px 0; background: #334155; }
-        .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
-        .metric { background: #0f172a; padding: 10px; border-radius: 8px; font-size: 0.8rem; }
+        :root { --bg: #0f172a; --card: #1e293b; --accent: #22c55e; --text: #f1f5f9; }
+        body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; padding: 20px; }
+        .container { width: 100%; max-width: 450px; }
+        .card { background: var(--card); padding: 20px; margin-bottom: 20px; border-radius: 15px; border: 1px solid #334155; text-align: center; }
+        button { width: 100%; padding: 12px; background: var(--accent); color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        .score { font-size: 3.5rem; font-weight: 900; color: var(--accent); margin: 10px 0; }
+        .analysis { background: #0f172a; padding: 15px; border-radius: 10px; text-align: left; font-size: 0.9rem; line-height: 1.5; border-left: 4px solid var(--accent); }
+        .bar { height: 12px; border-radius: 6px; display: flex; overflow: hidden; margin: 15px 0; background: #334155; }
+        .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
+        .m-card { background: #0f172a; padding: 10px; border-radius: 8px; font-size: 0.75rem; color: #94a3b8; }
+        select, input { width: 100%; padding: 10px; border-radius: 8px; background: #0f172a; border: 1px solid #334155; color: white; margin-bottom: 10px; }
     </style>
 </head>
 <body>
 <div class="container">
-    <header>
-        <h1 style="margin-bottom:0">AI Scout <span style="color:var(--accent)">v2.0</span></h1>
-        <p style="color:#64748b; margin-top:5px">Venue-Specific Automated Engine</p>
-    </header>
-
+    <h1>AI Scout Pro</h1>
     <div class="card">
         <input type="date" id="date">
-        <button onclick="loadMatches()">SCAN FIXTURES</button>
+        <button onclick="loadMatches()">Load Fixtures</button>
     </div>
-
     <div class="card">
         <select id="matches"><option>Select Date First</option></select>
-        <button onclick="predict()">RUN DEEP ANALYSIS</button>
+        <button onclick="predict()">Run Prediction</button>
     </div>
-
     <div id="output"></div>
 </div>
 
 <script>
     const API = "https://football-api-9e4p.onrender.com";
-    let matchesData = [];
+    let matches = [];
 
     async function loadMatches() {
         const d = document.getElementById("date").value;
-        const s = document.getElementById("matches");
         if(!d) return;
-        s.innerHTML = "<option>Fetching...</option>";
         const res = await fetch(`${API}/fixtures?date=${d}`);
-        matchesData = await res.json();
-        s.innerHTML = matchesData.length ? "<option value=''>-- Select Match --</option>" : "<option>No Games Found</option>";
-        matchesData.forEach((m, i) => {
-            let opt = document.createElement("option"); opt.value = i;
-            opt.textContent = `${m.home} vs ${m.away}`;
-            s.appendChild(opt);
-        });
+        matches = await res.json();
+        const s = document.getElementById("matches");
+        s.innerHTML = matches.length ? "<option value=''>-- Select Match --</option>" : "<option>No Games</option>";
+        matches.forEach((m, i) => s.innerHTML += `<option value="${i}">${m.home} vs ${m.away}</option>`);
     }
 
     async function predict() {
-        const idx = document.getElementById("matches").value;
-        const out = document.getElementById("output");
-        if(idx === "") return;
-        const m = matchesData[idx];
-        out.innerHTML = "<div class='card'>Simulating Venue Conditions...</div>";
-
+        const i = document.getElementById("matches").value;
+        if(i === "") return;
+        document.getElementById("output").innerHTML = "<div class='card'>Analyzing Venue Stats...</div>";
+        
         const res = await fetch(`${API}/predict`, {
             method: "POST",
             headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({home_id: m.home_id, away_id: m.away_id, competition: m.competition})
+            body: JSON.stringify(matches[i])
         });
         const d = await res.json();
 
-        out.innerHTML = `
+        // FIX: Using Optional Chaining ?. to prevent "h_atk undefined" errors
+        document.getElementById("output").innerHTML = `
             <div class="card">
-                <div style="font-size:0.7rem; color:#64748b">PROBABLE SCORELINE</div>
-                <div class="score-badge">${d.prediction}</div>
-                
+                <h3>${matches[i].home} vs ${matches[i].away}</h3>
+                <div class="score">${d.prediction}</div>
                 <div class="bar">
                     <div style="width:${d.probs.home}%; background:#3b82f6"></div>
                     <div style="width:${d.probs.draw}%; background:#94a3b8"></div>
                     <div style="width:${d.probs.away}%; background:#ef4444"></div>
                 </div>
-
-                <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:20px">
-                    <span>Home Win: ${d.probs.home}%</span>
-                    <span>Away Win: ${d.probs.away}%</span>
+                <div class="analysis"><strong>Insight:</strong> ${d.analysis}</div>
+                <div class="metrics">
+                    <div class="m-card">H-Atk Strength<br><b>${d.venue_metrics?.h_atk || '1.0'}</b></div>
+                    <div class="m-card">A-Def Strength<br><b>${d.venue_metrics?.a_def || '1.0'}</b></div>
                 </div>
-
-                <div class="analysis-box">
-                    <strong style="color:var(--accent); display:block; font-size:0.7rem; margin-bottom:5px">AI ANALYST INSIGHT</strong>
-                    ${d.analysis}
-                </div>
-
-                <div class="metrics-grid">
-                    <div class="metric">Home Atk Strength: <br><b>${d.venue_metrics.h_atk}</b></div>
-                    <div class="metric">Away Def Strength: <br><b>${d.venue_metrics.a_def}</b></div>
-                </div>
+                <p style="font-size:0.7rem; color:#64748b; margin-top:10px">xG Projection: ${d.xg?.home} - ${d.xg?.away}</p>
             </div>
         `;
     }

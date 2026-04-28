@@ -10,12 +10,11 @@ from google import genai
 app = Flask(__name__)
 CORS(app)
 
-# --- INITIALIZATION ---
-# The Gaffer pulls his keys from the Render environment variables
+# --- CONFIG ---
 FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# Create the AI Client
+# Initialize Gemini Client
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 BASE_URL = "https://api.football-data.org/v4"
@@ -23,7 +22,6 @@ HEADERS = {"X-Auth-Token": FOOTBALL_API_KEY}
 FREE_COMPS = "CL,PL,ELC,BL1,SA,PD,FL1,DED,PPL,BSA,EC,WC"
 standings_cache = {}
 
-# --- MATH CORE ---
 def poisson_probability(actual, expected):
     if expected <= 0: expected = 0.01
     return (math.pow(expected, actual) * math.exp(-expected)) / math.factorial(actual)
@@ -73,39 +71,33 @@ def get_form(team_id):
     res = requests.get(f"{BASE_URL}/teams/{team_id}/matches?status=FINISHED&limit=5", headers=HEADERS)
     if res.status_code != 200: return 1.0, 0
     m = res.json().get("matches", [])
-    pts = sum(3 if (x["score"]["fullTime"]["home"] > x["score"]["fullTime"]["away"] and x["homeTeam"]["id"] == team_id) or (x["score"]["fullTime"]["away"] > x["score"]["fullTime"]["home"] and x["homeTeam"]["id"] == team_id) else 1 if x["score"]["fullTime"]["home"] == x["score"]["fullTime"]["away"] else 0 for x in m)
+    pts = sum(3 if (x["score"]["fullTime"]["home"] > x["score"]["fullTime"]["away"] and x["homeTeam"]["id"] == team_id) or (x["score"]["fullTime"]["away"] > x["score"]["fullTime"]["home"] and x["awayTeam"]["id"] == team_id) else 1 if x["score"]["fullTime"]["home"] == x["score"]["fullTime"]["away"] else 0 for x in m)
     return 0.85 + (pts/15 * 0.3), pts
 
 # --- THE AI GAFFER ---
 def gaffer_ai_verdict(h_name, a_name, h_s, a_s, h_pts, a_pts, score):
-    context_data = (
-        f"Match: {h_name} vs {a_name}. "
+    context = (
+        f"Matchup: {h_name} vs {a_name}. "
         f"League Positions: {h_name} is {h_s['rank']}, {a_name} is {a_s['rank']}. "
-        f"Attack/Defense Ratings: {h_name}({h_s['h_atk']}/{h_s['h_def']}), {a_name}({a_s['a_atk']}/{a_s['a_def']}). "
-        f"Recent Form (last 5): {h_name} {h_pts}pts, {a_name} {a_pts}pts. "
-        f"Computer's Predicted Score: {score}."
+        f"Data: {h_name} Atk {h_s['h_atk']}/Def {h_s['h_def']} | {a_name} Atk {a_s['a_atk']}/Def {a_s['a_def']}. "
+        f"Form: {h_name} {h_pts}pts, {a_name} {a_pts}pts. "
+        f"Computer Result: {score}."
     )
 
     prompt = (
-        "You are 'The Gaffer', a blunt, legendary football manager with 40 years of experience. "
-        "Analyze this upcoming match in exactly 3-4 concise, punchy sentences. "
-        "DO NOT repeat the numbers I gave you. Instead, translate them into manager-speak "
-        "(e.g., 'shaky at the back', 'firing on all cylinders', 'massive promotion six-pointer'). "
-        "Explain WHY the predicted score makes sense based on the tactical clash. "
-        f"\n\nData Context: {context_data}"
+        "You are 'The Gaffer', a blunt, legendary football manager. Give a 3-sentence expert analysis. "
+        "Translate numbers into tactical speak (e.g., 'clinical', 'leaky', 'six-pointer'). "
+        "DO NOT repeat raw stats. Contextualize the stakes based on league rank (Promotion/Relegation/Derby). "
+        f"\n\nContext: {context}"
     )
 
     try:
-        # Using the newest gemini-3-flash for high-speed football analysis
-        response = client.models.generate_content(
-            model="gemini-3-flash",
-            contents=prompt
-        )
+        # Using Gemini 3 Flash for the most modern, witty analysis
+        response = client.models.generate_content(model="gemini-3-flash", contents=prompt)
         return response.text.strip()
-    except Exception as e:
-        return f"The Gaffer is in the dressing room giving them a hairdryer treatment. (AI Error: {str(e)})"
+    except Exception:
+        return "The Gaffer's run out of breath. He's backing the computer's logic for a tactical showdown."
 
-# --- ROUTES ---
 @app.route("/fixtures", methods=["GET"])
 def fixtures():
     d = request.args.get("date")
@@ -142,7 +134,7 @@ def predict():
 
     total = h_win + draw + a_win
     
-    # Generate the high-tech AI insight
+    # Get the AI-driven tactical breakdown
     insight = gaffer_ai_verdict(data["home"], data["away"], h_s, a_s, h_pts, a_pts, score)
 
     return jsonify({

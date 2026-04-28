@@ -10,14 +10,14 @@ body { background:var(--bg); color:#fff; font-family:Inter,sans-serif; display:f
 .container { width:100%; max-width:480px; }
 h1 { font-family:Orbitron; color:var(--neon); text-align:center; letter-spacing:5px; font-size:1.2rem; margin-bottom:30px; }
 .card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:20px; text-align:center; }
-input, select, button { width:100%; padding:14px; margin-bottom:12px; border-radius:10px; background:#000; border:1px solid var(--border); color:#fff; box-sizing:border-box; }
+input, select, button { width:100%; padding:14px; margin-bottom:12px; border-radius:10px; background:#000; border:1px solid var(--border); color:#fff; box-sizing:border-box; font-family:Inter; }
 button { background:var(--neon); color:#000; font-weight:800; font-family:Orbitron; cursor:pointer; border:none; }
 button:disabled { background:#1a1a1a; color:#444; cursor:not-allowed; }
 .score { font-family:Orbitron; font-size:4rem; margin: 10px 0; }
 .prob-bar { display:flex; height:28px; border-radius:8px; overflow:hidden; margin:20px 0; font-family:Orbitron; font-size:0.7rem; line-height:28px; }
-.prob-h { background:var(--neon); color:#000; transition: width 0.5s ease; }
-.prob-d { background:var(--draw); color:#000; transition: width 0.5s ease; }
-.prob-a { background:var(--away); color:#000; transition: width 0.5s ease; }
+.prob-h { background:var(--neon); color:#000; transition: width 0.5s; }
+.prob-d { background:var(--draw); color:#000; transition: width 0.5s; }
+.prob-a { background:var(--away); color:#000; transition: width 0.5s; }
 .gaffer-box { background:rgba(0,255,157,0.05); border-left:4px solid var(--neon); padding:20px; text-align:left; font-style:italic; font-size:0.9rem; }
 .loader { border:3px solid #222; border-top:3px solid var(--neon); border-radius:50%; width:30px; height:30px; margin:20px auto; animation:spin 1s linear infinite; }
 @keyframes spin { to { transform:rotate(360deg); } }
@@ -50,12 +50,12 @@ async function getFixtures() {
     const date = document.getElementById("date").value;
     const select = document.getElementById("matches");
     if (!date) return;
-    select.innerHTML = "<option>Analyzing Calendar...</option>";
+    select.innerHTML = "<option>Scanning Tactical Board...</option>";
     try {
-        const res = await fetch(`${API}/fixtures?date=${date}`);
+        const res = await fetch(`${API}/fixtures?date=${date}&t=${Date.now()}`);
         fixtures = await res.json();
         if (!fixtures.length) {
-            select.innerHTML = "<option>No Games Found</option>";
+            select.innerHTML = "<option>No Data Found</option>";
             return;
         }
         select.innerHTML = "<option value=''>Select Match</option>";
@@ -63,7 +63,7 @@ async function getFixtures() {
             select.innerHTML += `<option value="${i}">[${m.comp}] ${m.home} vs ${m.away}</option>`;
         });
     } catch (err) {
-        select.innerHTML = "<option>Connection Error</option>";
+        select.innerHTML = "<option>Connection Offline</option>";
     }
 }
 
@@ -93,7 +93,7 @@ async function predict() {
             <div class="gaffer-box">${d.insight}</div>
         </div>`;
     } catch (err) {
-        out.innerHTML = "<div class='card'>Prediction Error. Check Server.</div>";
+        out.innerHTML = "<div class='card'>Tactical Error. Reload.</div>";
     }
 }
 </script>

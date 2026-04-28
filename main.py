@@ -1,109 +1,156 @@
-import math, os, time, requests
+import math
+import os
+import time
+import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 CORS(app)
 
-# ================= CONFIG =================
-API_KEY = os.environ.get("FOOTBALL_API_KEY")
+API_KEY = os.getenv("FOOTBALL_API_KEY")
 BASE_URL = "https://api.football-data.org/v4"
 HEADERS = {"X-Auth-Token": API_KEY}
+
+FREE_COMPS = "PL,CL,BL1,SA,PD,FL1,DED"
+
 cache = {}
 
-# ================= MATH =================
-def poisson_probability(actual, expected):
-    expected = max(expected, 0.01)
-    return (math.pow(expected, actual) * math.exp(-expected)) / math.factorial(actual)
+def poisson(k, lam):
+    lam = max(lam, 0.01)
+    return (lam**k * math.exp(-lam)) / math.factorial(k)
 
-# ================= STATS ENGINE =================
-def get_venue_stats(comp_code):
+def get_standings(code):
     now = time.time()
-    if comp_code in cache and (now - cache[comp_code][0] < 86400):
-        return cache[comp_code][1]
-    
+
+    if code in cache and now - cache[code]["t"] < 86400:
+        return cache[code]["d"]
+
+    r = requests.get(f"{BASE_URL}/competitions/{code}/standings", headers=HEADERS)
+    if r.status_code != 200:
+        return {}
+
+    data = r.json()
+
     try:
-        res = requests.get(f"{BASE_URL}/competitions/{comp_code}/standings", headers=HEADERS, timeout=5)
-        data = res.json()
-        standings = data.get("standings", [])
-        if not standings: return {}
+        standings = data["standings"]
 
-        # FALLBACK LOGIC: Try to find HOME/AWAY tables, if not, use the first one (TOTAL)
-        h_table = next((s for s in standings if s.get("type") == "HOME"), standings[0])["table"]
-        a_table = next((s for s in standings if s.get("type") == "AWAY"), standings[0])["table"]
-        t_table = next((s for s in standings if s.get("type") == "TOTAL"), standings[0])["table"]
+        total = next(s for s in standings if s["type"] == "TOTAL")["table"]
 
-        venue = {}
-        for t in t_table:
-            venue[t["team"]["id"]] = {"rank": t["position"], "h_atk": 1.0, "h_def": 1.0, "a_atk": 1.0, "a_def": 1.0}
+        out = {}
 
-        for t in h_table:
+        for t in total:
             tid = t["team"]["id"]
-            if tid in venue:
-                venue[tid]["h_atk"] = (t["goalsFor"] / max(t["playedGames"], 1)) / 1.3
-                venue[tid]["h_def"] = (t["goalsAgainst"] / max(t["playedGames"], 1)) / 1.3
+            out[tid] = {
+                "name": t["team"]["name"],
+                "rank": t["position"],
+                "gf": t["goalsFor"] / max(t["playedGames"], 1),
+                "ga": t["goalsAgainst"] / max(t["playedGames"], 1)
+            }
 
-        for t in a_table:
-            tid = t["team"]["id"]
-            if tid in venue:
-                venue[tid]["a_atk"] = (t["goalsFor"] / max(t["playedGames"], 1)) / 1.1
-                venue[tid]["a_def"] = (t["goalsAgainst"] / max(t["playedGames"], 1)) / 1.1
+        cache[code] = {"t": now, "d": out}
+        return out
 
-        cache[comp_code] = (now, venue)
-        return venue
     except:
         return {}
 
-# ================= ROUTES =================
-@app.route("/")
-def home():
-    return "Gaffer API Active"
+def form(team_id):
+    r = requests.get(
+        f"{BASE_URL}/teams/{team_id}/matches?status=FINISHED&limit=5",
+        headers=HEADERS
+    )
+
+    if r.status_code != 200:
+        return 1.0, 0
+
+    m = r.json().get("matches", [])
+    pts = 0
+
+    for x in m:
+        hs = x["score"]["fullTime"]["home"]
+        aw = x["score"]["fullTime"]["away"]
+
+        if x["homeTeam"]["id"] == team_id and hs > aw:
+            pts += 3
+        elif x["awayTeam"]["id"] == team_id and aw > hs:
+            pts += 3
+        elif hs == aw:
+            pts += 1
+
+    return 0.9 + (pts / 15), pts
 
 @app.route("/fixtures")
 def fixtures():
     d = request.args.get("date")
-    try:
-        # Removed strict competition filter so you can see more games
-        res = requests.get(f"{BASE_URL}/matches", headers=HEADERS, params={"dateFrom": d, "dateTo": d}, timeout=5)
-        matches = res.json().get("matches", [])
-        return jsonify([{
-            "home": m["homeTeam"]["name"], 
-            "home_id": m["homeTeam"]["id"], 
-            "away": m["awayTeam"]["name"], 
-            "away_id": m["awayTeam"]["id"], 
-            "comp": m["competition"]["code"]
-        } for m in matches])
-    except:
-        return jsonify([])
+    d2 = (datetime.strptime(d, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    r = requests.get(
+        f"{BASE_URL}/matches",
+        headers=HEADERS,
+        params={"dateFrom": d, "dateTo": d2, "competitions": FREE_COMPS}
+    )
+
+    matches = r.json().get("matches", [])
+
+    return jsonify([{
+        "home": m["homeTeam"]["name"],
+        "home_id": m["homeTeam"]["id"],
+        "away": m["awayTeam"]["name"],
+        "away_id": m["awayTeam"]["id"],
+        "comp": m["competition"]["code"],
+        "league": m["competition"]["name"]
+    } for m in matches])
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    data = request.get_json()
-    stats = get_venue_stats(data["comp"])
-    
-    # NEUTRAL FALLBACK: If stats are missing, we use 1.0 baseline instead of erroring
-    h_s = stats.get(data["home_id"], {"rank": "N/A", "h_atk": 1.0, "h_def": 1.0, "a_atk": 1.0, "a_def": 1.0})
-    a_s = stats.get(data["away_id"], {"rank": "N/A", "h_atk": 1.0, "h_def": 1.0, "a_atk": 1.0, "a_def": 1.0})
+    data = request.json
 
-    h_xg = h_s["h_atk"] * a_s["a_def"] * 1.2
-    a_xg = a_s["a_atk"] * h_s["h_def"] * 1.1
+    stats = get_standings(data["comp"])
 
-    best_p, score, h_w, d_w, a_w = 0, "1-1", 0, 0, 0
-    for h in range(5):
-        for a in range(5):
-            p = poisson_probability(h, h_xg) * poisson_probability(a, a_xg)
-            if p > best_p: best_p, score = p, f"{h}-{a}"
-            if h > a: h_w += p
-            elif h == a: d_w += p
-            else: a_w += p
-    
-    total = max(h_w + d_w + a_w, 0.01)
+    h = stats.get(data["home_id"])
+    a = stats.get(data["away_id"])
+
+    if not h or not a:
+        return jsonify({"error": "No stats available"}), 400
+
+    hf, hp = form(data["home_id"])
+    af, ap = form(data["away_id"])
+
+    hxg = h["gf"] * a["ga"] * hf
+    axg = a["gf"] * h["ga"] * af
+
+    best, score = 0, "1-1"
+    hw = dw = aw = 0
+
+    for i in range(5):
+        for j in range(5):
+            p = poisson(i, hxg) * poisson(j, axg)
+
+            if p > best:
+                best = p
+                score = f"{i}-{j}"
+
+            if i > j:
+                hw += p
+            elif i == j:
+                dw += p
+            else:
+                aw += p
+
+    total = hw + dw + aw
+
     return jsonify({
         "score": score,
-        "probs": {"home": round(h_w/total*100), "draw": round(d_w/total*100), "away": round(a_w/total*100)},
-        "insight": f"Tactical standoff between {data['home']} and {data['away']}. Expected game flow suggests {score}.",
-        "h_rank": h_s["rank"], "a_rank": a_s["rank"]
+        "probs": {
+            "home": round(hw/total*100),
+            "draw": round(dw/total*100),
+            "away": round(aw/total*100)
+        },
+        "h_rank": h["rank"],
+        "a_rank": a["rank"],
+        "insight": f"{data['home']} vs {data['away']} looks balanced tactically."
     })
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    app.run()

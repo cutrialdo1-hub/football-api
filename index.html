@@ -1,104 +1,238 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>THE GAFFER | Tactical Intelligence</title>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@300;500;700&display=swap" rel="stylesheet">
-    <style>
-        :root { --neon: #00ff9d; --bg: #0a0b10; --card: #151821; --border: #2a2d3a; --away: #ff3366; --draw: #8892b0; }
-        body { background: var(--bg); color: #fff; font-family: 'Inter', sans-serif; display: flex; justify-content: center; padding: 20px; }
-        .container { width: 100%; max-width: 480px; }
-        h1 { font-family: 'Orbitron'; color: var(--neon); text-align: center; letter-spacing: 5px; font-size: 1.2rem; margin-bottom: 30px; }
-        .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; margin-bottom: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.4); text-align: center; }
-        
-        input[type="date"] { width: 100%; background: #000; border: 1px solid var(--border); color: #fff; padding: 14px; border-radius: 10px; margin-bottom: 12px; font-size: 0.9rem; box-sizing: border-box; outline: none; }
-        input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1) brightness(1.5); cursor: pointer; }
- 
-        select, button { width: 100%; background: #000; border: 1px solid var(--border); color: #fff; padding: 14px; border-radius: 10px; margin-bottom: 12px; font-size: 0.9rem; box-sizing: border-box; outline: none; }
-        button { background: var(--neon); color: #000; font-weight: 800; font-family: 'Orbitron'; border: none; cursor: pointer; transition: 0.2s; }
-        button:disabled { background: #1a1a1a; color: #444; cursor: not-allowed; }
-        
-        .score { font-family: 'Orbitron'; font-size: 4.5rem; color: #fff; margin: 10px 0; }
-        .gaffer-box { background: rgba(0,255,157,0.05); padding: 20px; border-radius: 12px; border-left: 4px solid var(--neon); font-style: italic; line-height: 1.6; color: #cbd5e1; margin: 20px 0; text-align: left; }
-        .gaffer-box::after { content: "— The Gaffer"; display: block; text-align: right; color: var(--neon); font-size: 0.7rem; margin-top: 10px; font-family: 'Orbitron'; }
-        
-        .prob-bar { height: 28px; display: flex; background: #000; border-radius: 8px; overflow: hidden; margin: 20px 0; font-family: 'Orbitron'; font-size: 0.7rem; line-height: 28px;}
-        .prob-h { background: var(--neon); color: #000; transition: width 1s; }
-        .prob-d { background: var(--draw); color: #000; transition: width 1s; }
-        .prob-a { background: var(--away); color: #000; transition: width 1s; }
-        
-        .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
-        .m-item { background: #0b0d14; padding: 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.75rem; color: #8892b0;}
-        .m-val { color: #fff; font-weight: bold; font-size: 1rem; display: block; margin-top: 4px;}
-        .loader { border: 3px solid #222; border-top: 3px solid var(--neon); border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 20px auto; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    </style>
-</head>
-<body>
-<div class="container">
-    <h1>THE GAFFER</h1>
-    <div class="card">
-        <input type="date" id="m_date">
-        <button onclick="getFixtures()">SCAN FIXTURES</button>
-    </div>
-    <div class="card">
-        <select id="m_list" onchange="checkSelection()"><option value="">Waiting for Scan...</option></select>
-        <button id="predict_btn" onclick="predict()" disabled>GET THE VERDICT</button>
-    </div>
-    <div id="output"></div>
-</div>
- 
-<script>
-    let matches = [];
- 
-    function checkSelection() {
-        document.getElementById('predict_btn').disabled = document.getElementById('m_list').value === "";
-    }
- 
-    async function getFixtures() {
-        const d = document.getElementById('m_date').value;
-        if(!d) return;
-        const sel = document.getElementById('m_list');
-        sel.innerHTML = '<option>Loading...</option>';
-        const res = await fetch(`/fixtures?date=${d}`);
-        matches = await res.json();
-        sel.innerHTML = matches.length ? '<option value="">-- Select Match --</option>' : '<option>No Games Found</option>';
-        matches.forEach((m, i) => sel.innerHTML += `<option value="${i}">[${m.league}] ${m.home} vs ${m.away}</option>`);
-    }
- 
-    async function predict() {
-        const idx = document.getElementById('m_list').value;
-        const out = document.getElementById('output');
-        out.innerHTML = '<div class="loader"></div>';
-        try {
-            const res = await fetch(`/predict`, {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify(matches[idx])
-            });
-            const d = await res.json();
-            out.innerHTML = `
-                <div class="card">
-                    <div style="display:flex; justify-content:space-between; font-size:0.7rem; color:var(--draw); margin-bottom:10px;">
-                        <span><b>${matches[idx].home}</b> (Rank: ${d.h_rank})</span>
-                        <span><b>${matches[idx].away}</b> (Rank: ${d.a_rank})</span>
-                    </div>
-                    <div class="score">${d.score}</div>
-                    <div class="prob-bar">
-                        <div class="prob-h" style="width:${d.probs.home}%">${d.probs.home}%</div>
-                        <div class="prob-d" style="width:${d.probs.draw}%">${d.probs.draw}%</div>
-                        <div class="prob-a" style="width:${d.probs.away}%">${d.probs.away}%</div>
-                    </div>
-                    <div class="gaffer-box">${d.insight}</div>
-                    <div class="metrics">
-                        <div class="m-item">Home Attack<br><span class="m-val">${d.metrics.h_atk}</span></div>
-                        <div class="m-item">Away Def Vulnerability<br><span class="m-val">${d.metrics.a_def}</span></div>
-                    </div>
-                </div>`;
-        } catch (e) {
-            out.innerHTML = '<div class="card">API Offline. Check local server logs.</div>'; 
+import math
+import os
+import time
+import requests
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+from datetime import datetime, timedelta
+
+app = Flask(__name__)
+CORS(app)
+
+# ================= CONFIG =================
+API_KEY = os.environ.get("FOOTBALL_API_KEY")
+BASE_URL = "https://api.football-data.org/v4"
+HEADERS = {"X-Auth-Token": API_KEY}
+
+# ⚠️ IMPORTANT:
+# football-data.org FREE tier does NOT reliably support all competitions.
+# Keep only safe/common ones:
+FREE_COMPS = "PL,PD,SA,BL1,FL1,DED,CL,EL"
+
+cache = {}
+
+# ================= MATH =================
+def poisson_probability(actual, expected):
+    expected = max(expected, 0.01)
+    return (expected ** actual) * math.exp(-expected) / math.factorial(actual)
+
+
+# ================= STATS =================
+def get_venue_stats(comp_code):
+    now = time.time()
+
+    if comp_code in cache and (now - cache[comp_code][0] < 86400):
+        return cache[comp_code][1]
+
+    url = f"{BASE_URL}/competitions/{comp_code}/standings"
+    res = requests.get(url, headers=HEADERS)
+
+    if res.status_code != 200:
+        return {}
+
+    data = res.json()
+
+    try:
+        standings = data["standings"]
+
+        h_table = next((s for s in standings if s["type"] == "HOME"), None)
+        a_table = next((s for s in standings if s["type"] == "AWAY"), None)
+        t_table = next((s for s in standings if s["type"] == "TOTAL"), None)
+
+        if not h_table or not a_table or not t_table:
+            return {}
+
+        h_table = h_table["table"]
+        a_table = a_table["table"]
+        t_table = t_table["table"]
+
+        avg_h_goals = sum(t["goalsFor"] for t in h_table) / max(sum(t["playedGames"] for t in h_table), 1)
+        avg_a_goals = sum(t["goalsFor"] for t in a_table) / max(sum(t["playedGames"] for t in a_table), 1)
+
+        venue = {}
+
+        for t in t_table:
+            venue[t["team"]["id"]] = {
+                "name": t["team"]["name"],
+                "rank": t["position"]
+            }
+
+        for t in h_table:
+            tid = t["team"]["id"]
+            if tid in venue:
+                venue[tid]["h_atk"] = (t["goalsFor"] / max(t["playedGames"], 1)) / avg_h_goals
+                venue[tid]["h_def"] = (t["goalsAgainst"] / max(t["playedGames"], 1)) / avg_h_goals
+
+        for t in a_table:
+            tid = t["team"]["id"]
+            if tid in venue:
+                venue[tid]["a_atk"] = (t["goalsFor"] / max(t["playedGames"], 1)) / avg_a_goals
+                venue[tid]["a_def"] = (t["goalsAgainst"] / max(t["playedGames"], 1)) / avg_a_goals
+
+        cache[comp_code] = (now, venue)
+        return venue
+
+    except Exception:
+        return {}
+
+
+# ================= FORM =================
+def get_form(team_id):
+    url = f"{BASE_URL}/teams/{team_id}/matches"
+    res = requests.get(url, headers=HEADERS, params={"status": "FINISHED", "limit": 5})
+
+    if res.status_code != 200:
+        return 1.0, 0
+
+    matches = res.json().get("matches", [])
+
+    pts = 0
+    for m in matches:
+        home = m["homeTeam"]["id"]
+        away = m["awayTeam"]["id"]
+
+        hg = m["score"]["fullTime"]["home"]
+        ag = m["score"]["fullTime"]["away"]
+
+        if home == team_id and hg > ag:
+            pts += 3
+        elif away == team_id and ag > hg:
+            pts += 3
+        elif hg == ag:
+            pts += 1
+
+    return 0.85 + (pts / 15 * 0.3), pts
+
+
+# ================= TACTICAL ENGINE =================
+def gaffer_logic(h_name, a_name, h_s, a_s, h_pts, a_pts, score):
+    h_rank, a_rank = h_s.get("rank", 10), a_s.get("rank", 10)
+    h_atk, h_def = h_s.get("h_atk", 1), h_s.get("h_def", 1)
+    a_atk, a_def = a_s.get("a_atk", 1), a_s.get("a_def", 1)
+
+    stakes = "Balanced fixture with tactical tension."
+
+    if h_rank <= 6 and a_rank <= 6:
+        stakes = "Title race implications here — every point matters at the top."
+    elif h_rank >= 16 and a_rank >= 16:
+        stakes = "Relegation pressure cooker — mistakes will be punished."
+
+    insight = ""
+
+    if h_atk > 1.1 and a_def > 1.1:
+        insight += f"{h_name} should create chances against a shaky defense. "
+    elif a_atk > 1.1 and h_def > 1.1:
+        insight += f"{a_name} look dangerous on the counter. "
+
+    h_goals, a_goals = map(int, score.split("-"))
+
+    if h_goals > a_goals:
+        verdict = f"Home advantage tells — {score} feels right."
+    elif a_goals > h_goals:
+        verdict = f"Upset potential here — {a_name} edge it {score}."
+    else:
+        verdict = f"Stalemate likely — {score} draw feels fair."
+
+    return f"{stakes} {insight} {verdict}"
+
+
+# ================= FIXTURES =================
+@app.route("/fixtures")
+def fixtures():
+    d = request.args.get("date")
+    d_to = (datetime.strptime(d, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    res = requests.get(
+        f"{BASE_URL}/matches",
+        headers=HEADERS,
+        params={"dateFrom": d, "dateTo": d_to, "competitions": FREE_COMPS}
+    )
+
+    matches = res.json().get("matches", [])
+
+    return jsonify([{
+        "home": m["homeTeam"]["name"],
+        "home_id": m["homeTeam"]["id"],
+        "away": m["awayTeam"]["name"],
+        "away_id": m["awayTeam"]["id"],
+        "comp": m["competition"]["code"],
+        "league": m["competition"]["name"]
+    } for m in matches])
+
+
+# ================= PREDICT =================
+@app.route("/predict", methods=["POST"])
+def predict():
+    data = request.get_json()
+
+    stats = get_venue_stats(data["comp"])
+
+    h_s = stats.get(data["home_id"])
+    a_s = stats.get(data["away_id"])
+
+    if not h_s or not a_s:
+        return jsonify({"error": "Stats unavailable"})
+
+    h_f, h_pts = get_form(data["home_id"])
+    a_f, a_pts = get_form(data["away_id"])
+
+    h_xg = h_s["h_atk"] * a_s["a_def"] * 1.3 * h_f
+    a_xg = a_s["a_atk"] * h_s["h_def"] * 1.2 * a_f
+
+    best, score = 0, "1-1"
+    h_win = d_win = a_win = 0
+
+    for h in range(5):
+        for a in range(5):
+            p = poisson_probability(h, h_xg) * poisson_probability(a, a_xg)
+
+            if p > best:
+                best = p
+                score = f"{h}-{a}"
+
+            if h > a:
+                h_win += p
+            elif h == a:
+                d_win += p
+            else:
+                a_win += p
+
+    total = h_win + d_win + a_win
+
+    return jsonify({
+        "score": score,
+        "probs": {
+            "home": round(h_win / total * 100),
+            "draw": round(d_win / total * 100),
+            "away": round(a_win / total * 100)
+        },
+        "insight": gaffer_logic(
+            data["home"],
+            data["away"],
+            h_s, a_s,
+            h_pts, a_pts,
+            score
+        ),
+        "h_rank": h_s["rank"],
+        "a_rank": a_s["rank"],
+        "metrics": {
+            "h_atk": round(h_s["h_atk"], 2),
+            "h_def": round(h_s["h_def"], 2),
+            "a_atk": round(a_s["a_atk"], 2),
+            "a_def": round(a_s["a_def"], 2)
         }
-    }
-</script>
-</body>
-</html>
+    })
+
+
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=5000)

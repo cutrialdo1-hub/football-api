@@ -15,7 +15,6 @@ BASE_URL = "https://api.football-data.org/v4"
 HEADERS = {"X-Auth-Token": API_KEY}
 
 standings_cache = {}
-CACHE_TTL = 86400 
 
 def poisson_probability(actual, expected):
     if expected <= 0: expected = 0.01
@@ -23,7 +22,7 @@ def poisson_probability(actual, expected):
 
 def get_venue_stats(comp_code):
     now = time.time()
-    if comp_code in standings_cache and (now - standings_cache[comp_code][0] < CACHE_TTL):
+    if comp_code in standings_cache and (now - standings_cache[comp_code][0] < 86400):
         return standings_cache[comp_code][1]
 
     url = f"{BASE_URL}/competitions/{comp_code}/standings"
@@ -52,63 +51,79 @@ def get_venue_stats(comp_code):
                 "a_atk": (t["goalsFor"] / max(t["playedGames"], 1)) / avg_a_goals,
                 "a_def": (t["goalsAgainst"] / max(t["playedGames"], 1)) / avg_a_goals
             })
-
     standings_cache[comp_code] = (now, venue_data)
     return venue_data
 
 def get_form_multiplier(team_id):
-    url = f"{BASE_URL}/teams/{team_id}/matches?status=FINISHED&limit=5"
-    res = requests.get(url, headers=HEADERS)
+    res = requests.get(f"{BASE_URL}/teams/{team_id}/matches?status=FINISHED&limit=5", headers=HEADERS)
     if res.status_code != 200: return 1.0, 0
     matches = res.json().get("matches", [])
     pts = sum(3 if (m["homeTeam"]["id"] == team_id and m["score"]["fullTime"]["home"] > m["score"]["fullTime"]["away"]) or (m["awayTeam"]["id"] == team_id and m["score"]["fullTime"]["away"] > m["score"]["fullTime"]["home"]) else (1 if m["score"]["fullTime"]["home"] == m["score"]["fullTime"]["away"] else 0) for m in matches)
     return 0.85 + (pts / 15 * 0.3), pts
 
+def gaffer_logic(h_name, a_name, h_s, a_s, h_f, a_f, score):
+    """The AI Voice: Translating numbers into 'The Gaffer's' speech."""
+    h_goals, a_goals = map(int, score.split('-'))
+    
+    # Analyze the clash
+    if h_s['h_atk'] > 1.3 and a_s['a_def'] > 1.2:
+        clash = f"Look, {h_name} are a different beast at home. They'll throw the kitchen sink at 'em."
+    elif a_s['a_atk'] > 1.2 and h_s['h_def'] > 1.2:
+        clash = f"The visitors have some real quality on the break. {a_name} won't just sit back and take it."
+    else:
+        clash = "This one's going to be won in the trenches. It's a proper tactical chess match."
+
+    # Analyze form
+    if h_f > a_f + 0.15:
+        momentum = f"The home side is flying right now. Momentum is everything in this league."
+    elif a_f > h_f + 0.15:
+        momentum = f"Don't be fooled by the table; the visitors are in a rich vein of form."
+    else:
+        momentum = "Both sides have been a bit 'patchy' lately, to be honest."
+
+    # Final verdict
+    if h_goals > a_goals:
+        verdict = f"If you're asking me, I'm backing {h_name} to get the job done. {score} feels right."
+    elif a_goals > h_goals:
+        verdict = f"I've got a sneaky feeling about an away win here. I'm calling it {score}."
+    else:
+        verdict = f"Neither side has enough to kill it off. Put me down for a {score} draw."
+
+    return f"{clash} {momentum} {verdict}"
+
 @app.route("/fixtures", methods=["GET"])
 def fixtures():
-    date_str = request.args.get("date")
-    if not date_str: return jsonify([])
-    d_to = (datetime.strptime(date_str, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
-    res = requests.get(f"{BASE_URL}/matches", headers=HEADERS, params={"dateFrom": date_str, "dateTo": d_to, "competitions": "PL,BL1,SA,PD,FL1"})
+    d = request.args.get("date")
+    d_to = (datetime.strptime(d, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+    res = requests.get(f"{BASE_URL}/matches", headers=HEADERS, params={"dateFrom": d, "dateTo": d_to, "competitions": "PL,BL1,SA,PD,FL1"})
     return jsonify([{"home": m["homeTeam"]["name"], "home_id": m["homeTeam"]["id"], "away": m["awayTeam"]["name"], "away_id": m["awayTeam"]["id"], "competition": m["competition"]["code"]} for m in res.json().get("matches", [])])
 
 @app.route("/predict", methods=["POST"])
 def predict():
     data = request.get_json()
-    comp, h_id, a_id = data["competition"], data["home_id"], data["away_id"]
-    stats = get_venue_stats(comp)
-    h_s = stats.get(h_id, {"h_atk": 1.0, "h_def": 1.0, "a_atk": 1.0, "a_def": 1.0, "name": "Home"})
-    a_s = stats.get(a_id, {"h_atk": 1.0, "h_def": 1.0, "a_atk": 1.0, "a_def": 1.0, "name": "Away"})
-    
-    h_f, h_pts = get_form_multiplier(h_id)
-    a_f, a_pts = get_form_multiplier(a_id)
+    stats = get_venue_stats(data["competition"])
+    h_s, a_s = stats.get(data["home_id"]), stats.get(data["away_id"])
+    if not h_s or not a_s: return jsonify({"error": "No data"})
+
+    h_f, h_pts = get_form_multiplier(data["home_id"])
+    a_f, a_pts = get_form_multiplier(data["away_id"])
 
     h_xg = h_s["h_atk"] * a_s["a_def"] * 1.40 * h_f
     a_xg = a_s["a_atk"] * h_s["h_def"] * 1.25 * a_f
 
-    max_p, best_score = 0, "1-1"
-    h_win, draw, a_win = 0, 0, 0
+    max_p, score, h_win, draw, a_win = 0, "1-1", 0, 0, 0
     for h in range(6):
         for a in range(6):
             p = poisson_probability(h, h_xg) * poisson_probability(a, a_xg)
-            if p > max_p: max_p, best_score = p, f"{h}-{a}"
+            if p > max_p: max_p, score = p, f"{h}-{a}"
             if h > a: h_win += p
             elif h == a: draw += p
             else: a_win += p
 
-    # Expert Insight Generation
-    adv_reason = f"{h_s['name']} dominates at home with an attack rating of {h_s['h_atk']:.2f}, "
-    adv_reason += f"while {a_s['name']} has an away defensive coefficient of {a_s['a_def']:.2f}. "
-    form_gap = abs(h_f - a_f)
-    if form_gap > 0.1:
-        adv_reason += f"The primary driver here is the form disparity: {h_s['name'] if h_f > a_f else a_s['name']} is significantly outperforming their baseline season stats."
-    else:
-        adv_reason += "Both teams show stable historical patterns, making this a high-probability statistical match."
-
     return jsonify({
-        "score": best_score,
+        "score": score,
         "probs": {"home": round(h_win*100), "draw": round(draw*100), "away": round(a_win*100)},
-        "insight": adv_reason,
+        "insight": gaffer_logic(h_s['name'], a_s['name'], h_s, a_s, h_f, a_f, score),
         "metrics": {"h_atk": round(h_s['h_atk'],2), "a_def": round(a_s['a_def'],2), "h_form": h_pts, "a_form": a_pts}
     })
 

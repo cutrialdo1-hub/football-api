@@ -1,96 +1,112 @@
-import os
 import math
+import os
+import time
 import requests
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, jsonify, request, render_template
+from flask_cors import CORS
 from google import genai
 from dotenv import load_dotenv
 
 load_dotenv()
 app = Flask(__name__)
+CORS(app)
 
 # --- CONFIG ---
-FOOTBALL_API_KEY = os.getenv("FOOTBALL_API_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-client = genai.Client(api_key=GEMINI_API_KEY)
+FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# The 12 Free Tier Competitions
-FREE_LEAGUES = ['PL', 'PD', 'SA', 'BL1', 'FL1', 'CL', 'DED', 'PPL', 'ELC', 'BSA', 'WC', 'EC']
-
-# --- THE MATH ---
-def poisson_probability(lmbda, k):
-    return (math.exp(-lmbda) * (lmbda**k)) / math.factorial(k)
-
-def calculate_match_probs(h_xg, a_xg):
-    h_win, draw, a_win = 0, 0, 0
-    for i in range(7): 
-        for j in range(7):
-            prob = poisson_probability(h_xg, i) * poisson_probability(a_xg, j)
-            if i > j: h_win += prob
-            elif j > i: a_win += prob
-            else: draw += prob
-    return h_win, draw, a_win
-
-def get_stats(comp_code, team_id, side):
-    url = f"https://api.football-data.org/v4/competitions/{comp_code}/standings"
-    headers = {"X-Auth-Token": FOOTBALL_API_KEY}
+client = None
+if GEMINI_API_KEY:
     try:
-        response = requests.get(url, headers=headers).json()
-        standings = response.get('standings', [])
-        table_data = next((s for s in standings if s['type'] == side), standings[0])['table']
-        for entry in table_data:
-            if entry['team']['id'] == int(team_id):
+        client = genai.Client(api_key=GEMINI_API_KEY)
+    except Exception as e:
+        print(f"AI Client Init Failed: {e}")
+
+BASE_URL = "https://api.football-data.org/v4"
+HEADERS = {"X-Auth-Token": FOOTBALL_API_KEY}
+FREE_COMPS = "CL,PL,ELC,BL1,SA,PD,FL1,DED,PPL,BSA,EC,WC"
+
+# --- POISSON MATH ---
+def poisson_probability(actual, expected):
+    if expected <= 0: expected = 0.01
+    return (math.pow(expected, actual) * math.exp(-expected)) / math.factorial(actual)
+
+def get_stats(comp_code, team_id):
+    default = {"rank": "N/A", "atk": 1.2, "df": 1.0}
+    try:
+        res = requests.get(f"{BASE_URL}/competitions/{comp_code}/standings", headers=HEADERS)
+        data = res.json()
+        if "standings" not in data: return default
+        
+        table = data["standings"][0]["table"]
+        avg_g = sum(t["goalsFor"] for t in table) / max(sum(t["playedGames"] for t in table), 1)
+        
+        for t in table:
+            if t["team"]["id"] == team_id:
                 return {
-                    "avg_goals": entry['goalsFor'] / entry['playedGames'],
-                    "name": entry['team']['shortName'],
-                    "form": entry.get('form', '??')
+                    "rank": t["position"],
+                    "atk": (t["goalsFor"]/max(t["playedGames"], 1)) / avg_g,
+                    "df": (t["goalsAgainst"]/max(t["playedGames"], 1)) / avg_g
                 }
-    except: return None
+    except: pass
+    return default
 
-# --- ROUTES ---
-@app.route('/')
-def home():
-    return render_template('index.html')
+@app.route("/")
+def index():
+    return render_template("index.html")
 
-@app.route('/get_matches', methods=['GET'])
-def get_matches():
-    headers = {"X-Auth-Token": FOOTBALL_API_KEY}
-    all_fixtures = []
-    # Loop through the free leagues to find scheduled games
-    for league in FREE_LEAGUES:
-        url = f"https://api.football-data.org/v4/competitions/{league}/matches?status=SCHEDULED"
-        try:
-            res = requests.get(url, headers=headers).json()
-            for m in res.get('matches', [])[:10]: # Top 10 per league
-                all_fixtures.append({
-                    "home": m['homeTeam']['shortName'],
-                    "home_id": m['homeTeam']['id'],
-                    "away": m['awayTeam']['shortName'],
-                    "away_id": m['awayTeam']['id'],
-                    "league": league,
-                    "date": m['utcDate'][:10]
-                })
-        except: continue
-    return jsonify(sorted(all_fixtures, key=lambda x: x['date']))
+@app.route("/fixtures", methods=["GET"])
+def fixtures():
+    d = request.args.get("date")
+    # This grabs matches for the selected date across all free leagues
+    res = requests.get(f"{BASE_URL}/matches", headers=HEADERS, params={"dateFrom": d, "dateTo": d, "competitions": FREE_COMPS})
+    matches = res.json().get("matches", [])
+    return jsonify([{
+        "home": m["homeTeam"]["name"],
+        "home_id": m["homeTeam"]["id"],
+        "away": m["awayTeam"]["name"],
+        "away_id": m["awayTeam"]["id"],
+        "comp": m["competition"]["code"],
+        "league": m["competition"]["name"]
+    } for m in matches])
 
-@app.route('/predict', methods=['POST'])
+@app.route("/predict", methods=["POST"])
 def predict():
-    data = request.json
-    h_data = get_stats(data['league'], data['home_id'], "HOME")
-    a_data = get_stats(data['league'], data['away_id'], "AWAY")
+    data = request.get_json()
+    h_s = get_stats(data["comp"], data["home_id"])
+    a_s = get_stats(data["comp"], data["away_id"])
     
-    if not h_data or not a_data:
-        return jsonify({"error": "Data unavailable"}), 400
+    # Calculate Expected Goals (xG)
+    h_xg = h_s["atk"] * a_s["df"] * 1.3
+    a_xg = a_s["atk"] * h_s["df"] * 1.1
+    
+    max_p, score, h_w, d, a_w = 0, "1-1", 0, 0, 0
+    for h in range(6):
+        for a in range(6):
+            p = poisson_probability(h, h_xg) * poisson_probability(a, a_xg)
+            if p > max_p: 
+                max_p, score = p, f"{h}-{a}"
+            if h > a: h_w += p
+            elif h == a: d += p
+            else: a_w += p
+            
+    # AI Verdict
+    insight = "Play for the badge. Stick to the basics."
+    if client:
+        prompt = f"You are a grumpy football manager. Give a blunt 2-sentence prediction for {data['home']} vs {data['away']}. Score: {score}."
+        try:
+            response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+            insight = response.text.strip()
+        except: pass
 
-    h_win, draw, a_win = calculate_match_probs(h_data['avg_goals'], a_data['avg_goals'])
-    
-    prompt = f"You are a grumpy football manager. Verdict on {h_data['name']} vs {a_data['name']}. Home Win: {h_win:.0%}. Form: {h_data['form']} vs {a_data['form']}."
-    response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
-    
     return jsonify({
-        "home_name": h_data['name'], "away_name": a_data['name'],
-        "verdict": response.text,
-        "probs": {"home": f"{h_win:.0%}", "draw": f"{draw:.0%}", "away": f"{a_win:.0%}"}
+        "score": score, 
+        "probs": {"home": round(h_w*100), "draw": round(d*100), "away": round(a_w*100)},
+        "insight": insight,
+        "h_rank": h_s["rank"], 
+        "a_rank": a_s["rank"],
+        "metrics": {"h_atk": round(h_s["atk"],2), "a_def": round(a_s["df"],2)}
     })
 
-if __name__ == '__main__':
-    app.run(debug=True)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000, debug=True)

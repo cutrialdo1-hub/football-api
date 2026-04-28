@@ -5,7 +5,7 @@ import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from datetime import datetime, timedelta
-# Import the library from the quickstart
+# Use ONLY the new library imports
 from google import genai
 from google.genai import types
 
@@ -16,11 +16,10 @@ CORS(app)
 FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY") or os.environ.get("API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# Initialize Client per Quickstart
+# Initialize Client using the Google AI SDK method
 client = None
 if GEMINI_API_KEY:
     try:
-        # Explicitly setting v1 to match your project's stable production requirements
         client = genai.Client(
             api_key=GEMINI_API_KEY,
             http_options={'api_version': 'v1'}
@@ -33,7 +32,6 @@ HEADERS = {"X-Auth-Token": FOOTBALL_API_KEY}
 FREE_COMPS = "CL,PL,ELC,BL1,SA,PD,FL1,DED,PPL,BSA,EC,WC"
 standings_cache = {}
 
-# --- LOGIC ---
 def poisson_probability(actual, expected):
     if expected <= 0: expected = 0.01
     return (math.pow(expected, actual) * math.exp(-expected)) / math.factorial(actual)
@@ -47,7 +45,7 @@ def get_venue_stats(comp_code):
     if res.status_code != 200: return {}
     data = res.json()
     try:
-        t_table = next((s for s in data["standings"] if s["type"] == "TOTAL"), data["standings"][0])["table"]
+        t_table = data["standings"][0]["table"]
         avg_g = sum(t["goalsFor"] for t in t_table) / max(sum(t["playedGames"] for t in t_table), 1)
         venue_data = {t["team"]["id"]: {
             "name": t["team"]["name"], "rank": t["position"],
@@ -64,16 +62,15 @@ def get_form(team_id):
     res = requests.get(f"{BASE_URL}/teams/{team_id}/matches?status=FINISHED&limit=5", headers=HEADERS)
     if res.status_code != 200: return 1.0, 0
     m = res.json().get("matches", [])
-    pts = sum(3 if (x["score"]["fullTime"]["home"] > x["score"]["fullTime"]["away"] and x["homeTeam"]["id"] == team_id) or (x["score"]["fullTime"]["away"] > x["score"]["fullTime"]["home"] and x["awayTeam"]["id"] == team_id) else 1 if x["score"]["fullTime"]["home"] == x["score"]["fullTime"]["away"] else 0 for x in m)
+    pts = sum(3 if (x["score"]["fullTime"]["home"] > x["score"]["fullTime"]["away"] and x["homeTeam"]["id"] == team_id) or (x["score"]["fullTime"]["away"] > x["score"]["fullTime"]["home"] and x["homeTeam"]["id"] == team_id) else 1 if x["score"]["fullTime"]["home"] == x["score"]["fullTime"]["away"] else 0 for x in m)
     return 0.85 + (pts/15 * 0.3), pts
 
-# --- THE GAFFER'S VERDICT ---
 def gaffer_ai_verdict(h_name, a_name, score):
     if not client:
         return "The Gaffer's lost his notepad. API Key missing."
 
-    # UPDATED FOR 2026: Using the current stable model
-    model_id = "gemini-2.5-flash" 
+    # Using 2.0-flash as 1.5 is returning 404 in your logs
+    model_id = "gemini-2.0-flash" 
 
     try:
         response = client.models.generate_content(

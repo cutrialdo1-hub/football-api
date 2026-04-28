@@ -5,7 +5,6 @@ import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from datetime import datetime, timedelta
-# THIS LINE IS THE FIX:
 import google.generativeai as genai
 
 app = Flask(__name__)
@@ -15,7 +14,7 @@ CORS(app)
 FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# Initialize the AI properly for the stable library
+# Initialize Gemini AI
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
 
@@ -24,7 +23,6 @@ HEADERS = {"X-Auth-Token": FOOTBALL_API_KEY}
 FREE_COMPS = "CL,PL,ELC,BL1,SA,PD,FL1,DED,PPL,BSA,EC,WC"
 standings_cache = {}
 
-# --- MATHEMATICAL ENGINE ---
 def poisson_probability(actual, expected):
     if expected <= 0: expected = 0.01
     return (math.pow(expected, actual) * math.exp(-expected)) / math.factorial(actual)
@@ -77,23 +75,21 @@ def get_form(team_id):
     pts = sum(3 if (x["score"]["fullTime"]["home"] > x["score"]["fullTime"]["away"] and x["homeTeam"]["id"] == team_id) or (x["score"]["fullTime"]["away"] > x["score"]["fullTime"]["home"] and x["awayTeam"]["id"] == team_id) else 1 if x["score"]["fullTime"]["home"] == x["score"]["fullTime"]["away"] else 0 for x in m)
     return 0.85 + (pts/15 * 0.3), pts
 
-# --- THE AI ANALYST ---
+# --- UPGRADED AI GAFFER ---
 def gaffer_ai_verdict(h_name, a_name, h_s, a_s, h_pts, a_pts, score):
     context = (
-        f"Fixture: {h_name} vs {a_name}. "
+        f"Match: {h_name} vs {a_name}. "
         f"Table: {h_name} is {h_s['rank']}, {a_name} is {a_s['rank']}. "
-        f"Data: {h_name} Attack {h_s['h_atk']:.2f}, Def {h_s['h_def']:.2f} | {a_name} Attack {a_s['a_atk']:.2f}, Def {a_s['a_def']:.2f}. "
-        f"Form: {h_name} has {h_pts}/15 pts, {a_name} has {a_pts}/15 pts. "
-        f"Our Prediction: {score}."
+        f"Stats: {h_name} (Atk {h_s['h_atk']:.2f}, Def {h_s['h_def']:.2f}) | {a_name} (Atk {a_s['a_atk']:.2f}, Def {a_s['a_def']:.2f}). "
+        f"Recent Points: {h_name} {h_pts}, {a_name} {a_pts}. "
+        f"Computer Result: {score}."
     )
 
     prompt = (
-        "You are 'The Gaffer', a blunt, highly experienced football manager. "
-        "Analyze this match in 3-4 sentences of deep tactical insight. "
-        "DO NOT use raw numbers or stats. Use manager terminology like 'defensive low-block', "
-        "'clinical in the final third', 'relegation dogfight', or 'midfield engine room'. "
-        "Explain WHY the predicted score makes tactical sense based on the form and quality of the teams."
-        f"\n\nStats Context: {context}"
+        "You are 'The Gaffer', a blunt, legendary football manager with a dry wit. "
+        "Analyze this match in 3 sentences using tactical manager-speak. "
+        "Don't mention raw numbers. Talk about 'low blocks', 'clinical finishers', 'six-pointers', or 'relegation dogfights'. "
+        f"Context: {context}"
     )
 
     try:
@@ -101,9 +97,8 @@ def gaffer_ai_verdict(h_name, a_name, h_s, a_s, h_pts, a_pts, score):
         return response.text.strip()
     except Exception as e:
         print(f"GAFFER ERROR: {e}")
-        return "The Gaffer's busy screaming at the ref. He's letting the computer's prediction stand for now."
+        return "The Gaffer's in the dressing room giving them the hairdryer treatment. He's letting the numbers speak for themselves today."
 
-# --- API ROUTES ---
 @app.route("/fixtures", methods=["GET"])
 def fixtures():
     d = request.args.get("date")
@@ -139,6 +134,7 @@ def predict():
             else: a_win += p
 
     total = h_win + draw + a_win
+    # Using the new AI function here:
     insight = gaffer_ai_verdict(data["home"], data["away"], h_s, a_s, h_pts, a_pts, score)
 
     return jsonify({

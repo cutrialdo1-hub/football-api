@@ -12,7 +12,7 @@ API_KEY = os.getenv("FOOTBALL_API_KEY")
 BASE_URL = "https://api.football-data.org/v4"
 HEADERS = {"X-Auth-Token": API_KEY}
 
-COMPETITIONS = ["PL", "PD", "BL1", "SA", "FL1", "CL", "DED", "PPL", "BSA", "ELC", "WC", "EC"]
+COMPETITIONS = ["PL", "PD", "BL1", "SA", "FL1", "ELC", "CL"]
 
 cache_standings = {}
 
@@ -24,7 +24,6 @@ def get_detailed_form(team_id):
     try:
         r = requests.get(f"{BASE_URL}/teams/{team_id}/matches?status=FINISHED&limit=5", headers=HEADERS, timeout=5)
         if r.status_code != 200: return 1.0, "???"
-        
         matches = r.json().get("matches", [])
         history = []
         pts = 0
@@ -39,12 +38,10 @@ def get_detailed_form(team_id):
                 history.append("D"); pts += 1
             else:
                 history.append("L")
-        
         form_string = "".join(history)
         multiplier = 0.85 + (pts / 15) * 0.3 
         return multiplier, form_string
-    except:
-        return 1.0, "???"
+    except: return 1.0, "???"
 
 def get_standings(code):
     now = time.time()
@@ -79,7 +76,7 @@ def fixtures():
                         "away": m["awayTeam"]["name"], "away_id": m["awayTeam"]["id"],
                         "comp": comp, "league": m["competition"]["name"]
                     })
-            time.sleep(0.6) # Anti-Rate-Limit Buffer
+            time.sleep(0.6) 
         except: continue
     return jsonify(all_matches)
 
@@ -108,17 +105,22 @@ def predict():
             elif i == j: prob_draw += p
             else: prob_away += p
 
-    # THE GAFFER'S PERSONALITY LOGIC
     h_name, a_name = data['home'], data['away']
+    
+    # Refined Narrative (Gaffer focused on strategy)
     if h_team['rank'] != "N/A" and a_team['rank'] != "N/A":
-        vibe = "A high-stakes clash at the top." if h_team['rank'] < 5 and a_team['rank'] < 5 else "A gritty mid-table battle."
-    else: vibe = "Form is the only thing that matters here."
+        diff = abs(int(h_team['rank']) - int(a_team['rank']))
+        vibe = "A high-intensity clash for position." if diff <= 3 else "A David vs Goliath scenario."
+    else: vibe = "The atmosphere is electric for this one."
 
-    if "L" * 3 in h_form: streak = f"The wheels have fallen off for {h_name} lately."
-    elif "W" * 3 in h_form: streak = f"{h_name} is playing with massive confidence."
-    else: streak = "Neither side is showing total dominance."
+    h_wins = h_form.count("W")
+    if h_wins >= 4: form_note = f"{h_name} is currently untouchable; they're playing on another level."
+    elif "L" * 3 in h_form: form_note = f"There's unrest in the {h_name} camp; the losses are mounting up."
+    else: form_note = "Expect a measured approach from both dugouts."
 
-    insight = f"{vibe} {streak} {h_name} [{h_form}] meets {a_name} [{a_form}]. I'm putting my neck out for a {predicted_score}."
+    tactics = "We're likely to see a high press today." if h_lam + a_lam > 2.8 else "It'll be won in the mud and the shadows of the midfield."
+
+    insight = f"{vibe} {form_note} {tactics} I’m going with {predicted_score} on my sheet."
 
     return jsonify({
         "score": predicted_score,

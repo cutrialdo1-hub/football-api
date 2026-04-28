@@ -2,79 +2,107 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>AI Football Scout Pro</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ScoutAI Pro | Tactical Engine</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@300;500;700&display=swap" rel="stylesheet">
     <style>
-        :root { --bg: #0f172a; --card: #1e293b; --accent: #22c55e; --text: #f1f5f9; }
-        body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; padding: 20px; }
-        .container { width: 100%; max-width: 450px; }
-        .card { background: var(--card); padding: 20px; margin-bottom: 20px; border-radius: 15px; border: 1px solid #334155; text-align: center; }
-        button { width: 100%; padding: 12px; background: var(--accent); color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 10px; }
-        .score { font-size: 3.5rem; font-weight: 900; color: var(--accent); margin: 10px 0; }
-        .analysis { background: #0f172a; padding: 15px; border-radius: 10px; text-align: left; font-size: 0.9rem; line-height: 1.5; border-left: 4px solid var(--accent); }
-        .bar { height: 12px; border-radius: 6px; display: flex; overflow: hidden; margin: 15px 0; background: #334155; }
-        .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
-        .m-card { background: #0f172a; padding: 10px; border-radius: 8px; font-size: 0.75rem; color: #94a3b8; }
-        select, input { width: 100%; padding: 10px; border-radius: 8px; background: #0f172a; border: 1px solid #334155; color: white; margin-bottom: 10px; }
+        :root { --neon: #00f2ff; --neon-pink: #ff00c1; --glass: rgba(255, 255, 255, 0.05); --border: rgba(255, 255, 255, 0.1); }
+        body { margin: 0; background: radial-gradient(circle at top right, #1a1a2e, #0f0c29); color: #fff; font-family: 'Inter', sans-serif; display: flex; justify-content: center; min-height: 100vh; overflow-x: hidden; }
+        .dashboard { width: 100%; max-width: 500px; padding: 20px; }
+        .glass-card { background: var(--glass); backdrop-filter: blur(15px); border: 1px solid var(--border); border-radius: 24px; padding: 25px; margin-bottom: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); transition: 0.3s; }
+        h1 { font-family: 'Orbitron', sans-serif; text-transform: uppercase; letter-spacing: 3px; font-size: 1.5rem; text-align: center; color: var(--neon); text-shadow: 0 0 10px var(--neon); }
+        input, select { background: rgba(0,0,0,0.3); border: 1px solid var(--border); color: #fff; padding: 12px; border-radius: 12px; width: 100%; box-sizing: border-box; margin-bottom: 10px; }
+        button { background: linear-gradient(45deg, var(--neon), #0061ff); border: none; color: white; padding: 15px; border-radius: 12px; width: 100%; font-weight: 700; font-family: 'Orbitron'; cursor: pointer; text-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+        button:hover { filter: brightness(1.2); transform: translateY(-2px); }
+        .score-display { font-family: 'Orbitron'; font-size: 4rem; color: #fff; text-shadow: 0 0 20px var(--neon); margin: 15px 0; }
+        .prob-bar { height: 10px; border-radius: 5px; display: flex; overflow: hidden; margin: 20px 0; background: rgba(255,255,255,0.1); }
+        .insight-box { background: rgba(0,0,0,0.4); padding: 15px; border-radius: 15px; font-size: 0.85rem; line-height: 1.6; border-left: 3px solid var(--neon-pink); }
+        .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px; }
+        .stat-badge { background: var(--glass); padding: 12px; border-radius: 12px; text-align: center; border: 1px solid var(--border); }
+        .stat-label { font-size: 0.65rem; color: #888; text-transform: uppercase; margin-bottom: 4px; }
+        .stat-val { font-weight: 700; color: var(--neon); font-size: 1.1rem; }
+        .loader { width: 40px; height: 40px; border: 4px solid var(--neon); border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite; margin: 20px auto; }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
-<div class="container">
-    <h1>AI Scout Pro</h1>
-    <div class="card">
-        <input type="date" id="date">
-        <button onclick="loadMatches()">Load Fixtures</button>
+<div class="dashboard">
+    <h1>ScoutAI <span style="color:var(--neon-pink)">Pro</span></h1>
+    
+    <div class="glass-card">
+        <input type="date" id="date_picker">
+        <button onclick="fetchGames()">SCAN FIXTURES</button>
     </div>
-    <div class="card">
-        <select id="matches"><option>Select Date First</option></select>
-        <button onclick="predict()">Run Prediction</button>
+
+    <div class="glass-card">
+        <select id="game_select"><option>Initialize System First</option></select>
+        <button onclick="runAI()">GENERATE PREDICTION</button>
     </div>
-    <div id="output"></div>
+
+    <div id="result_area"></div>
 </div>
 
 <script>
-    const API = "https://football-api-9e4p.onrender.com";
+    const API_URL = "https://football-api-9e4p.onrender.com";
     let matches = [];
 
-    async function loadMatches() {
-        const d = document.getElementById("date").value;
-        if(!d) return;
-        const res = await fetch(`${API}/fixtures?date=${d}`);
+    async function fetchGames() {
+        const date = document.getElementById('date_picker').value;
+        if(!date) return;
+        const res = await fetch(`${API_URL}/fixtures?date=${date}`);
         matches = await res.json();
-        const s = document.getElementById("matches");
-        s.innerHTML = matches.length ? "<option value=''>-- Select Match --</option>" : "<option>No Games</option>";
-        matches.forEach((m, i) => s.innerHTML += `<option value="${i}">${m.home} vs ${m.away}</option>`);
+        const sel = document.getElementById('game_select');
+        sel.innerHTML = matches.length ? '<option value="">-- Target Match --</option>' : '<option>No Active Missions</option>';
+        matches.forEach((m, i) => {
+            sel.innerHTML += `<option value="${i}">${m.home} vs ${m.away}</option>`;
+        });
     }
 
-    async function predict() {
-        const i = document.getElementById("matches").value;
-        if(i === "") return;
-        document.getElementById("output").innerHTML = "<div class='card'>Analyzing Venue Stats...</div>";
-        
-        const res = await fetch(`${API}/predict`, {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify(matches[i])
-        });
-        const d = await res.json();
+    async function runAI() {
+        const idx = document.getElementById('game_select').value;
+        if(idx === "") return;
+        const out = document.getElementById('result_area');
+        out.innerHTML = '<div class="loader"></div>';
 
-        // FIX: Using Optional Chaining ?. to prevent "h_atk undefined" errors
-        document.getElementById("output").innerHTML = `
-            <div class="card">
-                <h3>${matches[i].home} vs ${matches[i].away}</h3>
-                <div class="score">${d.prediction}</div>
-                <div class="bar">
-                    <div style="width:${d.probs.home}%; background:#3b82f6"></div>
-                    <div style="width:${d.probs.draw}%; background:#94a3b8"></div>
-                    <div style="width:${d.probs.away}%; background:#ef4444"></div>
+        try {
+            const res = await fetch(`${API_URL}/predict`, {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify(matches[idx])
+            });
+            const d = await res.json();
+
+            out.innerHTML = `
+                <div class="glass-card" style="text-align:center">
+                    <div style="font-size:0.8rem; letter-spacing:2px; color:#888">PROJECTED SCORE</div>
+                    <div class="score-display">${d.score}</div>
+                    
+                    <div class="prob-bar">
+                        <div style="width:${d.probs.home}%; background:var(--neon)"></div>
+                        <div style="width:${d.probs.draw}%; background:#999"></div>
+                        <div style="width:${d.probs.away}%; background:var(--neon-pink)"></div>
+                    </div>
+                    
+                    <div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-bottom:20px">
+                        <span>H: ${d.probs.home}%</span>
+                        <span>D: ${d.probs.draw}%</span>
+                        <span>A: ${d.probs.away}%</span>
+                    </div>
+
+                    <div class="insight-box">
+                        <b style="color:var(--neon); display:block; margin-bottom:5px">SYSTEM ANALYSIS:</b>
+                        ${d.insight}
+                    </div>
+
+                    <div class="metric-grid">
+                        <div class="stat-badge"><div class="stat-label">H-Attack</div><div class="stat-val">${d.metrics?.h_atk || '1.0'}</div></div>
+                        <div class="stat-badge"><div class="stat-label">A-Defense</div><div class="stat-val">${d.metrics?.a_def || '1.0'}</div></div>
+                        <div class="stat-badge"><div class="stat-label">H-Form (Pts)</div><div class="stat-val">${d.metrics?.h_form}/15</div></div>
+                        <div class="stat-badge"><div class="stat-label">A-Form (Pts)</div><div class="stat-val">${d.metrics?.a_form}/15</div></div>
+                    </div>
                 </div>
-                <div class="analysis"><strong>Insight:</strong> ${d.analysis}</div>
-                <div class="metrics">
-                    <div class="m-card">H-Atk Strength<br><b>${d.venue_metrics?.h_atk || '1.0'}</b></div>
-                    <div class="m-card">A-Def Strength<br><b>${d.venue_metrics?.a_def || '1.0'}</b></div>
-                </div>
-                <p style="font-size:0.7rem; color:#64748b; margin-top:10px">xG Projection: ${d.xg?.home} - ${d.xg?.away}</p>
-            </div>
-        `;
+            `;
+        } catch(e) { out.innerHTML = '<div class="glass-card">Error: Connection Lost</div>'; }
     }
 </script>
 </body>

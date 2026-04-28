@@ -13,15 +13,14 @@ API_KEY = os.getenv("FOOTBALL_API_KEY")
 BASE_URL = "https://api.football-data.org/v4"
 HEADERS = {"X-Auth-Token": API_KEY}
 
-# --- Competitions ---
-COMPETITIONS = [
-    "PL", "CL", "BL1", "SA", "PD", "FL1", "DED", "PPL", "BSA", "ELC"
-]
-
-cache = {}
+# -----------------------------
+# CACHE
+# -----------------------------
+competitions_cache = {"t": 0, "data": []}
+standings_cache = {}
 
 # -----------------------------
-# POISSON MODEL
+# API HELPERS
 # -----------------------------
 def poisson(k, lam):
     lam = max(lam, 0.01)
@@ -31,13 +30,45 @@ def clamp(x, low=0.4, high=2.5):
     return max(low, min(x, high))
 
 # -----------------------------
-# STANDINGS / TEAM STATS
+# COMPETITIONS (FIXED PROPERLY)
+# -----------------------------
+def get_free_competitions():
+    r = requests.get(f"{BASE_URL}/competitions", headers=HEADERS)
+    if r.status_code != 200:
+        return []
+
+    comps = r.json().get("competitions", [])
+
+    free = [
+        c["code"]
+        for c in comps
+        if c.get("plan") == "TIER_ONE"
+        and c.get("code")
+    ]
+
+    return free
+
+def get_competitions_cached():
+    now = time.time()
+
+    if competitions_cache["data"] and now - competitions_cache["t"] < 86400:
+        return competitions_cache["data"]
+
+    data = get_free_competitions()
+
+    competitions_cache["t"] = now
+    competitions_cache["data"] = data
+
+    return data
+
+# -----------------------------
+# STANDINGS
 # -----------------------------
 def get_standings(code):
     now = time.time()
 
-    if code in cache and now - cache[code]["t"] < 86400:
-        return cache[code]["d"]
+    if code in standings_cache and now - standings_cache[code]["t"] < 86400:
+        return standings_cache[code]["d"]
 
     r = requests.get(
         f"{BASE_URL}/competitions/{code}/standings",
@@ -48,8 +79,10 @@ def get_standings(code):
         return {}
 
     try:
-        data = r.json()
-        total = next(s for s in data["standings"] if s["type"] == "TOTAL")["table"]
+        total = next(
+            s for s in r.json()["standings"]
+            if s["type"] == "TOTAL"
+        )["table"]
 
         out = {}
 
@@ -64,14 +97,14 @@ def get_standings(code):
                 "ga": t["goalsAgainst"] / played
             }
 
-        cache[code] = {"t": now, "d": out}
+        standings_cache[code] = {"t": now, "d": out}
         return out
 
     except:
         return {}
 
 # -----------------------------
-# FORM
+# FORM MODEL
 # -----------------------------
 def form(team_id):
     r = requests.get(
@@ -99,18 +132,24 @@ def form(team_id):
     return 0.85 + (pts / 20), pts
 
 # -----------------------------
-# FIXTURES
+# FIXTURES (NOW COMPLETE)
 # -----------------------------
 @app.route("/fixtures")
 def fixtures():
     date = request.args.get("date")
+
+    if not date:
+        return jsonify([])
+
     date_to = (
         datetime.strptime(date, "%Y-%m-%d") + timedelta(days=1)
     ).strftime("%Y-%m-%d")
 
+    competitions = get_competitions_cached()
+
     all_matches = []
 
-    for comp in COMPETITIONS:
+    for comp in competitions:
         r = requests.get(
             f"{BASE_URL}/competitions/{comp}/matches",
             headers=HEADERS,
@@ -133,7 +172,7 @@ def fixtures():
     return jsonify(all_matches)
 
 # -----------------------------
-# PREDICTION ENGINE
+# PREDICTION ENGINE (STABLE)
 # -----------------------------
 @app.route("/predict", methods=["POST"])
 def predict():
@@ -150,13 +189,13 @@ def predict():
     hf, hp = form(data["home_id"])
     af, ap = form(data["away_id"])
 
-    HOME_ADV = 1.12
+    HOME_ADV = 1.10
 
-    # --- Expected Goals (stable version) ---
+    # --- Expected Goals ---
     hxg = (h["gf"] * a["ga"]) * hf * HOME_ADV
     axg = (a["gf"] * h["ga"]) * af
 
-    # clamp to prevent unrealistic scorelines
+    # clamp to stop unrealistic scorelines
     hxg = clamp(hxg)
     axg = clamp(axg)
 
@@ -189,11 +228,11 @@ def predict():
         },
         "h_rank": h["rank"],
         "a_rank": a["rank"],
-        "insight": f"{data['home']} vs {data['away']} looks tactically balanced with realistic xG projection."
+        "insight": f"{data['home']} vs {data['away']} now uses full free-tier dataset with stabilised xG modelling."
     })
 
 # -----------------------------
-# START
+# START SERVER
 # -----------------------------
 if __name__ == "__main__":
     app.run()

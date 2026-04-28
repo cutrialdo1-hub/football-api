@@ -5,7 +5,7 @@ import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from datetime import datetime, timedelta
-from google import genai
+import google.generativeai as genai
 
 app = Flask(__name__)
 CORS(app)
@@ -14,14 +14,16 @@ CORS(app)
 FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# Initialize Gemini Client
-client = genai.Client(api_key=GEMINI_API_KEY)
+# Initialize the AI properly
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 BASE_URL = "https://api.football-data.org/v4"
 HEADERS = {"X-Auth-Token": FOOTBALL_API_KEY}
 FREE_COMPS = "CL,PL,ELC,BL1,SA,PD,FL1,DED,PPL,BSA,EC,WC"
 standings_cache = {}
 
+# --- MATHEMATICAL ENGINE ---
 def poisson_probability(actual, expected):
     if expected <= 0: expected = 0.01
     return (math.pow(expected, actual) * math.exp(-expected)) / math.factorial(actual)
@@ -74,33 +76,33 @@ def get_form(team_id):
     pts = sum(3 if (x["score"]["fullTime"]["home"] > x["score"]["fullTime"]["away"] and x["homeTeam"]["id"] == team_id) or (x["score"]["fullTime"]["away"] > x["score"]["fullTime"]["home"] and x["awayTeam"]["id"] == team_id) else 1 if x["score"]["fullTime"]["home"] == x["score"]["fullTime"]["away"] else 0 for x in m)
     return 0.85 + (pts/15 * 0.3), pts
 
+# --- THE AI ANALYST ---
 def gaffer_ai_verdict(h_name, a_name, h_s, a_s, h_pts, a_pts, score):
     context = (
-        f"Matchup: {h_name} vs {a_name}. "
-        f"League Positions: {h_name} is {h_s['rank']}, {a_name} is {a_s['rank']}. "
-        f"Data: {h_name} Atk {h_s['h_atk']:.2f}/Def {h_s['h_def']:.2f} | {a_name} Atk {a_s['a_atk']:.2f}/Def {a_s['a_def']:.2f}. "
-        f"Form: {h_name} {h_pts}pts, {a_name} {a_pts}pts. "
-        f"Computer Result: {score}."
+        f"Fixture: {h_name} vs {a_name}. "
+        f"Table: {h_name} is {h_s['rank']}, {a_name} is {a_s['rank']}. "
+        f"Data: {h_name} Attack {h_s['h_atk']:.2f}, Def {h_s['h_def']:.2f} | {a_name} Attack {a_s['a_atk']:.2f}, Def {a_s['a_def']:.2f}. "
+        f"Form: {h_name} has {h_pts}/15 pts, {a_name} has {a_pts}/15 pts. "
+        f"Our Prediction: {score}."
     )
 
     prompt = (
-        "You are 'The Gaffer', a blunt, legendary football manager with a raspy voice and decades of experience. "
-        "Give a 3-sentence expert analysis of this matchup. "
-        "Translate numbers into tactical speak (e.g., 'clinical', 'leaky at the back', 'massive six-pointer'). "
-        "DO NOT repeat raw stats. Contextualize the stakes based on league rank (Promotion/Relegation/Mid-table). "
-        f"\n\nContext: {context}"
+        "You are 'The Gaffer', a blunt, highly experienced football manager. "
+        "Analyze this match in 3-4 sentences of deep tactical insight. "
+        "DO NOT use raw numbers or stats. Use manager terminology like 'defensive low-block', "
+        "'clinical in the final third', 'relegation dogfight', or 'midfield engine room'. "
+        "Explain WHY the predicted score makes tactical sense based on the form and quality of the teams."
+        f"\n\nStats Context: {context}"
     )
 
     try:
-        response = client.models.generate_content(
-            model="gemini-1.5-flash", 
-            contents=prompt
-        )
+        response = model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
-        print(f"AI Error: {e}")
-        return "The Gaffer's lost his voice. He's pointing at the scoreboard and letting the numbers do the talking."
+        print(f"GAFFER ERROR: {e}") # This shows up in Render Logs
+        return "The Gaffer's had a bit of a flare-up with the fourth official. He's pointing at the tactics board and letting the math speak for itself."
 
+# --- API ROUTES ---
 @app.route("/fixtures", methods=["GET"])
 def fixtures():
     d = request.args.get("date")

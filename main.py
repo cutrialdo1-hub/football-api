@@ -74,29 +74,32 @@ def get_form(team_id):
     pts = sum(3 if (x["score"]["fullTime"]["home"] > x["score"]["fullTime"]["away"] and x["homeTeam"]["id"] == team_id) or (x["score"]["fullTime"]["away"] > x["score"]["fullTime"]["home"] and x["awayTeam"]["id"] == team_id) else 1 if x["score"]["fullTime"]["home"] == x["score"]["fullTime"]["away"] else 0 for x in m)
     return 0.85 + (pts/15 * 0.3), pts
 
-# --- THE AI GAFFER ---
 def gaffer_ai_verdict(h_name, a_name, h_s, a_s, h_pts, a_pts, score):
     context = (
         f"Matchup: {h_name} vs {a_name}. "
         f"League Positions: {h_name} is {h_s['rank']}, {a_name} is {a_s['rank']}. "
-        f"Data: {h_name} Atk {h_s['h_atk']}/Def {h_s['h_def']} | {a_name} Atk {a_s['a_atk']}/Def {a_s['a_def']}. "
+        f"Data: {h_name} Atk {h_s['h_atk']:.2f}/Def {h_s['h_def']:.2f} | {a_name} Atk {a_s['a_atk']:.2f}/Def {a_s['a_def']:.2f}. "
         f"Form: {h_name} {h_pts}pts, {a_name} {a_pts}pts. "
         f"Computer Result: {score}."
     )
 
     prompt = (
-        "You are 'The Gaffer', a blunt, legendary football manager. Give a 3-sentence expert analysis. "
-        "Translate numbers into tactical speak (e.g., 'clinical', 'leaky', 'six-pointer'). "
-        "DO NOT repeat raw stats. Contextualize the stakes based on league rank (Promotion/Relegation/Derby). "
+        "You are 'The Gaffer', a blunt, legendary football manager with a raspy voice and decades of experience. "
+        "Give a 3-sentence expert analysis of this matchup. "
+        "Translate numbers into tactical speak (e.g., 'clinical', 'leaky at the back', 'massive six-pointer'). "
+        "DO NOT repeat raw stats. Contextualize the stakes based on league rank (Promotion/Relegation/Mid-table). "
         f"\n\nContext: {context}"
     )
 
     try:
-        # Using Gemini 3 Flash for the most modern, witty analysis
-        response = client.models.generate_content(model="gemini-3-flash", contents=prompt)
+        response = client.models.generate_content(
+            model="gemini-1.5-flash", 
+            contents=prompt
+        )
         return response.text.strip()
-    except Exception:
-        return "The Gaffer's run out of breath. He's backing the computer's logic for a tactical showdown."
+    except Exception as e:
+        print(f"AI Error: {e}")
+        return "The Gaffer's lost his voice. He's pointing at the scoreboard and letting the numbers do the talking."
 
 @app.route("/fixtures", methods=["GET"])
 def fixtures():
@@ -133,8 +136,6 @@ def predict():
             else: a_win += p
 
     total = h_win + draw + a_win
-    
-    # Get the AI-driven tactical breakdown
     insight = gaffer_ai_verdict(data["home"], data["away"], h_s, a_s, h_pts, a_pts, score)
 
     return jsonify({

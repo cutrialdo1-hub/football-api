@@ -9,119 +9,79 @@
         body { background: var(--bg); color: #fff; font-family: 'Inter', sans-serif; display: flex; justify-content: center; padding: 20px; }
         .container { width: 100%; max-width: 480px; }
         h1 { font-family: 'Orbitron'; color: var(--neon); text-align: center; letter-spacing: 5px; font-size: 1.2rem; margin-bottom: 30px; }
-        .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; margin-bottom: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.4); }
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; margin-bottom: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.4); text-align: center; }
         input, select, button { width: 100%; background: #000; border: 1px solid var(--border); color: #fff; padding: 14px; border-radius: 10px; margin-bottom: 12px; font-size: 0.9rem; box-sizing: border-box; }
-        button { background: var(--neon); color: #000; font-weight: 800; font-family: 'Orbitron'; border: none; cursor: pointer; transition: 0.3s; }
-        button:hover { filter: brightness(1.2); box-shadow: 0 0 15px var(--neon); }
-        .score { font-family: 'Orbitron'; font-size: 4.5rem; color: #fff; margin: 10px 0; text-shadow: 0 0 20px rgba(0,255,157,0.3); }
-        .gaffer-box { background: rgba(0,0,0,0.3); padding: 20px; border-radius: 12px; border-left: 4px solid var(--neon); font-style: italic; line-height: 1.6; color: #cbd5e1; position: relative; text-align: left; }
-        .gaffer-box::after { content: "— The Gaffer"; display: block; text-align: right; font-family: 'Orbitron'; color: var(--neon); font-size: 0.7rem; margin-top: 10px; }
-        .conf-label { font-size: 0.7rem; color: #64748b; letter-spacing: 2px; margin-bottom: 5px; }
-        .conf-bar { height: 4px; background: #222; border-radius: 2px; overflow: hidden; margin-bottom: 20px; }
-        .conf-fill { height: 100%; background: var(--neon); transition: 1s ease-out; }
-        .prob-row { display: flex; justify-content: space-between; font-size: 0.7rem; color: #94a3b8; font-family: 'Orbitron'; margin: 15px 0 5px 0; }
-        .metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 25px; }
-        .m-item { background: #000; padding: 12px; border-radius: 8px; border: 1px solid var(--border); text-align: center; }
-        .m-title { font-size: 0.6rem; color: #64748b; text-transform: uppercase; margin-bottom: 4px; }
-        .m-val { color: var(--neon); font-weight: 700; font-size: 1.1rem; }
-        .rank-tag { font-size: 0.7rem; color: var(--neon); font-family: 'Orbitron'; margin-top: 5px; display: block;}
+        button { background: var(--neon); color: #000; font-weight: 800; font-family: 'Orbitron'; border: none; cursor: pointer; }
+        .score { font-family: 'Orbitron'; font-size: 4.5rem; color: #fff; margin: 10px 0; }
+        .gaffer-box { background: rgba(0,0,0,0.3); padding: 20px; border-radius: 12px; border-left: 4px solid var(--neon); font-style: italic; line-height: 1.6; color: #cbd5e1; position: relative; margin: 20px 0; text-align: left; }
+        .gaffer-box::after { content: "— The Gaffer"; display: block; text-align: right; color: var(--neon); font-size: 0.7rem; }
+        .prob-bar { height: 6px; display: flex; background: #222; border-radius: 3px; overflow: hidden; margin: 15px 0; }
+        .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
+        .m-item { background: #000; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
+        .m-val { color: var(--neon); font-weight: bold; font-size: 1.1rem; }
         .loader { border: 3px solid #222; border-top: 3px solid var(--neon); border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 20px auto; }
-        optgroup { background: #000; color: var(--neon); }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
 <div class="container">
     <h1>THE GAFFER</h1>
-    
     <div class="card">
-        <input type="date" id="match_date">
+        <input type="date" id="m_date">
         <button onclick="getFixtures()">SCAN FIXTURES</button>
     </div>
-
     <div class="card">
-        <select id="match_list"><option value="">System Standby</option></select>
+        <select id="m_list"><option value="">Waiting...</option></select>
         <button onclick="predict()">GET THE VERDICT</button>
     </div>
-
     <div id="output"></div>
 </div>
 
 <script>
     const API = "https://football-api-9e4p.onrender.com";
-    let gameStore = {}; // Object to store grouped games
+    let matches = [];
 
     async function getFixtures() {
-        const d = document.getElementById('match_date').value;
+        const d = document.getElementById('m_date').value;
         if(!d) return;
         const res = await fetch(`${API}/fixtures?date=${d}`);
-        gameStore = await res.json();
-        
-        const sel = document.getElementById('match_list');
-        sel.innerHTML = '<option value="">-- Choose Match --</option>';
-        
-        for (const league in gameStore) {
-            const group = document.createElement('optgroup');
-            group.label = league;
-            gameStore[league].forEach((m, i) => {
-                const opt = document.createElement('option');
-                // Store league and index to retrieve data later
-                opt.value = `${league}|${i}`;
-                opt.textContent = `${m.home} vs ${m.away}`;
-                group.appendChild(opt);
-            });
-            sel.appendChild(group);
-        }
+        matches = await res.json();
+        const sel = document.getElementById('m_list');
+        sel.innerHTML = matches.length ? '<option value="">-- Select Match --</option>' : '<option>No Games Found</option>';
+        matches.forEach((m, i) => {
+            sel.innerHTML += `<option value="${i}">[${m.league}] ${m.home} vs ${m.away}</option>`;
+        });
     }
 
     async function predict() {
-        const val = document.getElementById('match_list').value;
-        if(!val) return;
-        
-        const [league, idx] = val.split('|');
-        const matchData = gameStore[league][idx];
-
+        const idx = document.getElementById('m_list').value;
+        if(idx === "") return;
         const out = document.getElementById('output');
         out.innerHTML = '<div class="loader"></div>';
 
         const res = await fetch(`${API}/predict`, {
             method: "POST",
             headers: {"Content-Type": "application/json"},
-            body: JSON.stringify(matchData)
+            body: JSON.stringify(matches[idx])
         });
         const d = await res.json();
 
         out.innerHTML = `
-            <div class="card" style="text-align:center">
-                <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
-                    <div style="text-align:left"><small>${matchData.home}</small><span class="rank-tag">Pos: ${d.h_rank}</span></div>
-                    <div style="text-align:right"><small>${matchData.away}</small><span class="rank-tag">Pos: ${d.a_rank}</span></div>
+            <div class="card">
+                <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:var(--neon)">
+                    <span>${matches[idx].home} (Pos: ${d.h_rank})</span>
+                    <span>${matches[idx].away} (Pos: ${d.a_rank})</span>
                 </div>
-
-                <div class="conf-label">GAFFER'S CONFIDENCE: ${d.confidence}%</div>
-                <div class="conf-bar"><div class="conf-fill" style="width:${d.confidence}%"></div></div>
-                
-                <div style="font-size: 0.7rem; color: #64748b; letter-spacing: 2px">EXPECTED SCORE</div>
                 <div class="score">${d.score}</div>
-
-                <div class="prob-row">
-                    <span>H: ${d.probs.home}%</span>
-                    <span>D: ${d.probs.draw}%</span>
-                    <span>A: ${d.probs.away}%</span>
-                </div>
-                <div class="conf-bar" style="height:6px; display:flex">
+                <div class="prob-bar">
                     <div style="width:${d.probs.home}%; background:var(--neon)"></div>
                     <div style="width:${d.probs.draw}%; background:#444"></div>
                     <div style="width:${d.probs.away}%; background:#3b82f6"></div>
                 </div>
-
                 <div class="gaffer-box">${d.insight}</div>
-
                 <div class="metrics">
-                    <div class="m-item"><div class="m-title">H-ATK</div><div class="m-val">${d.metrics.h_atk}</div></div>
-                    <div class="m-item"><div class="m-title">A-DEF</div><div class="m-val">${d.metrics.a_def}</div></div>
-                    <div class="m-item"><div class="m-title">Home Form (L5)</div><div class="m-val">${d.metrics.h_form}pts</div></div>
-                    <div class="m-item"><div class="m-title">Away Form (L5)</div><div class="m-val">${d.metrics.a_form}pts</div></div>
+                    <div class="m-item">Last 5 Games<br><span class="m-val">${d.metrics.h_form}pts</span></div>
+                    <div class="m-item">Last 5 Games<br><span class="m-val">${d.metrics.a_form}pts</span></div>
                 </div>
             </div>
         `;

@@ -14,49 +14,17 @@ API_KEY = os.environ.get("FOOTBALL_API_KEY")
 BASE_URL = "https://api.football-data.org/v4"
 HEADERS = {"X-Auth-Token": API_KEY}
 
-# In-Memory Caches
+# Caches
 standings_cache = {}
 form_cache = {}
-CACHE_TTL = 86400  # 24 Hours
+CACHE_TTL = 86400 
 
-# ----------------------------
-# MATH & AI LOGIC
-# ----------------------------
 def poisson_probability(actual, expected):
     if expected <= 0: expected = 0.01
     return (math.pow(expected, actual) * math.exp(-expected)) / math.factorial(actual)
 
-def generate_detailed_insight(h_name, a_name, h_s, a_s, h_form, a_form, prediction):
-    """AI logic that breaks down the 'Why' behind the numbers."""
-    
-    # 1. Structural Clash
-    atk_v_def = h_s['attack'] - a_s['defence']
-    if atk_v_def > 0.4:
-        matchup = f"The primary driver is {h_name}'s high-octane attack (rated {h_s['attack']:.2f}) exploiting {a_name}'s defensive gaps."
-    elif atk_v_def < -0.4:
-        matchup = f"Expect a low-scoring affair as {a_name}'s robust defense is statistically primed to neutralize {h_name}."
-    else:
-        matchup = "This is a balanced tactical matchup where neither side holds a significant structural edge."
-
-    # 2. Momentum Analysis
-    form_diff = h_form - a_form
-    if abs(form_diff) > 0.15:
-        momentum = f"Current momentum is a major factor: {h_name if h_form > a_form else a_name} is performing {abs(form_diff)*100:.0f}% above their seasonal baseline."
-    else:
-        momentum = "Both squads are operating at their standard seasonal efficiency with no major form deviations."
-
-    # 3. Probability Rationale
-    h_goals, a_goals = map(int, prediction.split('-'))
-    if h_goals > a_goals:
-        logic = "The model weights home advantage and clinical finishing as the deciding factors."
-    elif h_goals == a_goals:
-        logic = "A draw is the high-probability outcome due to matching defensive resilience."
-    else:
-        logic = "The data suggests an away victory, driven by superior counter-attacking metrics."
-
-    return f"{matchup} {momentum} {logic} The Poisson matrix identifies {prediction} as the point of highest statistical convergence."
-
-def get_team_strengths(comp_code):
+def get_venue_strengths(comp_code):
+    """Fetches separate Home and Away tables for deep analysis."""
     now = time.time()
     if comp_code in standings_cache:
         tstamp, data = standings_cache[comp_code]
@@ -67,52 +35,59 @@ def get_team_strengths(comp_code):
     if res.status_code != 200: return {}
 
     data = res.json()
-    table = data["standings"][0]["table"]
-    avg_g = sum(t["goalsFor"] for t in table) / max(sum(t["playedGames"] for t in table), 1)
+    # v4 provides 'TOTAL', 'HOME', and 'AWAY' tables
+    home_table = next(s for s in data["standings"] if s["type"] == "HOME")["table"]
+    away_table = next(s for s in data["standings"] if s["type"] == "AWAY")["table"]
 
-    strengths = {}
-    for t in table:
+    # Calculate League Averages
+    avg_h_goals = sum(t["goalsFor"] for t in home_table) / max(sum(t["playedGames"] for t in home_table), 1)
+    avg_a_goals = sum(t["goalsFor"] for t in away_table) / max(sum(t["playedGames"] for t in away_table), 1)
+
+    venue_data = {}
+    # Process Home Strengths
+    for t in home_table:
+        tid = t["team"]["id"]
         p = max(t["playedGames"], 1)
-        strengths[t["team"]["id"]] = {
+        venue_data[tid] = {
             "name": t["team"]["name"],
-            "attack": (t["goalsFor"] / p) / avg_g,
-            "defence": (t["goalsAgainst"] / p) / avg_g
+            "h_atk": (t["goalsFor"] / p) / avg_h_goals,
+            "h_def": (t["goalsAgainst"] / p) / avg_h_goals
         }
-    standings_cache[comp_code] = (now, strengths)
-    return strengths
+    
+    # Merge Away Strengths
+    for t in away_table:
+        tid = t["team"]["id"]
+        p = max(t["playedGames"], 1)
+        if tid in venue_data:
+            venue_data[tid].update({
+                "a_atk": (t["goalsFor"] / p) / avg_a_goals,
+                "a_def": (t["goalsAgainst"] / p) / avg_a_goals
+            })
+
+    standings_cache[comp_code] = (now, venue_data)
+    return venue_data
 
 def get_team_form(team_id):
-    now = time.time()
-    if team_id in form_cache:
-        tstamp, val = form_cache[team_id]
-        if now - tstamp < 3600: return val
-
     url = f"{BASE_URL}/teams/{team_id}/matches?status=FINISHED&limit=5"
     res = requests.get(url, headers=HEADERS)
     if res.status_code != 200: return 1.0
-
     matches = res.json().get("matches", [])
-    points = sum(3 if (m["homeTeam"]["id"] == team_id and m["score"]["fullTime"]["home"] > m["score"]["fullTime"]["away"]) or 
-                 (m["awayTeam"]["id"] == team_id and m["score"]["fullTime"]["away"] > m["score"]["fullTime"]["home"]) else 
-                 1 if m["score"]["fullTime"]["home"] == m["score"]["fullTime"]["away"] else 0 for m in matches)
-    
-    multiplier = 0.8 + (points / 15 * 0.4)
-    form_cache[team_id] = (now, multiplier)
-    return multiplier
+    pts = 0
+    for m in matches:
+        is_h = m["homeTeam"]["id"] == team_id
+        h_s, a_s = m["score"]["fullTime"]["home"], m["score"]["fullTime"]["away"]
+        if h_s == a_s: pts += 1
+        elif (is_h and h_s > a_s) or (not is_h and a_s > h_s): pts += 3
+    return 0.85 + (pts / 15 * 0.3) # Multiplier 0.85 to 1.15
 
-# ----------------------------
-# API ROUTES
-# ----------------------------
 @app.route("/fixtures", methods=["GET"])
 def fixtures():
     date_str = request.args.get("date")
-    if not date_str: return jsonify({"error": "No date"}), 400
-    date_dt = datetime.strptime(date_str, "%Y-%m-%d")
-    date_to = (date_dt + timedelta(days=1)).strftime("%Y-%m-%d")
-
-    params = {"dateFrom": date_str, "dateTo": date_to, "competitions": "PL,BL1,SA,PD,FL1"}
+    if not date_str: return jsonify([]), 400
+    d_dt = datetime.strptime(date_str, "%Y-%m-%d")
+    d_to = (d_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+    params = {"dateFrom": date_str, "dateTo": d_to, "competitions": "PL,BL1,SA,PD,FL1"}
     res = requests.get(f"{BASE_URL}/matches", headers=HEADERS, params=params)
-    
     output = []
     if res.status_code == 200:
         for m in res.json().get("matches", []):
@@ -126,17 +101,18 @@ def fixtures():
 @app.route("/predict", methods=["POST"])
 def predict():
     data = request.get_json()
-    comp, h_id, a_id = data.get("competition"), data.get("home_id"), data.get("away_id")
+    comp, h_id, a_id = data["competition"], data["home_id"], data["away_id"]
     
-    strengths = get_team_strengths(comp)
-    h_s = strengths.get(h_id, {"attack": 1.0, "defence": 1.0, "name": "Home"})
-    a_s = strengths.get(a_id, {"attack": 1.0, "defence": 1.0, "name": "Away"})
-
+    venue_stats = get_venue_strengths(comp)
+    h_s = venue_stats.get(h_id, {"h_atk": 1.0, "h_def": 1.0, "name": "Home"})
+    a_s = venue_stats.get(a_id, {"a_atk": 1.0, "a_def": 1.0, "name": "Away"})
+    
     h_form = get_team_form(h_id)
     a_form = get_team_form(a_id)
 
-    h_xg = round(h_s["attack"] * a_s["defence"] * 1.35 * 1.10 * h_form, 2)
-    a_xg = round(a_s["attack"] * h_s["defence"] * 1.35 * a_form, 2)
+    # NEW LOGIC: Home Attack vs Away Defense & Away Attack vs Home Defense
+    h_xg = round(h_s["h_atk"] * a_s["a_def"] * 1.40 * h_form, 2)
+    a_xg = round(a_s["a_atk"] * h_s["h_def"] * 1.25 * a_form, 2)
 
     home_p = draw_p = away_p = max_p = 0
     best_score = "1-1"
@@ -149,15 +125,18 @@ def predict():
             else: away_p += prob
 
     total = home_p + draw_p + away_p
-    detailed_analysis = generate_detailed_insight(h_s['name'], a_s['name'], h_s, a_s, h_form, a_form, best_score)
+    
+    # Detailed AI Insight
+    insight = f"Analysis detects a { 'strong' if h_s['h_atk'] > 1.2 else 'stable' } home offensive profile clashing with {a_s['name']}'s away defensive structure. "
+    if h_form > a_form + 0.1: insight += "Home momentum is currently a decisive factor in this projection."
+    elif a_form > h_form + 0.1: insight += "The visitors are over-performing their away baseline, suggesting a potential upset."
 
     return jsonify({
         "prediction": best_score,
         "xg": {"home": h_xg, "away": a_xg},
-        "form": {"home": round(h_form, 2), "away": round(a_form, 2)},
         "probs": {"home": round(home_p/total*100, 1), "draw": round(draw_p/total*100, 1), "away": round(away_p/total*100, 1)},
-        "analysis": detailed_analysis,
-        "raw_metrics": {"h_atk": round(h_s['attack'], 2), "a_def": round(a_s['defence'], 2)}
+        "analysis": insight,
+        "venue_metrics": {"h_atk": round(h_s['h_atk'], 2), "a_def": round(a_s['a_def'], 2)}
     })
 
 if __name__ == "__main__":

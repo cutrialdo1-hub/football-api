@@ -5,6 +5,7 @@ import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from datetime import datetime, timedelta
+# THIS LINE IS THE FIX:
 import google.generativeai as genai
 
 app = Flask(__name__)
@@ -14,7 +15,7 @@ CORS(app)
 FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# Initialize the AI properly
+# Initialize the AI properly for the stable library
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
 
@@ -99,8 +100,8 @@ def gaffer_ai_verdict(h_name, a_name, h_s, a_s, h_pts, a_pts, score):
         response = model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
-        print(f"GAFFER ERROR: {e}") # This shows up in Render Logs
-        return "The Gaffer's had a bit of a flare-up with the fourth official. He's pointing at the tactics board and letting the math speak for itself."
+        print(f"GAFFER ERROR: {e}")
+        return "The Gaffer's busy screaming at the ref. He's letting the computer's prediction stand for now."
 
 # --- API ROUTES ---
 @app.route("/fixtures", methods=["GET"])

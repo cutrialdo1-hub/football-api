@@ -5,7 +5,8 @@ import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from datetime import datetime, timedelta
-from google import genai
+# Switching to the more compatible legacy library
+import google.generativeai as genai
 
 app = Flask(__name__)
 CORS(app)
@@ -14,23 +15,15 @@ CORS(app)
 FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY") or os.environ.get("API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# Initialize Gemini Client - Specifying v1 to avoid 404 errors
-client = None
+# Configure Gemini
 if GEMINI_API_KEY:
-    try:
-        client = genai.Client(
-            api_key=GEMINI_API_KEY,
-            http_options={'api_version': 'v1'}
-        )
-    except Exception as e:
-        print(f"CLIENT INIT ERROR: {e}")
+    genai.configure(api_key=GEMINI_API_KEY)
 
 BASE_URL = "https://api.football-data.org/v4"
 HEADERS = {"X-Auth-Token": FOOTBALL_API_KEY}
 FREE_COMPS = "CL,PL,ELC,BL1,SA,PD,FL1,DED,PPL,BSA,EC,WC"
 standings_cache = {}
 
-# --- LOGIC ---
 def poisson_probability(actual, expected):
     if expected <= 0: expected = 0.01
     return (math.pow(expected, actual) * math.exp(-expected)) / math.factorial(actual)
@@ -47,10 +40,8 @@ def get_venue_stats(comp_code):
         t_table = next((s for s in data["standings"] if s["type"] == "TOTAL"), data["standings"][0])["table"]
         h_table = next((s for s in data["standings"] if s["type"] == "HOME"), data["standings"][0])["table"]
         a_table = next((s for s in data["standings"] if s["type"] == "AWAY"), data["standings"][0])["table"]
-        
         avg_h = sum(t["goalsFor"] for t in h_table) / max(sum(t["playedGames"] for t in h_table), 1)
         avg_a = sum(t["goalsFor"] for t in a_table) / max(sum(t["playedGames"] for t in a_table), 1)
-        
         venue_data = {}
         for t in t_table:
             tid = t["team"]["id"]
@@ -74,22 +65,16 @@ def get_form(team_id):
     pts = sum(3 if (x["score"]["fullTime"]["home"] > x["score"]["fullTime"]["away"] and x["homeTeam"]["id"] == team_id) or (x["score"]["fullTime"]["away"] > x["score"]["fullTime"]["home"] and x["awayTeam"]["id"] == team_id) else 1 if x["score"]["fullTime"]["home"] == x["score"]["fullTime"]["away"] else 0 for x in m)
     return 0.85 + (pts/15 * 0.3), pts
 
-# --- THE FIX: CLEAN GAFFER VERDICT ---
 def gaffer_ai_verdict(h_name, a_name, score):
-    if not client:
+    if not GEMINI_API_KEY:
         return "The Gaffer's lost his notepad. API Key is missing."
 
-    prompt = (
-        f"You are 'The Gaffer', a blunt football manager. "
-        f"In 2 sentences, give a tactical verdict on {h_name} vs {a_name} "
-        f"where the predicted score is {score}. Use manager slang."
-    )
+    # Using 'gemini-pro' as a fallback because some accounts don't have flash enabled correctly
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    prompt = f"You are 'The Gaffer', a blunt football manager. In 2 short sentences, give a tactical verdict on {h_name} vs {a_name} (Predicted: {score}). Use manager slang."
 
     try:
-        response = client.models.generate_content(
-            model="gemini-1.5-flash",
-            contents=prompt
-        )
+        response = model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
         print(f"GAFFER ERROR: {e}")
@@ -101,8 +86,7 @@ def fixtures():
     if not d: return jsonify([])
     d_to = (datetime.strptime(d, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
     res = requests.get(f"{BASE_URL}/matches", headers=HEADERS, params={"dateFrom": d, "dateTo": d_to, "competitions": FREE_COMPS})
-    matches = res.json().get("matches", [])
-    return jsonify([{"home": m["homeTeam"]["name"], "home_id": m["homeTeam"]["id"], "away": m["awayTeam"]["name"], "away_id": m["awayTeam"]["id"], "comp": m["competition"]["code"], "league": m["competition"]["name"]} for m in matches])
+    return jsonify([{"home": m["homeTeam"]["name"], "home_id": m["homeTeam"]["id"], "away": m["awayTeam"]["name"], "away_id": m["awayTeam"]["id"], "comp": m["competition"]["code"], "league": m["competition"]["name"]} for m in res.json().get("matches", [])])
 
 @app.route("/predict", methods=["POST"])
 def predict():
@@ -110,13 +94,10 @@ def predict():
     stats = get_venue_stats(data["comp"])
     h_s, a_s = stats.get(data["home_id"]), stats.get(data["away_id"])
     if not h_s or not a_s: return jsonify({"error": "Stats unavailable"})
-    
     h_f, h_pts = get_form(data["home_id"])
     a_f, a_pts = get_form(data["away_id"])
-    
     h_xg = h_s.get("h_atk", 1) * a_s.get("a_def", 1) * 1.35 * h_f
     a_xg = a_s.get("a_atk", 1) * h_s.get("h_def", 1) * 1.25 * a_f
-    
     max_p, score, h_win, draw, a_win = 0, "1-1", 0, 0, 0
     for h in range(5):
         for a in range(5):
@@ -125,16 +106,11 @@ def predict():
             if h > a: h_win += p
             elif h == a: draw += p
             else: a_win += p
-            
     total = h_win + draw + a_win
-    # Call the cleaned function
     insight = gaffer_ai_verdict(data["home"], data["away"], score)
-    
     return jsonify({
-        "score": score,
-        "probs": {"home": round(h_win/total*100), "draw": round(draw/total*100), "away": round(a_win/total*100)},
-        "insight": insight,
-        "h_rank": h_s['rank'], "a_rank": a_s['rank'],
+        "score": score, "probs": {"home": round(h_win/total*100), "draw": round(draw/total*100), "away": round(a_win/total*100)},
+        "insight": insight, "h_rank": h_s['rank'], "a_rank": a_s['rank'],
         "metrics": {"h_atk": round(h_s.get('h_atk', 1),2), "h_def": round(h_s.get('h_def', 1),2), "a_atk": round(a_s.get('a_atk', 1),2), "a_def": round(a_s.get('a_def', 1),2), "h_form": h_pts, "a_form": a_pts}
     })
 

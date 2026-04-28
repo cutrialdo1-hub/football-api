@@ -1,238 +1,156 @@
-import math
-import os
-import time
-import requests
-from flask import Flask, jsonify, request
-from flask_cors import CORS
-from datetime import datetime, timedelta
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>THE GAFFER</title>
 
-app = Flask(__name__)
-CORS(app)
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@300;500;700&display=swap" rel="stylesheet">
 
-# ================= CONFIG =================
-API_KEY = os.environ.get("FOOTBALL_API_KEY")
-BASE_URL = "https://api.football-data.org/v4"
-HEADERS = {"X-Auth-Token": API_KEY}
+<style>
+:root { --neon:#00ff9d; --bg:#0a0b10; --card:#151821; --border:#2a2d3a; --away:#ff3366; --draw:#8892b0; }
 
-# ⚠️ IMPORTANT:
-# football-data.org FREE tier does NOT reliably support all competitions.
-# Keep only safe/common ones:
-FREE_COMPS = "PL,PD,SA,BL1,FL1,DED,CL,EL"
+body {
+    background:var(--bg);
+    color:#fff;
+    font-family:Inter;
+    display:flex;
+    justify-content:center;
+    padding:20px;
+}
 
-cache = {}
+.container { width:100%; max-width:480px; }
 
-# ================= MATH =================
-def poisson_probability(actual, expected):
-    expected = max(expected, 0.01)
-    return (expected ** actual) * math.exp(-expected) / math.factorial(actual)
+h1 {
+    font-family:Orbitron;
+    color:var(--neon);
+    text-align:center;
+}
 
+.card {
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:20px;
+    margin-bottom:15px;
+}
 
-# ================= STATS =================
-def get_venue_stats(comp_code):
-    now = time.time()
+input,select,button {
+    width:100%;
+    padding:12px;
+    margin-top:10px;
+    border-radius:10px;
+    border:1px solid var(--border);
+    background:#000;
+    color:#fff;
+}
 
-    if comp_code in cache and (now - cache[comp_code][0] < 86400):
-        return cache[comp_code][1]
+button {
+    background:var(--neon);
+    color:#000;
+    font-weight:bold;
+    cursor:pointer;
+}
 
-    url = f"{BASE_URL}/competitions/{comp_code}/standings"
-    res = requests.get(url, headers=HEADERS)
+.score {
+    font-size:3rem;
+    font-family:Orbitron;
+    text-align:center;
+}
 
-    if res.status_code != 200:
-        return {}
+.prob-bar {
+    display:flex;
+    height:25px;
+    border-radius:8px;
+    overflow:hidden;
+    margin-top:10px;
+}
 
-    data = res.json()
+.prob-h { background:var(--neon); }
+.prob-d { background:var(--draw); }
+.prob-a { background:var(--away); }
 
-    try:
-        standings = data["standings"]
+.gaffer-box {
+    margin-top:15px;
+    font-size:0.9rem;
+    color:#cbd5e1;
+}
+</style>
+</head>
 
-        h_table = next((s for s in standings if s["type"] == "HOME"), None)
-        a_table = next((s for s in standings if s["type"] == "AWAY"), None)
-        t_table = next((s for s in standings if s["type"] == "TOTAL"), None)
+<body>
+<div class="container">
+    <h1>THE GAFFER</h1>
 
-        if not h_table or not a_table or not t_table:
-            return {}
+    <div class="card">
+        <input type="date" id="m_date">
+        <button onclick="getFixtures()">SCAN FIXTURES</button>
+    </div>
 
-        h_table = h_table["table"]
-        a_table = a_table["table"]
-        t_table = t_table["table"]
+    <div class="card">
+        <select id="m_list" onchange="checkSelection()">
+            <option value="">Select match</option>
+        </select>
+        <button id="predict_btn" onclick="predict()" disabled>GET VERDICT</button>
+    </div>
 
-        avg_h_goals = sum(t["goalsFor"] for t in h_table) / max(sum(t["playedGames"] for t in h_table), 1)
-        avg_a_goals = sum(t["goalsFor"] for t in a_table) / max(sum(t["playedGames"] for t in a_table), 1)
+    <div id="output"></div>
+</div>
 
-        venue = {}
+<script>
+const API = "https://football-api-9e4p.onrender.com";
+let matches = [];
 
-        for t in t_table:
-            venue[t["team"]["id"]] = {
-                "name": t["team"]["name"],
-                "rank": t["position"]
-            }
+function checkSelection() {
+    document.getElementById("predict_btn").disabled =
+        document.getElementById("m_list").value === "";
+}
 
-        for t in h_table:
-            tid = t["team"]["id"]
-            if tid in venue:
-                venue[tid]["h_atk"] = (t["goalsFor"] / max(t["playedGames"], 1)) / avg_h_goals
-                venue[tid]["h_def"] = (t["goalsAgainst"] / max(t["playedGames"], 1)) / avg_h_goals
+async function getFixtures() {
+    const d = document.getElementById("m_date").value;
+    if (!d) return;
 
-        for t in a_table:
-            tid = t["team"]["id"]
-            if tid in venue:
-                venue[tid]["a_atk"] = (t["goalsFor"] / max(t["playedGames"], 1)) / avg_a_goals
-                venue[tid]["a_def"] = (t["goalsAgainst"] / max(t["playedGames"], 1)) / avg_a_goals
+    const sel = document.getElementById("m_list");
+    sel.innerHTML = "<option>Loading...</option>";
 
-        cache[comp_code] = (now, venue)
-        return venue
+    const res = await fetch(`${API}/fixtures?date=${d}`);
+    matches = await res.json();
 
-    except Exception:
-        return {}
+    sel.innerHTML = "<option value=''>Select match</option>";
 
+    matches.forEach((m, i) => {
+        sel.innerHTML += `<option value="${i}">
+        ${m.home} vs ${m.away}
+        </option>`;
+    });
+}
 
-# ================= FORM =================
-def get_form(team_id):
-    url = f"{BASE_URL}/teams/{team_id}/matches"
-    res = requests.get(url, headers=HEADERS, params={"status": "FINISHED", "limit": 5})
+async function predict() {
+    const idx = document.getElementById("m_list").value;
+    const out = document.getElementById("output");
 
-    if res.status_code != 200:
-        return 1.0, 0
+    out.innerHTML = "Loading...";
 
-    matches = res.json().get("matches", [])
+    const res = await fetch(`${API}/predict`, {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify(matches[idx])
+    });
 
-    pts = 0
-    for m in matches:
-        home = m["homeTeam"]["id"]
-        away = m["awayTeam"]["id"]
+    const d = await res.json();
 
-        hg = m["score"]["fullTime"]["home"]
-        ag = m["score"]["fullTime"]["away"]
+    out.innerHTML = `
+    <div class="card">
+        <div class="score">${d.score}</div>
 
-        if home == team_id and hg > ag:
-            pts += 3
-        elif away == team_id and ag > hg:
-            pts += 3
-        elif hg == ag:
-            pts += 1
+        <div class="prob-bar">
+            <div style="width:${d.probs.home}%"></div>
+            <div style="width:${d.probs.draw}%"></div>
+            <div style="width:${d.probs.away}%"></div>
+        </div>
 
-    return 0.85 + (pts / 15 * 0.3), pts
-
-
-# ================= TACTICAL ENGINE =================
-def gaffer_logic(h_name, a_name, h_s, a_s, h_pts, a_pts, score):
-    h_rank, a_rank = h_s.get("rank", 10), a_s.get("rank", 10)
-    h_atk, h_def = h_s.get("h_atk", 1), h_s.get("h_def", 1)
-    a_atk, a_def = a_s.get("a_atk", 1), a_s.get("a_def", 1)
-
-    stakes = "Balanced fixture with tactical tension."
-
-    if h_rank <= 6 and a_rank <= 6:
-        stakes = "Title race implications here — every point matters at the top."
-    elif h_rank >= 16 and a_rank >= 16:
-        stakes = "Relegation pressure cooker — mistakes will be punished."
-
-    insight = ""
-
-    if h_atk > 1.1 and a_def > 1.1:
-        insight += f"{h_name} should create chances against a shaky defense. "
-    elif a_atk > 1.1 and h_def > 1.1:
-        insight += f"{a_name} look dangerous on the counter. "
-
-    h_goals, a_goals = map(int, score.split("-"))
-
-    if h_goals > a_goals:
-        verdict = f"Home advantage tells — {score} feels right."
-    elif a_goals > h_goals:
-        verdict = f"Upset potential here — {a_name} edge it {score}."
-    else:
-        verdict = f"Stalemate likely — {score} draw feels fair."
-
-    return f"{stakes} {insight} {verdict}"
-
-
-# ================= FIXTURES =================
-@app.route("/fixtures")
-def fixtures():
-    d = request.args.get("date")
-    d_to = (datetime.strptime(d, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
-
-    res = requests.get(
-        f"{BASE_URL}/matches",
-        headers=HEADERS,
-        params={"dateFrom": d, "dateTo": d_to, "competitions": FREE_COMPS}
-    )
-
-    matches = res.json().get("matches", [])
-
-    return jsonify([{
-        "home": m["homeTeam"]["name"],
-        "home_id": m["homeTeam"]["id"],
-        "away": m["awayTeam"]["name"],
-        "away_id": m["awayTeam"]["id"],
-        "comp": m["competition"]["code"],
-        "league": m["competition"]["name"]
-    } for m in matches])
-
-
-# ================= PREDICT =================
-@app.route("/predict", methods=["POST"])
-def predict():
-    data = request.get_json()
-
-    stats = get_venue_stats(data["comp"])
-
-    h_s = stats.get(data["home_id"])
-    a_s = stats.get(data["away_id"])
-
-    if not h_s or not a_s:
-        return jsonify({"error": "Stats unavailable"})
-
-    h_f, h_pts = get_form(data["home_id"])
-    a_f, a_pts = get_form(data["away_id"])
-
-    h_xg = h_s["h_atk"] * a_s["a_def"] * 1.3 * h_f
-    a_xg = a_s["a_atk"] * h_s["h_def"] * 1.2 * a_f
-
-    best, score = 0, "1-1"
-    h_win = d_win = a_win = 0
-
-    for h in range(5):
-        for a in range(5):
-            p = poisson_probability(h, h_xg) * poisson_probability(a, a_xg)
-
-            if p > best:
-                best = p
-                score = f"{h}-{a}"
-
-            if h > a:
-                h_win += p
-            elif h == a:
-                d_win += p
-            else:
-                a_win += p
-
-    total = h_win + d_win + a_win
-
-    return jsonify({
-        "score": score,
-        "probs": {
-            "home": round(h_win / total * 100),
-            "draw": round(d_win / total * 100),
-            "away": round(a_win / total * 100)
-        },
-        "insight": gaffer_logic(
-            data["home"],
-            data["away"],
-            h_s, a_s,
-            h_pts, a_pts,
-            score
-        ),
-        "h_rank": h_s["rank"],
-        "a_rank": a_s["rank"],
-        "metrics": {
-            "h_atk": round(h_s["h_atk"], 2),
-            "h_def": round(h_s["h_def"], 2),
-            "a_atk": round(a_s["a_atk"], 2),
-            "a_def": round(a_s["a_def"], 2)
-        }
-    })
-
-
-if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+        <div class="gaffer-box">${d.insight}</div>
+    </div>`;
+}
+</script>
+</body>
+</html>

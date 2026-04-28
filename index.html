@@ -14,7 +14,7 @@
         button { background: var(--neon); color: #000; font-weight: 800; font-family: 'Orbitron'; border: none; cursor: pointer; transition: 0.2s; }
         button:disabled { background: #1a1a1a; color: #444; cursor: not-allowed; }
         .score { font-family: 'Orbitron'; font-size: 4.5rem; color: #fff; margin: 10px 0; }
-        .gaffer-box { background: rgba(0,255,157,0.05); padding: 20px; border-radius: 12px; border-left: 4px solid var(--neon); font-style: italic; line-height: 1.6; color: #cbd5e1; position: relative; margin: 20px 0; text-align: left; white-space: pre-line; }
+        .gaffer-box { background: rgba(0,255,157,0.05); padding: 20px; border-radius: 12px; border-left: 4px solid var(--neon); font-style: italic; line-height: 1.6; color: #cbd5e1; position: relative; margin: 20px 0; text-align: left; white-space: pre-line;}
         .gaffer-box::after { content: "— The Gaffer"; display: block; text-align: right; color: var(--neon); font-size: 0.7rem; margin-top: 10px; font-family: 'Orbitron'; }
         .prob-bar { height: 28px; display: flex; background: #000; border-radius: 8px; overflow: hidden; margin: 20px 0; font-family: 'Orbitron'; font-size: 0.7rem; font-weight: bold; line-height: 28px;}
         .prob-h { background: var(--neon); color: #000; transition: width 1s; }
@@ -42,7 +42,7 @@
 </div>
 
 <script>
-    const API = "https://football-api-9e4p.onrender.com"; 
+    const API = "https://football-api-9e4p.onrender.com";
     let matches = [];
 
     function checkSelection() {
@@ -64,12 +64,7 @@
     async function predict() {
         const idx = document.getElementById('m_list').value;
         const out = document.getElementById('output');
-        out.innerHTML = `
-            <div class="card">
-                <div class="loader"></div>
-                <p style="font-family:'Orbitron'; font-size:0.7rem; color:var(--neon); margin-top:10px;">CONSULTING THE GAFFER...</p>
-            </div>
-        `;
+        out.innerHTML = '<div class="loader"></div>';
 
         try {
             const res = await fetch(`${API}/predict`, {
@@ -99,7 +94,7 @@
                 </div>
             `;
         } catch (e) {
-            out.innerHTML = '<div class="card">The connection timed out. Wake the Gaffer up and try again!</div>';
+            out.innerHTML = '<div class="card">The Gaffer is unavailable. Check Render logs.</div>';
         }
     }
 </script>

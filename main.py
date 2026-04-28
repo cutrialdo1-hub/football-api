@@ -75,48 +75,57 @@ def gaffer_logic(h_name, a_name, h_s, a_s, h_pts, a_pts, score):
     h_atk, h_def = h_s.get('h_atk', 1), h_s.get('h_def', 1)
     a_atk, a_def = a_s.get('a_atk', 1), a_s.get('a_def', 1)
     
-    # 1. Match Context
-    if h_rank <= 4 and a_rank <= 4:
-        context = f"This is a massive heavyweight clash at the top. Games like this decide seasons."
+    # --- PART 1: THE STAKES (Table Context) ---
+    if h_rank <= 6 and a_rank <= 6:
+        stakes = "This is a massive six-pointer at the sharp end of the table. Promotion and European spots are defined by fixtures like this."
     elif h_rank >= 16 and a_rank >= 16:
-        context = f"It's a proper relegation dogfight. Pure desperation from both sides."
-    elif (a_rank - h_rank) >= 8:
-        context = f"On paper, {h_name} should dictate this game, but complacency is a killer."
-    elif (h_rank - a_rank) >= 8:
-        context = f"Tough day at the office ahead for {h_name} hosting a high-flying {a_name} side."
+        stakes = "Pure desperation today. It's a six-pointer at the bottom of the table where fear of losing often overrides the desire to win."
+    elif h_rank <= 4 and a_rank >= 14:
+        stakes = f"{h_name} will expect nothing less than three points here, but {a_name} are fighting for their lives and could be dangerous."
+    elif a_rank <= 4 and h_rank >= 14:
+        stakes = f"The visitors are flying high, but trips to struggling sides like {h_name} are classic potential banana skins."
+    elif abs(h_rank - a_rank) <= 3:
+        stakes = "These two are neck-and-neck in the standings. Expect a fiercely contested, cagey affair."
     else:
-        context = f"Not much separating these two in the table. It's going to be a tight affair."
+        stakes = f"{h_name} are looking to bridge the gap in the table against a stubborn {a_name} outfit."
 
-    # 2. Stat-Driven Tactics
-    if h_atk > 1.2 and a_def > 1.2:
-        tactic = f"I've looked at the numbers. {h_name} are lethal here, and frankly, {a_name} are leaking goals like a sieve on the road."
-    elif h_def < 0.8 and a_atk > 1.2:
-        tactic = f"The visitors pose a massive threat on the counter, but {h_name} have made this stadium a fortress defensively."
-    elif h_atk < 0.9 and a_def < 0.9:
-        tactic = f"Don't expect a thriller. Both sides struggle to create and love to park the bus."
-    else:
-        tactic = "The midfield battle will dictate everything. Whoever wins the second balls takes the points."
+    # --- PART 2: TACTICAL INSIGHT (Data-to-English Synthesis) ---
+    insight = ""
+    # Analyze Home Momentum
+    if h_pts >= 10 and h_atk < 1.0:
+        insight += f"{h_name} aren't exactly blowing teams away, but they've mastered the art of grinding out ugly results lately. "
+    elif h_pts >= 10 and h_atk >= 1.2:
+        insight += f"{h_name} are absolutely purring. Their attacking fluidity is perfectly matching their points haul. "
+    elif h_pts <= 5 and h_atk >= 1.1:
+        insight += f"Don't let the recent form fool you; {h_name} are creating enough chances, they just need to find a clinical edge. "
+        
+    # Analyze the Clash
+    if h_atk > 1.1 and a_def > 1.1:
+        insight += f"I suspect the home side will find plenty of joy in the final third against a leaky visiting defense."
+    elif a_atk > 1.1 and h_def > 1.1:
+        insight += f"{a_name} pack a real punch on the road, and the home defense looks highly vulnerable to being caught in transition."
+    elif h_atk < 0.9 and a_atk < 0.9:
+        insight += "With both attacks misfiring recently, the first goal today is going to be absolutely monumental."
+    elif h_def < 0.8 and a_def < 0.8:
+        insight += "We're looking at two highly disciplined defensive units here. Space will be at a premium."
 
-    # 3. Form & Verdict
+    # --- PART 3: THE VERDICT (Tying predicted score to the narrative) ---
     h_goals, a_goals = int(score.split('-')[0]), int(score.split('-')[1])
+    
     if h_goals > a_goals:
-        verdict = f"With {h_name} taking {h_pts} points from their last 5, I back the home crowd to pull them over the line. I'm calling it {score}."
+        v = f"I'm backing a comfortable {score} home win." if (h_goals - a_goals >= 2) else f"It'll be tight, but I'm calling a {score} home victory."
     elif a_goals > h_goals:
-        verdict = f"{a_name} have real swagger right now. I think they'll go there and do a professional job. {score} to the visitors."
+        v = f"A dominant {score} away performance is on the cards." if (a_goals - h_goals >= 2) else f"I've got a sneaky feeling for the visitors to nick a {score} win."
     else:
-        if score == "0-0":
-            verdict = "I can't separate them, and neither will the pitch. A bore draw, 0-0."
-        else:
-            verdict = f"They'll cancel each other out. Both managers might happily take a point right now. I'm going {score}."
+        v = "It's got a 0-0 bore draw written all over it." if score == "0-0" else f"I'll sit on the fence with a {score} draw—both sides have enough to hurt each other."
 
-    return f"{context} {tactic} {verdict}"
+    return f"{stakes} {insight} {v}"
 
 @app.route("/fixtures", methods=["GET"])
 def fixtures():
     d = request.args.get("date")
     d_to = (datetime.strptime(d, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
     res = requests.get(f"{BASE_URL}/matches", headers=HEADERS, params={"dateFrom": d, "dateTo": d_to, "competitions": FREE_COMPS})
-    
     matches = res.json().get("matches", [])
     return jsonify([{
         "home": m["homeTeam"]["name"], "home_id": m["homeTeam"]["id"],
@@ -147,14 +156,14 @@ def predict():
             else: a_win += p
 
     total = h_win + draw + a_win
-    conf = random.randint(75, 95) if max(h_win, draw, a_win)/total > 0.4 else random.randint(50, 74)
-
     return jsonify({
         "score": score,
         "probs": {"home": round(h_win/total*100), "draw": round(draw/total*100), "away": round(a_win/total*100)},
         "insight": gaffer_logic(data["home"], data["away"], h_s, a_s, h_pts, a_pts, score),
-        "confidence": conf, "h_rank": h_s['rank'], "a_rank": a_s['rank'],
-        "metrics": {"h_atk": round(h_s.get('h_atk', 1),2), "h_def": round(h_s.get('h_def', 1),2), "a_atk": round(a_s.get('a_atk', 1),2), "a_def": round(a_s.get('a_def', 1),2), "h_form": h_pts, "a_form": a_pts}
+        "h_rank": h_s['rank'], "a_rank": a_s['rank'],
+        "metrics": {"h_atk": round(h_s.get('h_atk', 1),2), "h_def": round(h_s.get('h_def', 1),2), 
+                    "a_atk": round(a_s.get('a_atk', 1),2), "a_def": round(a_s.get('a_def', 1),2), 
+                    "h_form": h_pts, "a_form": a_pts}
     })
 
 if __name__ == "__main__":

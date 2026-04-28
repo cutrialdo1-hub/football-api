@@ -5,7 +5,7 @@ import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from datetime import datetime, timedelta
-# UPDATED: Using the new official Google GenAI library
+# New official Google library
 from google import genai
 
 app = Flask(__name__)
@@ -15,7 +15,7 @@ CORS(app)
 FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY") or os.environ.get("API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# Initialize the new Client
+# Initialize Gemini Client
 client = None
 if GEMINI_API_KEY:
     client = genai.Client(api_key=GEMINI_API_KEY)
@@ -25,7 +25,6 @@ HEADERS = {"X-Auth-Token": FOOTBALL_API_KEY}
 FREE_COMPS = "CL,PL,ELC,BL1,SA,PD,FL1,DED,PPL,BSA,EC,WC"
 standings_cache = {}
 
-# --- YOUR ORIGINAL MATH LOGIC (KEEPING UNTOUCHED) ---
 def poisson_probability(actual, expected):
     if expected <= 0: expected = 0.01
     return (math.pow(expected, actual) * math.exp(-expected)) / math.factorial(actual)
@@ -73,7 +72,6 @@ def get_form(team_id):
     pts = sum(3 if (x["score"]["fullTime"]["home"] > x["score"]["fullTime"]["away"] and x["homeTeam"]["id"] == team_id) or (x["score"]["fullTime"]["away"] > x["score"]["fullTime"]["home"] and x["awayTeam"]["id"] == team_id) else 1 if x["score"]["fullTime"]["home"] == x["score"]["fullTime"]["away"] else 0 for x in m)
     return 0.85 + (pts/15 * 0.3), pts
 
-# --- UPDATED GAFFER VERDICT (NEW GOOGLE GENAI SYNTAX) ---
 def gaffer_ai_verdict(h_name, a_name, h_s, a_s, h_pts, a_pts, score):
     if not client:
         return "The Gaffer's in the pub. (API Client not initialized)"
@@ -84,19 +82,18 @@ def gaffer_ai_verdict(h_name, a_name, h_s, a_s, h_pts, a_pts, score):
     prompt = (
         "You are 'The Gaffer', a blunt, legendary football manager with a dry wit. "
         "Analyze this match in 3 short sentences using tactical manager-speak. "
-        "Use phrases like 'parking the bus', 'relegation six-pointer', or 'proper tactical masterclass'. "
+        "Use phrases like 'parking the bus', 'proper six-pointer', or 'tactical masterclass'. "
         f"Data: {context}"
     )
 
     try:
-        # The new syntax: client.models.generate_content
         response = client.models.generate_content(
             model="gemini-1.5-flash",
             contents=prompt
         )
         return response.text.strip()
     except Exception as e:
-        print(f"NEW GAFFER ERROR: {e}")
+        print(f"GAFFER ERROR: {e}")
         return "The Gaffer's lost his temper with the fourth official. He's letting the numbers speak for themselves today."
 
 @app.route("/fixtures", methods=["GET"])
@@ -118,13 +115,10 @@ def predict():
     stats = get_venue_stats(data["comp"])
     h_s, a_s = stats.get(data["home_id"]), stats.get(data["away_id"])
     if not h_s or not a_s: return jsonify({"error": "Stats unavailable"})
-    
     h_f, h_pts = get_form(data["home_id"])
     a_f, a_pts = get_form(data["away_id"])
-    
     h_xg = h_s.get("h_atk", 1) * a_s.get("a_def", 1) * 1.35 * h_f
     a_xg = a_s.get("a_atk", 1) * h_s.get("h_def", 1) * 1.25 * a_f
-    
     max_p, score, h_win, draw, a_win = 0, "1-1", 0, 0, 0
     for h in range(5):
         for a in range(5):
@@ -133,10 +127,8 @@ def predict():
             if h > a: h_win += p
             elif h == a: draw += p
             else: a_win += p
-            
     total = h_win + draw + a_win
     insight = gaffer_ai_verdict(data["home"], data["away"], h_s, a_s, h_pts, a_pts, score)
-    
     return jsonify({
         "score": score,
         "probs": {"home": round(h_win/total*100), "draw": round(draw/total*100), "away": round(a_win/total*100)},

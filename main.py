@@ -70,28 +70,50 @@ def get_form(team_id):
     pts = sum(3 if (x["score"]["fullTime"]["home"] > x["score"]["fullTime"]["away"] and x["homeTeam"]["id"] == team_id) or (x["score"]["fullTime"]["away"] > x["score"]["fullTime"]["home"] and x["awayTeam"]["id"] == team_id) else 1 if x["score"]["fullTime"]["home"] == x["score"]["fullTime"]["away"] else 0 for x in m)
     return 0.85 + (pts/15 * 0.3), pts
 
-def gaffer_logic(h_s, a_s, h_pts, a_pts, score):
+def gaffer_logic(h_name, a_name, h_s, a_s, h_pts, a_pts, score):
     h_rank, a_rank = h_s.get('rank', 10), a_s.get('rank', 10)
+    h_atk, h_def = h_s.get('h_atk', 1), h_s.get('h_def', 1)
+    a_atk, a_def = a_s.get('a_atk', 1), a_s.get('a_def', 1)
     
-    # Situational context
-    if h_rank <= 4 and a_rank <= 4: context = "This is a massive clash at the top of the pile."
-    elif h_rank >= 17 or a_rank >= 17: context = "It's a proper relegation scrap today."
-    else: context = f"Both sides are fighting for mid-table security here."
+    # 1. Match Context
+    if h_rank <= 4 and a_rank <= 4:
+        context = f"This is a massive heavyweight clash at the top. Games like this decide seasons."
+    elif h_rank >= 16 and a_rank >= 16:
+        context = f"It's a proper relegation dogfight. Pure desperation from both sides."
+    elif (a_rank - h_rank) >= 8:
+        context = f"On paper, {h_name} should dictate this game, but complacency is a killer."
+    elif (h_rank - a_rank) >= 8:
+        context = f"Tough day at the office ahead for {h_name} hosting a high-flying {a_name} side."
+    else:
+        context = f"Not much separating these two in the table. It's going to be a tight affair."
 
-    tactics = [
-        "Expect a high-pressing game from the first whistle.",
-        "It'll be won in the transitions if they aren't careful.",
-        "I suspect the home side will look to dominate the ball.",
-        "One mistake will decide this tactical chess match."
-    ]
+    # 2. Stat-Driven Tactics
+    if h_atk > 1.2 and a_def > 1.2:
+        tactic = f"I've looked at the numbers. {h_name} are lethal here, and frankly, {a_name} are leaking goals like a sieve on the road."
+    elif h_def < 0.8 and a_atk > 1.2:
+        tactic = f"The visitors pose a massive threat on the counter, but {h_name} have made this stadium a fortress defensively."
+    elif h_atk < 0.9 and a_def < 0.9:
+        tactic = f"Don't expect a thriller. Both sides struggle to create and love to park the bus."
+    else:
+        tactic = "The midfield battle will dictate everything. Whoever wins the second balls takes the points."
 
-    form = f"Home side has {h_pts} pts from 5; Away has {a_pts} pts from 5."
-    return f"{context} {random.choice(tactics)} {form} My call: {score}."
+    # 3. Form & Verdict
+    h_goals, a_goals = int(score.split('-')[0]), int(score.split('-')[1])
+    if h_goals > a_goals:
+        verdict = f"With {h_name} taking {h_pts} points from their last 5, I back the home crowd to pull them over the line. I'm calling it {score}."
+    elif a_goals > h_goals:
+        verdict = f"{a_name} have real swagger right now. I think they'll go there and do a professional job. {score} to the visitors."
+    else:
+        if score == "0-0":
+            verdict = "I can't separate them, and neither will the pitch. A bore draw, 0-0."
+        else:
+            verdict = f"They'll cancel each other out. Both managers might happily take a point right now. I'm going {score}."
+
+    return f"{context} {tactic} {verdict}"
 
 @app.route("/fixtures", methods=["GET"])
 def fixtures():
     d = request.args.get("date")
-    # Date range fix: search for 3 days to ensure data returns
     d_to = (datetime.strptime(d, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
     res = requests.get(f"{BASE_URL}/matches", headers=HEADERS, params={"dateFrom": d, "dateTo": d_to, "competitions": FREE_COMPS})
     
@@ -130,9 +152,9 @@ def predict():
     return jsonify({
         "score": score,
         "probs": {"home": round(h_win/total*100), "draw": round(draw/total*100), "away": round(a_win/total*100)},
-        "insight": gaffer_logic(h_s, a_s, h_pts, a_pts, score),
+        "insight": gaffer_logic(data["home"], data["away"], h_s, a_s, h_pts, a_pts, score),
         "confidence": conf, "h_rank": h_s['rank'], "a_rank": a_s['rank'],
-        "metrics": {"h_atk": round(h_s.get('h_atk', 1),2), "a_def": round(a_s.get('a_def', 1),2), "h_form": h_pts, "a_form": a_pts}
+        "metrics": {"h_atk": round(h_s.get('h_atk', 1),2), "h_def": round(h_s.get('h_def', 1),2), "a_atk": round(a_s.get('a_atk', 1),2), "a_def": round(a_s.get('a_def', 1),2), "h_form": h_pts, "a_form": a_pts}
     })
 
 if __name__ == "__main__":

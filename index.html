@@ -2,76 +2,65 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>THE GAFFER | Tactical HUD</title>
+    <title>THE GAFFER | HUD</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;800&display=swap');
         body { font-family: 'JetBrains Mono', monospace; background-color: #050608; color: #fff; }
-        .neon-border { border: 1px solid #CCFF00; box-shadow: 0 0 10px rgba(204, 255, 0, 0.2); }
+        .neon-text { color: #CCFF00; }
+        .neon-border { border: 1px solid #CCFF00; }
     </style>
 </head>
-<body class="p-4 md:p-10">
-    <div class="max-w-4xl mx-auto">
-        <header class="mb-10 border-b border-zinc-800 pb-4">
-            <h1 class="text-4xl font-black italic text-[#CCFF00]">THE GAFFER <span class="text-white text-sm not-italic ml-2">v1.0</span></h1>
-        </header>
+<body class="p-6">
+    <div class="max-w-xl mx-auto">
+        <h1 class="text-4xl font-black italic neon-text mb-8">THE GAFFER</h1>
 
-        <div class="grid md:grid-cols-2 gap-8">
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-xs text-zinc-500 mb-1">COMPETITION CODE (e.g., PL, PD, SA)</label>
-                    <input id="league" type="text" value="PL" class="w-full bg-zinc-900 border border-zinc-700 p-3 outline-none focus:border-[#CCFF00]">
-                </div>
-                <div class="grid grid-cols-2 gap-4">
-                    <input id="home_id" type="number" placeholder="Home Team ID" class="bg-zinc-900 border border-zinc-700 p-3">
-                    <input id="away_id" type="number" placeholder="Away Team ID" class="bg-zinc-900 border border-zinc-700 p-3">
-                </div>
-                <button onclick="runPrediction()" class="w-full bg-[#CCFF00] text-black font-black p-4 hover:bg-white transition-all">RUN TACTICAL ANALYSIS</button>
+        <div class="mb-6">
+            <label class="block text-[10px] text-zinc-500 mb-2 tracking-widest">SELECT FIXTURE</label>
+            <select id="matchSelect" class="w-full bg-zinc-900 border border-zinc-700 p-4 outline-none focus:border-[#CCFF00] text-sm">
+                <option>Scanning airwaves...</option>
+            </select>
+        </div>
+
+        <button onclick="runPrediction()" class="w-full bg-[#CCFF00] text-black font-black p-4 uppercase hover:bg-white transition-all mb-8">Run Analysis</button>
+
+        <div id="results" class="hidden neon-border p-6 bg-zinc-900/50">
+            <div class="flex justify-between items-center mb-6 text-center">
+                <div class="w-1/3"><p id="h_name" class="text-xs text-zinc-400"></p><p id="h_prob" class="text-4xl font-bold"></p></div>
+                <div class="text-zinc-700 font-bold italic">VS</div>
+                <div class="w-1/3"><p id="a_name" class="text-xs text-zinc-400"></p><p id="a_prob" class="text-4xl font-bold"></p></div>
             </div>
-
-            <div id="results" class="hidden neon-border p-6 bg-zinc-900/50">
-                <div class="flex justify-between items-center mb-6">
-                    <div class="text-center">
-                        <p id="h_name" class="text-xs text-zinc-400"></p>
-                        <p id="h_prob" class="text-3xl font-bold"></p>
-                    </div>
-                    <div class="text-zinc-600 font-bold">VS</div>
-                    <div class="text-center">
-                        <p id="a_name" class="text-xs text-zinc-400"></p>
-                        <p id="a_prob" class="text-3xl font-bold"></p>
-                    </div>
-                </div>
-                <div class="border-t border-zinc-800 pt-4">
-                    <p class="text-[#CCFF00] text-xs font-bold mb-2">MANAGER'S VERDICT:</p>
-                    <p id="verdict_text" class="italic text-zinc-300"></p>
-                </div>
+            <div class="border-t border-zinc-800 pt-4">
+                <p class="neon-text text-[10px] font-bold mb-1">THE GAFFER'S VERDICT:</p>
+                <p id="verdict_text" class="italic text-zinc-300 text-sm"></p>
             </div>
         </div>
     </div>
 
     <script>
+        async function loadMatches() {
+            const res = await fetch('/get_matches');
+            const matches = await res.json();
+            const select = document.getElementById('matchSelect');
+            select.innerHTML = matches.map(m => `<option value='${JSON.stringify(m)}'>${m.date} | ${m.league}: ${m.home} v ${m.away}</option>`).join('');
+        }
+
         async function runPrediction() {
-            const data = {
-                league: document.getElementById('league').value,
-                home_id: document.getElementById('home_id').value,
-                away_id: document.getElementById('away_id').value
-            };
-            
+            const matchData = JSON.parse(document.getElementById('matchSelect').value);
+            document.getElementById('results').classList.remove('hidden');
             const response = await fetch('/predict', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(data)
+                body: JSON.stringify(matchData)
             });
-            
             const result = await response.json();
-            document.getElementById('results').classList.remove('hidden');
             document.getElementById('h_name').innerText = result.home_name;
             document.getElementById('a_name').innerText = result.away_name;
             document.getElementById('h_prob').innerText = result.probs.home;
             document.getElementById('a_prob').innerText = result.probs.away;
             document.getElementById('verdict_text').innerText = result.verdict;
         }
+        window.onload = loadMatches;
     </script>
 </body>
 </html>

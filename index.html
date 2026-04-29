@@ -95,7 +95,7 @@ async function predict() {
                 <div class="p-d" style="width:${d.probs.draw}%">${d.probs.draw}%</div>
                 <div class="p-a" style="width:${d.probs.away}%">${d.probs.away}%</div>
             </div>
-            <div class="gaffer-box"><b>THE GAFFER'S VERDICT:</b> Tactical analysis suggests a <b>${d.score}</b> outcome. Confidence: ${Math.max(d.probs.home, d.probs.draw, d.probs.away)}%. <div class="signature">TACTICAL INTEL UNIT</div></div>
+            <div class="gaffer-box"><b>THE GAFFER'S VERDICT:</b> Tactical analysis suggests a <b>${d.score}</b> outcome. Confidence: ${Math.max(d.probs.home, d.probs.draw, d.probs.away)}%. <div class="signature">THE GAFFER</div></div>
         </div>`;
     } catch (e) { out.innerHTML = "<div class='gaffer-box'>❌ Prediction failed.</div>"; }
 }

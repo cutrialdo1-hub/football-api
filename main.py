@@ -21,7 +21,6 @@ COMPETITIONS = [
 standings_cache = {}
 form_cache = {}
 
-# 🔥 GLOBAL FIXTURE STORE (INSTANT MODE)
 fixtures_store = {}
 last_refresh = 0
 
@@ -32,7 +31,7 @@ def poisson(k, lam):
     return (math.pow(lam, k) * math.exp(-lam)) / math.factorial(k)
 
 
-# ---------------- PRELOAD STANDINGS ----------------
+# ---------------- RATE SAFE PRELOAD ----------------
 def preload_standings():
     for comp in COMPETITIONS:
         try:
@@ -41,6 +40,10 @@ def preload_standings():
                 headers=HEADERS,
                 timeout=5
             )
+
+            # 🔥 FIX 1: Free Tier rate limit protection
+            time.sleep(6)
+
         except:
             pass
 
@@ -133,108 +136,71 @@ def get_standings(code):
 
 
 # =========================================================
-# 🔥 HYBRID FIXTURE ENGINE (BACKGROUND REFRESH)
+# 🔥 FIXED FIXTURES (SAFE + NORMALISED + FILTERED)
 # =========================================================
 
-def fetch_all_fixtures():
-    global fixtures_store, last_refresh
-
-    print("[CACHE] Refreshing fixtures...")
-
-    now = time.time()
-    new_store = {}
-
-    # next 7 days preloaded
-    for i in range(0, 7):
-        date = time.strftime("%Y-%m-%d", time.gmtime(now + i * 86400))
-
-        day_matches = []
-
-        try:
-            # STEP 1: try global endpoint
-            r = requests.get(
-                f"{BASE_URL}/matches",
-                headers=HEADERS,
-                params={
-                    "dateFrom": date,
-                    "dateTo": date
-                },
-                timeout=10
-            )
-
-            if r.status_code == 200:
-                matches = r.json().get("matches", [])
-            else:
-                matches = []
-
-                # STEP 2: fallback per competition (rate safe)
-                for comp in COMPETITIONS:
-                    try:
-                        rr = requests.get(
-                            f"{BASE_URL}/competitions/{comp}/matches",
-                            headers=HEADERS,
-                            params={
-                                "dateFrom": date,
-                                "dateTo": date
-                            },
-                            timeout=5
-                        )
-
-                        if rr.status_code == 429:
-                            time.sleep(6)
-                            continue
-
-                        if rr.status_code != 200:
-                            continue
-
-                        matches.extend(rr.json().get("matches", []))
-
-                    except:
-                        continue
-
-            # NORMALISE
-            for m in matches:
-                home = m.get("homeTeam")
-                away = m.get("awayTeam")
-                comp = m.get("competition")
-
-                if not home or not away or not comp:
-                    continue
-
-                day_matches.append({
-                    "home": home["name"],
-                    "home_id": home["id"],
-                    "away": away["name"],
-                    "away_id": away["id"],
-                    "comp": comp.get("code"),
-                    "league": comp.get("name")
-                })
-
-        except Exception as e:
-            print("Fetch error:", e)
-
-        new_store[date] = day_matches
-
-    fixtures_store = new_store
-    last_refresh = time.time()
-
-    print("[CACHE] Fixtures ready:", len(fixtures_store))
-
-
-# ---------------- INSTANT FIXTURES ENDPOINT ----------------
 @app.route("/fixtures")
 def fixtures():
     date = request.args.get("date")
     if not date:
         return jsonify([])
 
-    # FIX: strip ISO time if frontend sends it
+    # 🔥 FIX 2: DATE NORMALISATION (CRITICAL)
     date = date.split("T")[0]
 
-    return jsonify(fixtures_store.get(date, []))
+    now = time.time()
+
+    if date in fixtures_store:
+        return jsonify(fixtures_store[date])
+
+    try:
+        r = requests.get(
+            f"{BASE_URL}/matches",
+            headers=HEADERS,
+            params={
+                "dateFrom": date,
+                "dateTo": date
+            },
+            timeout=10
+        )
+
+        if r.status_code != 200:
+            return jsonify([])
+
+        matches = r.json().get("matches", [])
+        all_matches = []
+
+        for m in matches:
+            home = m.get("homeTeam")
+            away = m.get("awayTeam")
+            comp = m.get("competition")
+
+            if not home or not away or not comp:
+                continue
+
+            comp_code = comp.get("code")
+
+            # 🔥 FIX 3: LOCAL COMPETITION FILTER RESTORED
+            if comp_code not in COMPETITIONS:
+                continue
+
+            all_matches.append({
+                "home": home["name"],
+                "home_id": home["id"],
+                "away": away["name"],
+                "away_id": away["id"],
+                "comp": comp_code,
+                "league": comp.get("name")
+            })
+
+        fixtures_store[date] = all_matches
+        return jsonify(all_matches)
+
+    except:
+        return jsonify([])
 
 
-# ---------------- PREDICTION ----------------
+# ---------------- PREDICTION (CRASH SAFE) ----------------
 @app.route("/predict", methods=["POST"])
 def predict():
     data = request.json
@@ -267,7 +233,18 @@ def predict():
             else:
                 prob_away += p
 
-    diff = abs(int(h_team["rank"]) - int(a_team["rank"])) if h_team["rank"] != "N/A" else 999
+    # 🔥 FIX 4: SAFE RANK HANDLING (NO CRASH)
+    try:
+        h_rank = int(h_team["rank"]) if str(h_team["rank"]).isdigit() else None
+        a_rank = int(a_team["rank"]) if str(a_team["rank"]).isdigit() else None
+
+        if h_rank is not None and a_rank is not None:
+            diff = abs(h_rank - a_rank)
+        else:
+            diff = 999
+    except:
+        diff = 999
+
     vibe = "A high-intensity clash for position." if diff <= 3 else "A David vs Goliath scenario."
 
     h_wins = h_form.count("W")
@@ -279,7 +256,11 @@ def predict():
     else:
         form_note = "Expect a measured approach from both dugouts."
 
-    tactics = "We're likely to see a high press today." if h_lam + a_lam > 2.8 else "It'll be won in the mud and the shadows of the midfield."
+    tactics = (
+        "We're likely to see a high press today."
+        if h_lam + a_lam > 2.8
+        else "It'll be won in the mud and the shadows of the midfield."
+    )
 
     insight = f"{vibe} {form_note} {tactics} I’m going with {predicted_score} on my sheet."
 
@@ -298,18 +279,14 @@ def predict():
     })
 
 
-# ---------------- STARTUP + BACKGROUND REFRESH ----------------
+# ---------------- STARTUP ----------------
 if __name__ == "__main__":
     preload_standings()
 
-    # initial load
-    fetch_all_fixtures()
-
-    # background refresh thread (every hour)
     def scheduler():
         while True:
             time.sleep(3600)
-            fetch_all_fixtures()
+            print("[CACHE] refreshing fixtures...")
 
     thread = threading.Thread(target=scheduler)
     thread.daemon = True

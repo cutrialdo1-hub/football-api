@@ -14,15 +14,16 @@
         input, select, button { width:100%; padding:14px; margin-bottom:12px; border-radius:10px; background:#000; border:1px solid var(--border); color:#fff; box-sizing:border-box; }
         button { background:var(--neon); color:#000; font-weight:800; font-family:Orbitron; cursor:pointer; border:none; }
         .score { font-family:Orbitron; font-size:4rem; text-align:center; color:var(--neon); margin:10px 0; }
-        .prob-bar { display:flex; height:24px; border-radius:6px; overflow:hidden; margin:15px 0; font-family:Orbitron; font-size:0.7rem; line-height:24px; text-align:center; }
-        .p-h { background:var(--neon); color:#000; } .p-d { background:var(--draw); color:#000; } .p-a { background:var(--away); color:#000; }
-        .gaffer-box { background:rgba(0,255,157,0.05); border-left:4px solid var(--neon); padding:15px; margin-top:15px; font-style:italic; font-size:0.9rem; }
+        .market-table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.8rem; }
+        .market-table th { text-align: left; color: var(--neon); font-family: Orbitron; font-size: 0.6rem; padding-bottom: 8px; }
+        .market-table td { padding: 10px 0; border-top: 1px solid var(--border); }
+        .val-edge { color: var(--neon); font-weight: bold; }
+        .gaffer-box { background:rgba(0,255,157,0.05); border-left:4px solid var(--neon); padding:15px; margin-top:15px; font-style:italic; font-size:0.85rem; line-height:1.4; }
         .odds-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 15px; }
         .odds-grid input { margin-bottom: 0; padding: 10px; font-size: 0.8rem; }
-        .pill { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 0.65rem; font-family: Orbitron; border: 1px solid var(--neon); color: var(--neon); margin-bottom: 10px; animation: glow 1.5s infinite; }
-        @keyframes glow { 0% { box-shadow: 0 0 5px var(--neon); } 50% { box-shadow: 0 0 15px var(--neon); } 100% { box-shadow: 0 0 5px var(--neon); } }
-        .extra-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
-        .extra-item { background: #000; padding: 10px; border-radius: 8px; text-align: center; border: 1px solid var(--border); }
+        .dot-row { display: flex; gap: 4px; margin-top: 5px; }
+        .dot { width: 18px; height: 18px; border-radius: 4px; font-size: 9px; text-align: center; line-height: 18px; color: #000; font-weight: bold; }
+        .W { background: var(--neon); } .D { background: var(--draw); } .L { background: var(--away); }
     </style>
 </head>
 <body>
@@ -36,7 +37,7 @@
 </div>
 
 <script>
-const API = "https://football-api-9e4p.onrender.com";
+const API = "https://your-backend-url.render.com"; // Replace with your Render URL
 let fixturesData = [];
 let selectedIdx = null;
 
@@ -60,54 +61,63 @@ function setupMatch() {
     const m = fixturesData[selectedIdx];
     document.getElementById("output").innerHTML = `
         <div class="card">
-            <h3 style="font-family:Orbitron; font-size:0.8rem; color:var(--neon); margin-top:0;">PRE-CHECK: ${m.home} vs ${m.away}</h3>
-            <label style="font-size:0.6rem; opacity:0.6; display:block; margin-bottom:5px;">OPTIONAL: BOOKIE ODDS (DECIMAL)</label>
+            <h3 style="font-family:Orbitron; font-size:0.8rem; color:var(--neon); margin:0 0 10px 0;">${m.home} vs ${m.away}</h3>
+            <label style="font-size:0.6rem; opacity:0.6; display:block; margin-bottom:5px;">BOOKIE ODDS (DECIMAL)</label>
             <div class="odds-grid">
                 <input type="number" id="oH" placeholder="Home">
                 <input type="number" id="oD" placeholder="Draw">
                 <input type="number" id="oA" placeholder="Away">
             </div>
-            <button onclick="predict()">RUN VERDICT ENGINE</button>
+            <div class="odds-grid" style="margin-top: -8px;">
+                <input type="number" id="oBTTS" placeholder="BTTS Yes">
+                <input type="number" id="oO25" placeholder="Over 2.5">
+            </div>
+            <button onclick="predict()">GENERATE VERDICT</button>
         </div>`;
 }
 
 async function predict() {
     const out = document.getElementById("output");
-    const odds = {
+    const b_odds = {
         home: parseFloat(document.getElementById("oH").value) || 0,
         draw: parseFloat(document.getElementById("oD").value) || 0,
-        away: parseFloat(document.getElementById("oA").value) || 0
+        away: parseFloat(document.getElementById("oA").value) || 0,
+        btts: parseFloat(document.getElementById("oBTTS").value) || 0,
+        over25: parseFloat(document.getElementById("oO25").value) || 0
     };
-    out.innerHTML = "<div class='card' style='text-align:center;'>Calculating Probabilities...</div>";
+    out.innerHTML = "<div class='card' style='text-align:center;'>Running Poisson Matrix...</div>";
     try {
         const res = await fetch(`${API}/predict`, {
             method: "POST",
             headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({...fixturesData[selectedIdx], bookie_odds: odds})
+            body: JSON.stringify({...fixturesData[selectedIdx]})
         });
         const d = await res.json();
-        let alerts = "";
-        for(let k in d.value_alerts) if(d.value_alerts[k].value_edge) alerts += `<div class="pill">✦ ${k.toUpperCase()} EDGE +${d.value_alerts[k].edge}%</div>`;
+        const a = d.analysis;
+
+        const compare = (fair, bookie) => (bookie > fair) ? `<span class="val-edge">${bookie} ★</span>` : `<span>${bookie || '-'}</span>`;
 
         out.innerHTML = `
         <div class="card">
-            ${alerts}
-            <div style="display:flex; justify-content:space-between; font-size:0.8rem; opacity:0.7;">
-                <span><b>${fixturesData[selectedIdx].home}</b> (Rank: ${d.h_rank})</span>
-                <span><b>${fixturesData[selectedIdx].away}</b> (Rank: ${d.a_rank})</span>
+            <div style="display:flex; justify-content:space-between; font-size:0.7rem; opacity:0.6;">
+                <div><b>${fixturesData[selectedIdx].home}</b> (Rank: ${d.h_rank})<br><div class="dot-row">${d.h_form.split('').map(c=>`<div class="dot ${c}">${c}</div>`).join('')}</div></div>
+                <div style="text-align:right;"><b>${fixturesData[selectedIdx].away}</b> (Rank: ${d.a_rank})<br><div class="dot-row">${d.a_form.split('').map(c=>`<div class="dot ${c}">${c}</div>`).join('')}</div></div>
             </div>
             <div class="score">${d.score}</div>
-            <div class="prob-bar">
-                <div class="p-h" style="width:${d.probs.home}%">${d.probs.home}%</div>
-                <div class="p-d" style="width:${d.probs.draw}%">${d.probs.draw}%</div>
-                <div class="p-a" style="width:${d.probs.away}%">${d.probs.away}%</div>
+            
+            <table class="market-table">
+                <tr><th>MARKET</th><th>GAFFER (FAIR)</th><th>BOOKIE</th></tr>
+                <tr><td>HOME WIN</td><td><b>${a.home.fair}</b></td><td>${compare(a.home.fair, b_odds.home)}</td></tr>
+                <tr><td>DRAW</td><td><b>${a.draw.fair}</b></td><td>${compare(a.draw.fair, b_odds.draw)}</td></tr>
+                <tr><td>AWAY WIN</td><td><b>${a.away.fair}</b></td><td>${compare(a.away.fair, b_odds.away)}</td></tr>
+                <tr><td>BTTS YES</td><td><b>${a.btts.fair}</b></td><td>${compare(a.btts.fair, b_odds.btts)}</td></tr>
+                <tr><td>OVER 2.5</td><td><b>${a.over25.fair}</b></td><td>${compare(a.over25.fair, b_odds.over25)}</td></tr>
+            </table>
+
+            <div class="gaffer-box">
+                <b>THE GAFFER:</b> If bookie odds are higher than Gaffer odds (marked with ★), the bet has <b>statistical value</b>. The matrix favors a <b>${d.score}</b> finish.
             </div>
-            <div class="extra-grid">
-                <div class="extra-item"><small>BTTS YES</small><br><b>${d.market.btts}%</b></div>
-                <div class="extra-item"><small>OVER 2.5</small><br><b>${d.market.over25}%</b></div>
-            </div>
-            <div class="gaffer-box"><b>THE GAFFER:</b> Result favors <b>${d.score}</b> scoreline.</div>
-            <button style="margin-top:20px; background:none; border:1px solid var(--border); color:var(--draw); font-size:0.6rem;" onclick="setupMatch()">NEW ANALYSIS</button>
+            <button style="margin-top:15px; background:none; border:1px solid var(--border); color:var(--draw); font-size:0.6rem;" onclick="setupMatch()">BACK TO PRE-CHECK</button>
         </div>`;
     } catch (e) { out.innerHTML = "Error."; }
 }

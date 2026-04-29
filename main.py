@@ -2,6 +2,7 @@ import math
 import os
 import time
 import requests
+import threading
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
@@ -16,17 +17,22 @@ COMPETITIONS = [
     "CL","PL","PD","BL1","SA","FL1","ELC","DED","PPL","BSA"
 ]
 
-# ---------------- CACHE LAYERS ----------------
+# ---------------- CACHE ----------------
 standings_cache = {}
-fixtures_cache = {}
 form_cache = {}
 
-# ---------------- POISSON (UNCHANGED) ----------------
+# 🔥 GLOBAL FIXTURE STORE (INSTANT MODE)
+fixtures_store = {}
+last_refresh = 0
+
+
+# ---------------- POISSON ----------------
 def poisson(k, lam):
     lam = max(min(lam, 4.0), 0.1)
     return (math.pow(lam, k) * math.exp(-lam)) / math.factorial(k)
 
-# ---------------- PRELOAD CACHE ----------------
+
+# ---------------- PRELOAD STANDINGS ----------------
 def preload_standings():
     for comp in COMPETITIONS:
         try:
@@ -38,7 +44,8 @@ def preload_standings():
         except:
             pass
 
-# ---------------- FORM (CACHED) ----------------
+
+# ---------------- FORM ----------------
 def get_detailed_form(team_id):
     now = time.time()
 
@@ -88,6 +95,7 @@ def get_detailed_form(team_id):
     except:
         return 1.0, "???"
 
+
 # ---------------- STANDINGS ----------------
 def get_standings(code):
     now = time.time()
@@ -123,66 +131,108 @@ def get_standings(code):
     except:
         return {}
 
-# ---------------- 🚀 FIXED FIXTURES (FINAL VERSION) ----------------
+
+# =========================================================
+# 🔥 HYBRID FIXTURE ENGINE (BACKGROUND REFRESH)
+# =========================================================
+
+def fetch_all_fixtures():
+    global fixtures_store, last_refresh
+
+    print("[CACHE] Refreshing fixtures...")
+
+    now = time.time()
+    new_store = {}
+
+    # next 7 days preloaded
+    for i in range(0, 7):
+        date = time.strftime("%Y-%m-%d", time.gmtime(now + i * 86400))
+
+        day_matches = []
+
+        try:
+            # STEP 1: try global endpoint
+            r = requests.get(
+                f"{BASE_URL}/matches",
+                headers=HEADERS,
+                params={
+                    "dateFrom": date,
+                    "dateTo": date
+                },
+                timeout=10
+            )
+
+            if r.status_code == 200:
+                matches = r.json().get("matches", [])
+            else:
+                matches = []
+
+                # STEP 2: fallback per competition (rate safe)
+                for comp in COMPETITIONS:
+                    try:
+                        rr = requests.get(
+                            f"{BASE_URL}/competitions/{comp}/matches",
+                            headers=HEADERS,
+                            params={
+                                "dateFrom": date,
+                                "dateTo": date
+                            },
+                            timeout=5
+                        )
+
+                        if rr.status_code == 429:
+                            time.sleep(6)
+                            continue
+
+                        if rr.status_code != 200:
+                            continue
+
+                        matches.extend(rr.json().get("matches", []))
+
+                    except:
+                        continue
+
+            # NORMALISE
+            for m in matches:
+                home = m.get("homeTeam")
+                away = m.get("awayTeam")
+                comp = m.get("competition")
+
+                if not home or not away or not comp:
+                    continue
+
+                day_matches.append({
+                    "home": home["name"],
+                    "home_id": home["id"],
+                    "away": away["name"],
+                    "away_id": away["id"],
+                    "comp": comp.get("code"),
+                    "league": comp.get("name")
+                })
+
+        except Exception as e:
+            print("Fetch error:", e)
+
+        new_store[date] = day_matches
+
+    fixtures_store = new_store
+    last_refresh = time.time()
+
+    print("[CACHE] Fixtures ready:", len(fixtures_store))
+
+
+# ---------------- INSTANT FIXTURES ENDPOINT ----------------
 @app.route("/fixtures")
 def fixtures():
     date = request.args.get("date")
     if not date:
         return jsonify([])
 
-    now = time.time()
+    # FIX: strip ISO time if frontend sends it
+    date = date.split("T")[0]
 
-    # cache per date
-    if date in fixtures_cache and now - fixtures_cache[date]["t"] < 300:
-        return jsonify(fixtures_cache[date]["d"])
+    return jsonify(fixtures_store.get(date, []))
 
-    try:
-        r = requests.get(
-            f"{BASE_URL}/matches",
-            headers=HEADERS,
-            params={
-                "dateFrom": date,
-                "dateTo": date
-            },
-            timeout=10
-        )
-
-        if r.status_code != 200:
-            return jsonify([])
-
-        matches = r.json().get("matches", [])
-        all_matches = []
-
-        for m in matches:
-            # safety checks (IMPORTANT)
-            home = m.get("homeTeam")
-            away = m.get("awayTeam")
-            comp = m.get("competition")
-
-            if not home or not away or not comp:
-                continue
-
-            comp_code = comp.get("code")
-            comp_name = comp.get("name")
-
-            # 🔥 FIX: no aggressive filtering (this was breaking results)
-            if not comp_code or not comp_name:
-                continue
-
-            all_matches.append({
-                "home": home["name"],
-                "home_id": home["id"],
-                "away": away["name"],
-                "away_id": away["id"],
-                "comp": comp_code,
-                "league": comp_name
-            })
-
-        fixtures_cache[date] = {"t": now, "d": all_matches}
-        return jsonify(all_matches)
-
-    except:
-        return jsonify([])
 
 # ---------------- PREDICTION ----------------
 @app.route("/predict", methods=["POST"])
@@ -247,6 +297,22 @@ def predict():
         "insight": insight
     })
 
+
+# ---------------- STARTUP + BACKGROUND REFRESH ----------------
 if __name__ == "__main__":
     preload_standings()
+
+    # initial load
+    fetch_all_fixtures()
+
+    # background refresh thread (every hour)
+    def scheduler():
+        while True:
+            time.sleep(3600)
+            fetch_all_fixtures()
+
+    thread = threading.Thread(target=scheduler)
+    thread.daemon = True
+    thread.start()
+
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))

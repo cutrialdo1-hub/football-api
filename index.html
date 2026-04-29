@@ -6,25 +6,23 @@
     <title>THE GAFFER | Tactical Intelligence v2.0</title>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;700&display=swap" rel="stylesheet">
     <style>
-        :root { --neon: #00ff9d; --bg: #0a0b10; --card: #111318; --border: #23262f; --away: #ff3366; --draw: #6b7280; }
+        :root { --neon: #00ff9d; --bg: #0a0b10; --card: #111318; --border: #23262f; --away: #ff3366; --draw: #6b7280; --gold: #fbbf24; }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: var(--bg); color: #e5e7eb; font-family: Inter, sans-serif; display: flex; justify-content: center; padding: 20px; }
         .container { width: 100%; max-width: 480px; }
         h1 { font-family: Orbitron; color: var(--neon); text-align: center; letter-spacing: 5px; font-size: 1.2rem; margin-bottom: 20px; }
-        
         .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; margin-bottom: 16px; }
         input, select, button { width: 100%; padding: 12px; margin-bottom: 10px; border-radius: 10px; background: #000; border: 1px solid var(--border); color: #fff; font-size: 0.9rem; }
         button { background: var(--neon); color: #000; font-weight: 800; font-family: Orbitron; border: none; cursor: pointer; }
-        
         .score-display { font-family: Orbitron; font-size: 3.5rem; text-align: center; color: var(--neon); line-height: 1.2; }
-        
         .market-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
         .market-table th { font-size: 0.6rem; color: var(--draw); text-align: left; padding: 8px; }
         .market-table td { padding: 10px 8px; border-top: 1px solid var(--border); font-size: 0.85rem; }
+        .bookie-input { width: 60px; padding: 4px 8px; margin: 0; background: #1a1c22; border: 1px solid #333; border-radius: 4px; text-align: center; font-family: Orbitron; font-size: 0.75rem; color: white; }
         
-        /* The comparison input style inside the result */
-        .bookie-input { width: 60px; padding: 4px 8px; margin: 0; background: #1a1c22; border: 1px solid #333; border-radius: 4px; text-align: center; font-family: Orbitron; font-size: 0.75rem; }
-        .value-detected { color: var(--neon) !important; text-shadow: 0 0 10px var(--neon); font-weight: 900; }
+        /* Value States */
+        .prime-value { color: var(--neon) !important; text-shadow: 0 0 10px var(--neon); font-weight: 900; }
+        .thin-value { color: var(--gold) !important; font-weight: 600; }
         .value-badge { background: var(--neon); color: #000; font-size: 0.5rem; padding: 2px 4px; border-radius: 3px; margin-left: 5px; font-weight: 900; vertical-align: middle; }
 
         .dot { width: 18px; height: 18px; border-radius: 4px; font-size: 9px; line-height: 18px; text-align: center; color: #000; font-weight: 800; display: inline-block; margin: 1px; }
@@ -36,16 +34,11 @@
 <body>
 <div class="container">
     <h1>THE GAFFER</h1>
-    
     <div class="card">
-        <p style="font-size:0.6rem; color:var(--draw); font-family:Orbitron; margin-bottom:8px;">FIXTURE SELECTION</p>
         <input type="date" id="date" onchange="getFixtures()">
-        <select id="matches" onchange="document.getElementById('btn').disabled = false">
-            <option value="">Select Match...</option>
-        </select>
+        <select id="matches" onchange="document.getElementById('btn').disabled = false"><option value="">Select Match...</option></select>
         <button id="btn" onclick="predict()" disabled>RUN ANALYTICS</button>
     </div>
-
     <div id="output"></div>
 </div>
 
@@ -80,16 +73,26 @@ async function predict() {
         });
         const d = await res.json();
         
-        // This function handles the instant comparison when you type in the result card
+        // 🧠 REFACTORED LOGIC: Value Thresholding
         window.checkValue = (input, fairOdd, targetId) => {
-            const val = parseFloat(input.value);
+            const bVal = parseFloat(input.value);
             const target = document.getElementById(targetId);
-            if (val > fairOdd) {
-                target.classList.add('value-detected');
-                target.innerHTML = `${val.toFixed(2)} <span class="value-badge">VALUE</span>`;
+            if (!bVal) { target.innerHTML = '--'; return; }
+
+            const prob = 1 / fairOdd;
+            const edge = (bVal * prob) - 1;
+            const minEdge = 0.05; // 5% cushion
+
+            if (edge >= minEdge) {
+                target.className = 'prime-value';
+                target.innerHTML = `${bVal.toFixed(2)} <span class="value-badge">PRIME VALUE</span>`;
+            } else if (edge > 0) {
+                target.className = 'thin-value';
+                target.innerHTML = `${bVal.toFixed(2)} <span style="font-size:0.5rem;">(Thin)</span>`;
             } else {
-                target.classList.remove('value-detected');
-                target.innerHTML = val ? val.toFixed(2) : '--';
+                target.className = '';
+                target.style.color = "#4b5563";
+                target.innerHTML = bVal.toFixed(2);
             }
         };
 
@@ -100,8 +103,7 @@ async function predict() {
                 <td style="color:#6b7280;">${label}</td>
                 <td style="font-family:Orbitron; font-weight:700;">${fair.toFixed(2)}</td>
                 <td style="text-align:right;">
-                    <input type="number" class="bookie-input" placeholder="0.00" 
-                           oninput="checkValue(this, ${fair}, '${uniqueId}')">
+                    <input type="number" class="bookie-input" placeholder="0.00" oninput="checkValue(this, ${fair}, '${uniqueId}')">
                     <div id="${uniqueId}" style="font-size:0.7rem; margin-top:4px; color:#4b5563;">--</div>
                 </td>
             </tr>`;
@@ -110,27 +112,18 @@ async function predict() {
         out.innerHTML = `
         <div class="card" style="border-top: 4px solid var(--neon);">
             <div style="display:flex; justify-content:space-between; margin-bottom:15px;">
-                <div style="width:35%"><b style="font-size:0.8rem;">${fixturesData[idx].home}</b><br>${d.h_form.split('').map(c=>`<div class="dot ${c}">${c}</div>`).join('')}</div>
+                <div style="width:35%"><b>${fixturesData[idx].home}</b><br>${d.h_form.split('').map(c=>`<div class="dot ${c}">${c}</div>`).join('')}</div>
                 <div class="score-display">${d.score}</div>
-                <div style="width:35%; text-align:right;"><b style="font-size:0.8rem;">${fixturesData[idx].away}</b><br>${d.a_form.split('').map(c=>`<div class="dot ${c}">${c}</div>`).join('')}</div>
+                <div style="width:35%; text-align:right;"><b>${fixturesData[idx].away}</b><br>${d.a_form.split('').map(c=>`<div class="dot ${c}">${c}</div>`).join('')}</div>
             </div>
-
-            <p style="font-size:0.55rem; color:var(--neon); font-family:Orbitron; letter-spacing:1px; margin-bottom:10px;">MARKET ANALYSIS & COMPARISON</p>
             <table class="market-table">
-                <thead>
-                    <tr><th>MARKET</th><th>GAFFER PRICE</th><th style="text-align:right;">BOOKIE LIVE</th></tr>
-                </thead>
+                <thead><tr><th>MARKET</th><th>GAFFER FAIR</th><th style="text-align:right;">BOOKIE LIVE</th></tr></thead>
                 <tbody>
-                    ${renderRow('HOME WIN', 'home')}
-                    ${renderRow('DRAW', 'draw')}
-                    ${renderRow('AWAY WIN', 'away')}
-                    ${renderRow('BTTS YES', 'btts')}
-                    ${renderRow('OVER 2.5', 'over25')}
+                    ${renderRow('HOME WIN', 'home')}${renderRow('DRAW', 'draw')}${row = renderRow('AWAY WIN', 'away')}
+                    ${renderRow('BTTS YES', 'btts')}${renderRow('OVER 2.5', 'over25')}
                 </tbody>
             </table>
-            <p style="font-size:0.6rem; color:#333; margin-top:15px; text-align:center;">Type bookie odds above to scan for Value Edge.</p>
         </div>`;
-        
     } catch (e) { out.innerHTML = "<div class='card'>Error. Check Gaffer Core.</div>"; }
 }
 </script>

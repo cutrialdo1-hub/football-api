@@ -14,13 +14,12 @@ BASE_URL = "https://api.football-data.org/v4"
 HEADERS = {"X-Auth-Token": API_KEY}
 
 COMPETITIONS = [
-    "CL","PL","PD","BL1","SA","FL1","ELC","DED","PPL","BSA"
+    "CL", "PL", "PD", "BL1", "SA", "FL1", "ELC", "DED", "PPL", "BSA"
 ]
 
 # ---------------- CACHE ----------------
 standings_cache = {}
 form_cache = {}
-
 fixtures_store = {}
 last_refresh = 0
 
@@ -33,6 +32,8 @@ def poisson(k, lam):
 
 # ---------------- RATE SAFE PRELOAD ----------------
 def preload_standings():
+    print("[BOOT] Preloading standings...")
+
     for comp in COMPETITIONS:
         try:
             requests.get(
@@ -41,7 +42,7 @@ def preload_standings():
                 timeout=5
             )
 
-            # 🔥 FIX 1: Free Tier rate limit protection
+            # 🔥 RATE LIMIT SAFETY (10 req/min max)
             time.sleep(6)
 
         except:
@@ -136,71 +137,85 @@ def get_standings(code):
 
 
 # =========================================================
-# 🔥 FIXED FIXTURES (SAFE + NORMALISED + FILTERED)
+# 🔥 FIXTURE ENGINE (RATE SAFE + 6s DELAY ADDED)
 # =========================================================
+def fetch_all_fixtures():
+    global fixtures_store, last_refresh
 
+    print("[CACHE] Refreshing fixtures...")
+
+    now = time.time()
+    new_store = {}
+
+    for i in range(0, 7):
+        date = time.strftime("%Y-%m-%d", time.gmtime(now + i * 86400))
+
+        # 🔥 FIX 1: RATE LIMIT SAFETY (GLOBAL FIX FOR LOOP)
+        time.sleep(6)
+
+        day_matches = []
+
+        try:
+            r = requests.get(
+                f"{BASE_URL}/matches",
+                headers=HEADERS,
+                params={"dateFrom": date, "dateTo": date},
+                timeout=10
+            )
+
+            if r.status_code != 200:
+                continue
+
+            matches = r.json().get("matches", [])
+
+            for m in matches:
+                home = m.get("homeTeam")
+                away = m.get("awayTeam")
+                comp = m.get("competition")
+
+                if not home or not away or not comp:
+                    continue
+
+                comp_code = comp.get("code")
+
+                # IMPORTANT FILTER (keeps model stable)
+                if comp_code not in COMPETITIONS:
+                    continue
+
+                day_matches.append({
+                    "home": home["name"],
+                    "home_id": home["id"],
+                    "away": away["name"],
+                    "away_id": away["id"],
+                    "comp": comp_code,
+                    "league": comp.get("name")
+                })
+
+        except:
+            pass
+
+        new_store[date] = day_matches
+
+    fixtures_store = new_store
+    last_refresh = time.time()
+
+    print(f"[CACHE] Fixtures loaded: {len(fixtures_store)} days")
+
+
+# ---------------- FIXTURES ENDPOINT ----------------
 @app.route("/fixtures")
 def fixtures():
     date = request.args.get("date")
     if not date:
         return jsonify([])
 
-    # 🔥 FIX 2: DATE NORMALISATION (CRITICAL)
+    # normalize ISO input
     date = date.split("T")[0]
 
-    now = time.time()
-
-    if date in fixtures_store:
-        return jsonify(fixtures_store[date])
-
-    try:
-        r = requests.get(
-            f"{BASE_URL}/matches",
-            headers=HEADERS,
-            params={
-                "dateFrom": date,
-                "dateTo": date
-            },
-            timeout=10
-        )
-
-        if r.status_code != 200:
-            return jsonify([])
-
-        matches = r.json().get("matches", [])
-        all_matches = []
-
-        for m in matches:
-            home = m.get("homeTeam")
-            away = m.get("awayTeam")
-            comp = m.get("competition")
-
-            if not home or not away or not comp:
-                continue
-
-            comp_code = comp.get("code")
-
-            # 🔥 FIX 3: LOCAL COMPETITION FILTER RESTORED
-            if comp_code not in COMPETITIONS:
-                continue
-
-            all_matches.append({
-                "home": home["name"],
-                "home_id": home["id"],
-                "away": away["name"],
-                "away_id": away["id"],
-                "comp": comp_code,
-                "league": comp.get("name")
-            })
-
-        fixtures_store[date] = all_matches
-        return jsonify(all_matches)
-
-    except:
-        return jsonify([])
+    return jsonify(fixtures_store.get(date, []))
 
 
-# ---------------- PREDICTION (CRASH SAFE) ----------------
+# ---------------- PREDICTION (SAFE) ----------------
 @app.route("/predict", methods=["POST"])
 def predict():
     data = request.json
@@ -233,15 +248,12 @@ def predict():
             else:
                 prob_away += p
 
-    # 🔥 FIX 4: SAFE RANK HANDLING (NO CRASH)
+    # SAFE RANK LOGIC (NO CRASHES)
     try:
         h_rank = int(h_team["rank"]) if str(h_team["rank"]).isdigit() else None
         a_rank = int(a_team["rank"]) if str(a_team["rank"]).isdigit() else None
 
-        if h_rank is not None and a_rank is not None:
-            diff = abs(h_rank - a_rank)
-        else:
-            diff = 999
+        diff = abs(h_rank - a_rank) if h_rank is not None and a_rank is not None else 999
     except:
         diff = 999
 
@@ -279,17 +291,36 @@ def predict():
     })
 
 
-# ---------------- STARTUP ----------------
-if __name__ == "__main__":
+# =========================================================
+# 🚀 STARTUP (NON-BLOCKING THREAD ARCHITECTURE)
+# =========================================================
+
+def boot_sequence():
+    print("[BOOT] Starting boot sequence...")
+    fetch_all_fixtures()
     preload_standings()
+    print("[BOOT] Complete")
 
-    def scheduler():
-        while True:
-            time.sleep(3600)
-            print("[CACHE] refreshing fixtures...")
 
-    thread = threading.Thread(target=scheduler)
-    thread.daemon = True
-    thread.start()
+def scheduler():
+    while True:
+        time.sleep(3600)
+        print("[SCHEDULER] Refreshing data...")
+        fetch_all_fixtures()
+        preload_standings()
 
+
+if __name__ == "__main__":
+
+    # 🚀 instant boot (non-blocking)
+    boot_thread = threading.Thread(target=boot_sequence)
+    boot_thread.daemon = True
+    boot_thread.start()
+
+    # 🚀 background scheduler
+    sched_thread = threading.Thread(target=scheduler)
+    sched_thread.daemon = True
+    sched_thread.start()
+
+    # 🚀 Flask server
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))

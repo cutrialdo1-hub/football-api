@@ -4,110 +4,585 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>THE GAFFER | Tactical Intelligence</title>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@300;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;700&display=swap" rel="stylesheet">
     <style>
-        :root { --neon:#00ff9d; --bg:#0a0b10; --card:#151821; --border:#2a2d3a; --away:#ff3366; --draw:#8892b0; }
-        body { background:var(--bg); color:#fff; font-family:Inter,sans-serif; display:flex; justify-content:center; padding:20px; }
-        .container { width:100%; max-width:480px; }
-        h1 { font-family:Orbitron; color:var(--neon); text-align:center; letter-spacing:5px; font-size:1.2rem; }
-        .card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:20px; }
-        input, select, button { width:100%; padding:14px; margin-bottom:12px; border-radius:10px; background:#000; border:1px solid var(--border); color:#fff; box-sizing:border-box; }
-        button { background:var(--neon); color:#000; font-weight:800; font-family:Orbitron; cursor:pointer; border:none; transition:0.3s; }
-        button:disabled { background:#1a1a1a; color:#444; cursor:not-allowed; }
-        .score { font-family:Orbitron; font-size:4rem; text-align:center; color:var(--neon); }
-        .prob-bar { display:flex; height:24px; border-radius:6px; overflow:hidden; margin:20px 0; font-family:Orbitron; font-size:0.7rem; line-height:24px; text-align:center; }
-        .p-h { background:var(--neon); color:#000; } .p-d { background:var(--draw); color:#000; } .p-a { background:var(--away); color:#000; }
-        .dot { width:18px; height:18px; border-radius:4px; font-size:10px; line-height:18px; text-align:center; color:#000; font-weight:bold; display:inline-block; margin-right:2px;}
-        .W { background:var(--neon); } .D { background:var(--draw); } .L { background:var(--away); }
-        .gaffer-box { background:rgba(0,255,157,0.05); border-left:4px solid var(--neon); padding:15px; margin-top:15px; font-style:italic; font-size:0.85rem; }
-        .market-row { display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-top:1px solid #222; }
-        .bookie-input { width:60px; padding:5px; margin:0; font-family:Orbitron; font-size:0.7rem; text-align:center; color:var(--neon); }
-        .prime { color:var(--neon); font-weight:bold; text-shadow:0 0 5px var(--neon); }
-        .loader { border:3px solid #222; border-top:3px solid var(--neon); border-radius:50%; width:30px; height:30px; margin:10px auto; animation:spin 1s linear infinite; }
-        @keyframes spin { to { transform:rotate(360deg); } }
+        :root {
+            --neon:   #00ff9d;
+            --bg:     #0a0b10;
+            --card:   #151821;
+            --border: #2a2d3a;
+            --away:   #ff3366;
+            --draw:   #8892b0;
+            --dim:    #4a5060;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            background: var(--bg);
+            color: #fff;
+            font-family: Inter, sans-serif;
+            display: flex;
+            justify-content: center;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container { width: 100%; max-width: 480px; }
+
+        h1 {
+            font-family: Orbitron, sans-serif;
+            color: var(--neon);
+            text-align: center;
+            letter-spacing: 5px;
+            font-size: 1.2rem;
+            margin-bottom: 6px;
+        }
+
+        .tagline {
+            text-align: center;
+            font-size: 0.65rem;
+            color: var(--dim);
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            margin-bottom: 24px;
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        input[type="date"],
+        select {
+            width: 100%;
+            padding: 14px;
+            margin-bottom: 12px;
+            border-radius: 10px;
+            background: #000;
+            border: 1px solid var(--border);
+            color: #fff;
+            font-family: Inter, sans-serif;
+            font-size: 0.9rem;
+        }
+
+        input[type="date"]:focus,
+        select:focus { outline: 1px solid var(--neon); }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            margin-bottom: 12px;
+            border-radius: 10px;
+            background: var(--neon);
+            color: #000;
+            font-weight: 800;
+            font-family: Orbitron, sans-serif;
+            font-size: 0.75rem;
+            letter-spacing: 2px;
+            cursor: pointer;
+            border: none;
+            transition: opacity 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover:not(:disabled) {
+            box-shadow: 0 0 18px rgba(0,255,157,0.35);
+        }
+
+        button:disabled {
+            background: #1a1a1a;
+            color: #444;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        /* ── Score ── */
+        .score {
+            font-family: Orbitron, sans-serif;
+            font-size: 4rem;
+            font-weight: 900;
+            text-align: center;
+            color: var(--neon);
+            margin: 12px 0 4px;
+            text-shadow: 0 0 24px rgba(0,255,157,0.4);
+        }
+
+        .lambda-row {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            font-size: 0.65rem;
+            color: var(--dim);
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+        }
+
+        /* ── Prob bar ── */
+        .prob-bar {
+            display: flex;
+            height: 24px;
+            border-radius: 6px;
+            overflow: hidden;
+            margin: 16px 0;
+            font-family: Orbitron, sans-serif;
+            font-size: 0.65rem;
+            line-height: 24px;
+            text-align: center;
+        }
+
+        .p-h { background: var(--neon); color: #000; }
+        .p-d { background: var(--draw); color: #000; }
+        .p-a { background: var(--away); color: #000; }
+
+        /* ── Form dots ── */
+        .form-row { display: flex; gap: 3px; margin-top: 6px; flex-wrap: wrap; }
+
+        .dot {
+            width: 20px; height: 20px;
+            border-radius: 4px;
+            font-size: 10px;
+            line-height: 20px;
+            text-align: center;
+            color: #000;
+            font-weight: 700;
+            display: inline-block;
+        }
+
+        .W { background: var(--neon); }
+        .D { background: var(--draw); }
+        .L { background: var(--away); }
+        .Q { background: #2a2d3a; color: #556; border: 1px solid #333; } /* unknown */
+
+        /* ── Teams header ── */
+        .teams-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            font-size: 0.82rem;
+            margin-bottom: 4px;
+        }
+
+        .team-block { width: 48%; }
+        .team-block.right { text-align: right; }
+        .team-block b { font-size: 0.9rem; display: block; margin-bottom: 2px; }
+        .team-block small { color: var(--dim); font-size: 0.7rem; }
+        .team-block .form-row.right { justify-content: flex-end; }
+
+        /* ── Section label ── */
+        .section-label {
+            font-size: 0.6rem;
+            letter-spacing: 3px;
+            color: var(--dim);
+            text-transform: uppercase;
+            margin: 16px 0 8px;
+            border-top: 1px solid #1a1d28;
+            padding-top: 12px;
+        }
+
+        /* ── Market comparison table ── */
+        .market-table { width: 100%; border-collapse: collapse; }
+
+        .market-table th {
+            font-size: 0.6rem;
+            letter-spacing: 2px;
+            color: var(--dim);
+            text-transform: uppercase;
+            padding: 4px 0 8px;
+            text-align: left;
+            font-weight: 400;
+        }
+
+        .market-table th:last-child,
+        .market-table td:last-child { text-align: right; }
+
+        .market-row-tr {
+            border-top: 1px solid #1a1d28;
+            transition: background 0.25s;
+        }
+
+        .market-row-tr td {
+            padding: 10px 4px;
+            font-size: 0.8rem;
+            vertical-align: middle;
+        }
+
+        .fair-price {
+            font-family: Orbitron, sans-serif;
+            font-size: 0.75rem;
+            color: var(--neon);
+        }
+
+        .bookie-input {
+            width: 72px;
+            padding: 7px 8px;
+            border-radius: 7px;
+            background: #000;
+            border: 1px solid var(--border);
+            color: #fff;
+            font-family: Orbitron, sans-serif;
+            font-size: 0.72rem;
+            text-align: center;
+            transition: border-color 0.2s;
+        }
+
+        .bookie-input:focus { outline: none; border-color: var(--neon); }
+
+        .kelly-result {
+            font-family: Orbitron, sans-serif;
+            font-size: 0.72rem;
+            color: var(--dim);
+            min-width: 80px;
+            text-align: right;
+        }
+
+        /* Value highlight state */
+        .market-row-tr.value {
+            background: rgba(0,255,157,0.05);
+        }
+
+        .market-row-tr.value td:first-child {
+            border-left: 2px solid var(--neon);
+            padding-left: 8px;
+        }
+
+        .prime {
+            color: var(--neon);
+            font-weight: 700;
+            animation: pulse-text 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-text {
+            0%, 100% { opacity: 1; }
+            50%       { opacity: 0.6; }
+        }
+
+        .no-value { color: #3a3f50; }
+        .thin-edge { color: var(--draw); font-size: 0.65rem; }
+
+        /* ── Gaffer verdict box ── */
+        .gaffer-box {
+            background: rgba(0,255,157,0.04);
+            border-left: 3px solid var(--neon);
+            border-radius: 0 8px 8px 0;
+            padding: 14px 16px;
+            margin-top: 16px;
+            font-size: 0.82rem;
+            line-height: 1.65;
+            color: #b0bcc8;
+        }
+
+        .gaffer-box .signature {
+            font-family: Orbitron, sans-serif;
+            color: var(--neon);
+            font-size: 0.65rem;
+            letter-spacing: 3px;
+            text-align: right;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(0,255,157,0.1);
+        }
+
+        /* ── Loader ── */
+        .loader {
+            border: 3px solid #1a1d28;
+            border-top: 3px solid var(--neon);
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            margin: 20px auto;
+            animation: spin 0.9s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .status-msg {
+            text-align: center;
+            font-size: 0.75rem;
+            color: var(--dim);
+            padding: 10px 0;
+        }
+
+        .error-msg {
+            text-align: center;
+            font-size: 0.78rem;
+            color: var(--away);
+            padding: 12px 0;
+        }
     </style>
 </head>
 <body>
 <div class="container">
+
     <h1>THE GAFFER</h1>
+    <p class="tagline">Tactical Intelligence · Poisson Engine</p>
+
     <div class="card">
         <input type="date" id="date">
         <button onclick="getFixtures()">SCAN TACTICAL BOARD</button>
-        <select id="matches" onchange="toggleBtn()"><option value="">Select Match...</option></select>
+        <select id="matches" onchange="toggleBtn()">
+            <option value="">Select Match...</option>
+        </select>
         <button id="btn" onclick="predict()" disabled>GET VERDICT</button>
     </div>
+
     <div id="output"></div>
+
 </div>
 
 <script>
-const API = "https://football-api-9e4p.onrender.com";
+const API      = "https://football-api-9e4p.onrender.com";
+const BANKROLL = 1000;   // default bankroll for Kelly staking
 let fixturesData = [];
 
+// ── Set today's date as default ──
+document.getElementById("date").value = new Date().toISOString().split("T")[0];
+
 const toggleBtn = () => {
-    const s = document.getElementById("matches");
-    document.getElementById("btn").disabled = (s.value === "");
+    document.getElementById("btn").disabled =
+        document.getElementById("matches").value === "";
 };
 
-async function getFixtures() {
-    const d = document.getElementById("date").value;
-    const s = document.getElementById("matches");
-    const out = document.getElementById("output");
-    if(!d) return;
-    s.innerHTML = "<option>Accessing Satellites...</option>";
-    out.innerHTML = "";
-    try {
-        const res = await fetch(`${API}/fixtures?date=${d}`);
-        const data = await res.json();
-        fixturesData = data;
-        s.innerHTML = fixturesData.length ? "<option value=''>Select Match</option>" : "<option value=''>No Matches</option>";
-        fixturesData.forEach((m, i) => s.innerHTML += `<option value="${i}">[${m.comp}] ${m.home} vs ${m.away}</option>`);
-    } catch (e) { s.innerHTML = "<option value=''>Offline</option>"; }
+// ── Render form dots ──
+function renderForm(str, align = "left") {
+    if (!str || str === "???") return `<div class="form-row" style="justify-content:${align === "right" ? "flex-end" : "flex-start"}">
+        <div class="dot Q">?</div><div class="dot Q">?</div><div class="dot Q">?</div>
+    </div>`;
+    const dots = str.split("").map(c => {
+        const cls = ["W","D","L"].includes(c) ? c : "Q";
+        return `<div class="dot ${cls}">${c}</div>`;
+    }).join("");
+    return `<div class="form-row" style="justify-content:${align === "right" ? "flex-end" : "flex-start"}">${dots}</div>`;
 }
 
+// ── Fetch fixtures ──
+async function getFixtures() {
+    const d   = document.getElementById("date").value;
+    const sel = document.getElementById("matches");
+    const out = document.getElementById("output");
+
+    if (!d) return;
+
+    sel.innerHTML = "<option>Accessing Satellites...</option>";
+    out.innerHTML = "";
+    document.getElementById("btn").disabled = true;
+
+    try {
+        const res  = await fetch(`${API}/fixtures?date=${d}`);
+        const data = await res.json();
+
+        // Handle backend status signals
+        if (data.status === "loading") {
+            sel.innerHTML = "<option value=''>Still syncing...</option>";
+            out.innerHTML = `<div class="card">
+                <div class="loader"></div>
+                <div class="status-msg">${data.message || "Server is booting. Refresh in ~30s."}</div>
+            </div>`;
+            return;
+        }
+
+        if (data.status === "no_games") {
+            sel.innerHTML = "<option value=''>No matches today</option>";
+            out.innerHTML = `<div class="card">
+                <div class="status-msg">📋 ${data.message || "No fixtures scheduled for this date."}</div>
+            </div>`;
+            return;
+        }
+
+        fixturesData = Array.isArray(data) ? data : [];
+
+        if (fixturesData.length === 0) {
+            sel.innerHTML = "<option value=''>No matches found</option>";
+            return;
+        }
+
+        sel.innerHTML = "<option value=''>Select match...</option>";
+        fixturesData.forEach((m, i) => {
+            sel.innerHTML += `<option value="${i}">[${m.comp}] ${m.home} vs ${m.away}</option>`;
+        });
+
+    } catch (e) {
+        sel.innerHTML = "<option value=''>Connection error</option>";
+        out.innerHTML = `<div class="error-msg">⚡ Satellite link lost. Check connection.</div>`;
+    }
+}
+
+// ── Quarter-Kelly stake calculator ──
+// Formula: f* = (b·p - q) / b  where b = decimal_odds - 1, p = fair_prob, q = 1 - p
+// Quarter Kelly: stake = 0.25 × f* × bankroll
+// Only triggers when edge > 5%
+function calcKelly(inputEl, fairOdds, targetId) {
+    const target = document.getElementById(targetId);
+    const row    = inputEl.closest(".market-row-tr");
+    const val    = parseFloat(inputEl.value);
+
+    // Reset state
+    row.classList.remove("value");
+
+    if (!val || isNaN(val) || val <= 1.0 || !fairOdds || fairOdds <= 1) {
+        target.innerHTML = `<span class="no-value">--</span>`;
+        return;
+    }
+
+    const p = 1 / fairOdds;   // implied probability from fair price
+    const q = 1 - p;
+    const b = val - 1;        // profit per unit staked at bookie odds
+
+    const f_star = (b * p - q) / b;     // full Kelly fraction
+    const edge   = (val / fairOdds) - 1; // edge = how much bookie odds beat fair
+
+    if (edge <= 0.05) {
+        // Edge exists but below 5% threshold — show but don't highlight
+        target.innerHTML = edge > 0 
+            ? `<span class="thin-edge">Thin</span>`
+            : `<span class="no-value">No edge</span>`;
+        return;
+    }
+
+    if (f_star <= 0) {
+        target.innerHTML = `<span class="no-value">No edge</span>`;
+        return;
+    }
+
+    // Prime value detected
+    const quarter_kelly = 0.25 * f_star;
+    const stake         = (quarter_kelly * BANKROLL).toFixed(2);
+    const edge_pct      = (edge * 100).toFixed(1);
+
+    row.classList.add("value");
+    target.innerHTML = `<span class="prime">★ $${stake}</span>`;
+}
+
+// ── Fetch prediction ──
 async function predict() {
     const idx = document.getElementById("matches").value;
     const out = document.getElementById("output");
+
     if (idx === "") return;
+
     out.innerHTML = "<div class='loader'></div>";
 
     try {
         const res = await fetch(`${API}/predict`, {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify(fixturesData[idx])
+            method:  "POST",
+            headers: { "Content-Type": "application/json" },
+            body:    JSON.stringify(fixturesData[idx])
         });
+
+        if (!res.ok) {
+            out.innerHTML = `<div class="error-msg">⚡ Prediction engine offline (${res.status}). Try again.</div>`;
+            return;
+        }
+
         const d = await res.json();
 
-        window.calcKelly = (input, fair, targetId) => {
-            const val = parseFloat(input.value);
-            const target = document.getElementById(targetId);
-            if(!val || val <= fair) { target.innerHTML = "--"; return; }
-            const edge = (val * (1/fair)) - 1;
-            if(edge > 0.05) {
-                const k = (((val-1)*(1/fair)) - (1-(1/fair))) / (val-1);
-                target.innerHTML = `<span class="prime">VALUE: $${(k * 0.25 * 1000).toFixed(2)}</span>`;
-            } else { target.innerHTML = "Thin Edge"; }
-        };
+        if (d.error) {
+            out.innerHTML = `<div class="error-msg">⚡ ${d.error}</div>`;
+            return;
+        }
+
+        const m      = fixturesData[idx];
+        const market = d.market || {};
+
+        // Build market row HTML helper
+        const mkRow = (label, fairKey, kellyId) => `
+            <tr class="market-row-tr" id="row-${kellyId}">
+                <td>${label}</td>
+                <td class="fair-price">${market[fairKey] || "--"}</td>
+                <td>
+                    <input
+                        type="number"
+                        class="bookie-input"
+                        placeholder="Odds"
+                        step="0.01"
+                        min="1.01"
+                        oninput="calcKelly(this, ${market[fairKey] || 0}, '${kellyId}')"
+                    >
+                </td>
+                <td class="kelly-result" id="${kellyId}">
+                    <span class="no-value">--</span>
+                </td>
+            </tr>`;
+
+        // Gaffer narrative
+        const h_w = d.probs.home > d.probs.away;
+        const fav  = h_w ? m.home : m.away;
+        const conf = Math.max(d.probs.home, d.probs.away);
+        const btts_pct = d.market?.btts ? Math.round((1/d.market.btts)*100) : "?";
+        const o25_pct  = d.market?.over25 ? Math.round((1/d.market.over25)*100) : "?";
+
+        const verdict = `
+            Projected scoreline: <b>${d.score}</b>.
+            ${fav} are favoured at <b>${conf}%</b> win probability.
+            Both teams to score probability: <b>${btts_pct}%</b>.
+            Over 2.5 goals probability: <b>${o25_pct}%</b>.
+            Enter bookie odds in the table above to detect value and calculate ¼-Kelly stakes.
+        `.trim();
 
         out.innerHTML = `
         <div class="card">
-            <div style="display:flex; justify-content:space-between; font-size:0.8rem;">
-                <div><b>${fixturesData[idx].home}</b><br>Rank: ${d.h_rank}<div>${d.h_form.split('').map(c=>`<div class="dot ${c}">${c}</div>`).join('')}</div></div>
-                <div style="text-align:right;"><b>${fixturesData[idx].away}</b><br>Rank: ${d.a_rank}<div>${d.a_form.split('').map(c=>`<div class="dot ${c}">${c}</div>`).join('')}</div></div>
+
+            <!-- Teams + Form -->
+            <div class="teams-row">
+                <div class="team-block">
+                    <b>${m.home}</b>
+                    <small>Rank #${d.h_rank}</small>
+                    ${renderForm(d.h_form, "left")}
+                </div>
+                <div class="team-block right">
+                    <b>${m.away}</b>
+                    <small>Rank #${d.a_rank}</small>
+                    ${renderForm(d.a_form, "right")}
+                </div>
             </div>
+
+            <!-- Predicted Score -->
             <div class="score">${d.score}</div>
+            <div class="lambda-row">
+                <span>λ HOME ${d.h_lam}</span>
+                <span>λ AWAY ${d.a_lam}</span>
+            </div>
+
+            <!-- Probability Bar -->
             <div class="prob-bar">
                 <div class="p-h" style="width:${d.probs.home}%">${d.probs.home}%</div>
                 <div class="p-d" style="width:${d.probs.draw}%">${d.probs.draw}%</div>
                 <div class="p-a" style="width:${d.probs.away}%">${d.probs.away}%</div>
             </div>
-            <div style="font-size:0.7rem; color:var(--draw); margin-bottom:10px;">MARKET COMPARISON (GAFFER PRICE vs BOOKIE)</div>
-            <div class="market-row"><span>HOME WIN (${d.market.home})</span><input type="number" class="bookie-input" placeholder="0.00" oninput="calcKelly(this, ${d.market.home}, 'k-h')"><span id="k-h">--</span></div>
-            <div class="market-row"><span>DRAW (${d.market.draw})</span><input type="number" class="bookie-input" placeholder="0.00" oninput="calcKelly(this, ${d.market.draw}, 'k-d')"><span id="k-d">--</span></div>
-            <div class="market-row"><span>AWAY WIN (${d.market.away})</span><input type="number" class="bookie-input" placeholder="0.00" oninput="calcKelly(this, ${d.market.away}, 'k-a')"><span id="k-a">--</span></div>
-            <div class="gaffer-box">Verdict: <b>${d.score}</b>. Type bookie odds above to check for 1/4 Kelly Stakes.</div>
+
+            <!-- Market Comparison + Kelly Staker -->
+            <div class="section-label">Market Comparison · ¼ Kelly Staker (£${BANKROLL} Bank)</div>
+            <table class="market-table">
+                <thead>
+                    <tr>
+                        <th>Market</th>
+                        <th>Fair Odds</th>
+                        <th>Bookie Odds</th>
+                        <th>Stake</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${mkRow("Home Win",  "home",   "k-h")}
+                    ${mkRow("Draw",      "draw",   "k-d")}
+                    ${mkRow("Away Win",  "away",   "k-a")}
+                    ${mkRow("BTTS",      "btts",   "k-btts")}
+                    ${mkRow("Over 2.5",  "over25", "k-o25")}
+                </tbody>
+            </table>
+
+            <!-- Gaffer Verdict -->
+            <div class="gaffer-box">
+                ${verdict}
+                <div class="signature">— THE GAFFER</div>
+            </div>
+
         </div>`;
-    } catch (e) { out.innerHTML = "❌ Connection Error"; }
+
+    } catch (e) {
+        out.innerHTML = `<div class="error-msg">⚡ Connection lost. Check your link and retry.</div>`;
+    }
 }
 </script>
 </body>

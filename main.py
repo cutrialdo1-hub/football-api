@@ -31,7 +31,7 @@ def poisson(k, lam):
 
 
 # =========================================================
-# 📊 RATE SAFE PRELOAD (STANDINGS)
+# 📊 RATE SAFE PRELOAD (STANDINGS - REQUIRED SLOW LOOP)
 # =========================================================
 def preload_standings():
     print("[BOOT] Preloading standings...")
@@ -44,7 +44,8 @@ def preload_standings():
                 timeout=5
             )
 
-            time.sleep(6)  # RATE LIMIT SAFETY
+            # 🔥 REQUIRED RATE LIMIT SAFETY
+            time.sleep(6)
 
         except Exception as e:
             print("[STANDINGS ERROR]", comp, e)
@@ -142,75 +143,80 @@ def get_standings(code):
 
 
 # =========================================================
-# ⚽ FIXTURE ENGINE (SAFE + NON-EMPTY CACHE)
+# ⚡ FIXTURE ENGINE (TURBO MODE - SINGLE BATCH REQUEST)
 # =========================================================
 def fetch_all_fixtures():
     global fixtures_store, last_refresh
 
-    print("[CACHE] Refreshing fixtures...")
+    print("[CACHE] Fetching fixtures (TURBO MODE)...")
 
     now = time.time()
+
+    # 🔥 FIX: single request instead of 7-day loop
+    today = time.strftime("%Y-%m-%d", time.gmtime(now))
+    next_week = time.strftime("%Y-%m-%d", time.gmtime(now + 7 * 86400))
+
     new_store = {}
 
-    for i in range(7):
-        date = time.strftime("%Y-%m-%d", time.gmtime(now + i * 86400))
+    try:
+        r = requests.get(
+            f"{BASE_URL}/matches",
+            headers=HEADERS,
+            params={
+                "dateFrom": today,
+                "dateTo": next_week
+            },
+            timeout=15
+        )
 
-        time.sleep(6)  # RATE LIMIT SAFETY
+        if r.status_code != 200:
+            print("[FIXTURE ERROR] API failed")
+            return
 
-        day_matches = []
+        matches = r.json().get("matches", [])
 
-        try:
-            r = requests.get(
-                f"{BASE_URL}/matches",
-                headers=HEADERS,
-                params={"dateFrom": date, "dateTo": date},
-                timeout=10
-            )
+        for m in matches:
+            home = m.get("homeTeam")
+            away = m.get("awayTeam")
+            comp = m.get("competition")
 
-            if r.status_code != 200:
+            if not home or not away or not comp:
                 continue
 
-            matches = r.json().get("matches", [])
+            comp_code = comp.get("code")
 
-            for m in matches:
-                home = m.get("homeTeam")
-                away = m.get("awayTeam")
-                comp = m.get("competition")
+            if comp_code not in COMPETITIONS:
+                continue
 
-                if not home or not away or not comp:
-                    continue
+            date = m.get("utcDate", "")[:10]  # YYYY-MM-DD
 
-                comp_code = comp.get("code")
+            if date not in new_store:
+                new_store[date] = []
 
-                if comp_code not in COMPETITIONS:
-                    continue
+            new_store[date].append({
+                "home": home["name"],
+                "home_id": home["id"],
+                "away": away["name"],
+                "away_id": away["id"],
+                "comp": comp_code,
+                "league": comp.get("name")
+            })
 
-                day_matches.append({
-                    "home": home["name"],
-                    "home_id": home["id"],
-                    "away": away["name"],
-                    "away_id": away["id"],
-                    "comp": comp_code,
-                    "league": comp.get("name")
-                })
+        # 🔥 DEBUG OUTPUT
+        for date, games in new_store.items():
+            print(f"DEBUG: Successfully fetched {len(games)} matches for {date}")
 
-            print(f"DEBUG: Successfully fetched {len(day_matches)} matches for {date}")
+        fixtures_store = new_store
+        last_refresh = time.time()
 
-        except Exception as e:
-            print("[FIXTURE ERROR]", date, e)
+        print(f"[CACHE] Fixtures loaded: {len(fixtures_store)} days")
 
-        # ONLY STORE IF NOT EMPTY
-        if day_matches:
-            new_store[date] = day_matches
-
-    fixtures_store = new_store
-    last_refresh = time.time()
-
-    print(f"[CACHE] Fixtures loaded: {len(fixtures_store)} days")
+    except Exception as e:
+        print("[FIXTURE ENGINE ERROR]", e)
 
 
 # =========================================================
-# ⚽ FIXTURES ENDPOINT (FRONTEND SAFE)
+# ⚽ FIXTURES ENDPOINT (FRONTEND SAFE + LOADING STATE)
 # =========================================================
 @app.route("/fixtures")
 def fixtures():
@@ -221,7 +227,7 @@ def fixtures():
 
     date = date.split("T")[0]
 
-    # LOADING STATE (FRONTEND SAFE OBJECT WRAPPER)
+    # 🔥 LOADING STATE (FRONTEND SAFE FIX)
     if date not in fixtures_store:
         return jsonify({
             "status": "loading",
@@ -271,7 +277,6 @@ def predict():
     try:
         h_rank = int(h_team["rank"]) if str(h_team["rank"]).isdigit() else None
         a_rank = int(a_team["rank"]) if str(a_team["rank"]).isdigit() else None
-
         diff = abs(h_rank - a_rank) if h_rank is not None and a_rank is not None else 999
     except:
         diff = 999
@@ -311,7 +316,7 @@ def predict():
 
 
 # =========================================================
-# 🚀 STARTUP (THREAD SAFE + RENDER READY)
+# 🚀 STARTUP (THREAD SAFE + FAST BOOT)
 # =========================================================
 def boot_sequence():
     print("[BOOT] Boot sequence started...")
@@ -333,5 +338,5 @@ if __name__ == "__main__":
     threading.Thread(target=boot_sequence, daemon=True).start()
     threading.Thread(target=scheduler, daemon=True).start()
 
-    # Render-compatible port fix
+    # Render-compatible port
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))

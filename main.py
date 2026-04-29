@@ -3,6 +3,7 @@ import os
 import time
 import requests
 import threading
+import netrc  # 🔥 FIX 1: Force early import to prevent deadlock
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
@@ -23,6 +24,11 @@ COMPETITIONS = [
 print("[INIT] Background workers initiated at top-level import")
 
 # =========================================================
+# 🔒 THREAD LOCK (FIX 2)
+# =========================================================
+fetch_lock = threading.Lock()
+
+# =========================================================
 # 🧠 CACHE
 # =========================================================
 standings_cache = {}
@@ -40,7 +46,7 @@ def poisson(k, lam):
 
 
 # =========================================================
-# 📊 STANDINGS PRELOAD (RATE SAFE)
+# 📊 STANDINGS PRELOAD
 # =========================================================
 def preload_standings():
     print("[BOOT] Preloading standings...")
@@ -147,26 +153,30 @@ def get_standings(code):
 
 
 # =========================================================
-# ⚡ FIXTURE ENGINE (SAFE TURBO MODE)
+# ⚡ FIXTURE ENGINE (THREAD SAFE)
 # =========================================================
 def fetch_all_fixtures():
     global fixtures_store, last_refresh
 
-    print("[CACHE] Fetching fixtures (TURBO MODE)...")
-
-    now = time.time()
-
-    start = now - 86400
-    end = now + (5 * 86400)
-
-    start_date = time.strftime("%Y-%m-%d", time.gmtime(start))
-    end_date = time.strftime("%Y-%m-%d", time.gmtime(end))
-
-    print(f"[DEBUG] Requesting range: {start_date} → {end_date}")
-
-    new_store = {}
+    # 🔒 NON-BLOCKING LOCK
+    if not fetch_lock.acquire(blocking=False):
+        print("[CACHE] Fetch already in progress by another thread. Skipping.")
+        return False
 
     try:
+        print("[CACHE] Fetching fixtures (TURBO MODE)...")
+
+        now = time.time()
+        start = now - 86400
+        end = now + (5 * 86400)
+
+        start_date = time.strftime("%Y-%m-%d", time.gmtime(start))
+        end_date = time.strftime("%Y-%m-%d", time.gmtime(end))
+
+        print(f"[DEBUG] Requesting range: {start_date} → {end_date}")
+
+        new_store = {}
+
         r = requests.get(
             f"{BASE_URL}/matches",
             headers=HEADERS,
@@ -222,9 +232,12 @@ def fetch_all_fixtures():
         print("[FIXTURE ENGINE ERROR]", e)
         return False
 
+    finally:
+        fetch_lock.release()  # 🔥 ALWAYS RELEASE LOCK
+
 
 # =========================================================
-# ⚽ FIXTURES ROUTE (ON-DEMAND FIX)
+# ⚽ FIXTURES ROUTE (ON-DEMAND SAFE)
 # =========================================================
 @app.route("/fixtures")
 def fixtures():
@@ -235,7 +248,6 @@ def fixtures():
 
     date = date.split("T")[0]
 
-    # 🔥 ON-DEMAND FETCH (CRITICAL FIX)
     if not fixtures_store:
         print(f"[ON-DEMAND] Store empty. Triggering API fetch for {date}...")
 
@@ -259,7 +271,7 @@ def fixtures():
 
 
 # =========================================================
-# 🎯 PREDICTION (CRASH SAFE)
+# 🎯 PREDICTION
 # =========================================================
 @app.route("/predict", methods=["POST"])
 def predict():
@@ -293,32 +305,18 @@ def predict():
             else:
                 prob_away += p
 
-    try:
-        h_rank = int(h_team["rank"]) if str(h_team["rank"]).isdigit() else None
-        a_rank = int(a_team["rank"]) if str(a_team["rank"]).isdigit() else None
-        diff = abs(h_rank - a_rank) if h_rank and a_rank else 999
-    except:
-        diff = 999
-
-    vibe = "A high-intensity clash for position." if diff <= 3 else "A David vs Goliath scenario."
-
     return jsonify({
         "score": predicted_score,
         "probs": {
             "home": round(prob_home * 100),
             "draw": round(prob_draw * 100),
             "away": round(prob_away * 100)
-        },
-        "h_rank": h_team["rank"],
-        "a_rank": a_team["rank"],
-        "h_form": h_form,
-        "a_form": a_form,
-        "insight": f"{vibe} I’m going with {predicted_score}."
+        }
     })
 
 
 # =========================================================
-# 🚀 BACKGROUND TASKS (BACKUP SYSTEM)
+# 🚀 BACKGROUND TASKS
 # =========================================================
 def boot_sequence():
     print("[BOOT] Boot sequence started...")
@@ -341,7 +339,7 @@ def start_background_tasks():
 
 
 # =========================================================
-# 🚀 AUTO START (IMPORTANT FOR GUNICORN)
+# 🚀 AUTO START
 # =========================================================
 start_background_tasks()
 

@@ -4,127 +4,102 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>THE GAFFER | Tactical Intelligence v2.0</title>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=Inter:wght@400;700&display=swap" rel="stylesheet">
     <style>
-        :root { --neon: #00ff9d; --bg: #0a0b10; --card: #111318; --border: #23262f; --away: #ff3366; --draw: #6b7280; --gold: #fbbf24; }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: var(--bg); color: #e5e7eb; font-family: Inter, sans-serif; display: flex; justify-content: center; padding: 20px; }
-        .container { width: 100%; max-width: 480px; }
-        h1 { font-family: Orbitron; color: var(--neon); text-align: center; letter-spacing: 5px; font-size: 1.2rem; margin-bottom: 20px; }
-        .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; margin-bottom: 16px; }
-        input, select, button { width: 100%; padding: 12px; margin-bottom: 10px; border-radius: 10px; background: #000; border: 1px solid var(--border); color: #fff; font-size: 0.9rem; }
-        button { background: var(--neon); color: #000; font-weight: 800; font-family: Orbitron; border: none; cursor: pointer; }
-        .score-display { font-family: Orbitron; font-size: 3.5rem; text-align: center; color: var(--neon); line-height: 1.2; }
-        .market-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        .market-table th { font-size: 0.6rem; color: var(--draw); text-align: left; padding: 8px; }
-        .market-table td { padding: 10px 8px; border-top: 1px solid var(--border); font-size: 0.85rem; }
-        .bookie-input { width: 60px; padding: 4px 8px; margin: 0; background: #1a1c22; border: 1px solid #333; border-radius: 4px; text-align: center; font-family: Orbitron; font-size: 0.75rem; color: white; }
-        
-        /* Value States */
-        .prime-value { color: var(--neon) !important; text-shadow: 0 0 10px var(--neon); font-weight: 900; }
-        .thin-value { color: var(--gold) !important; font-weight: 600; }
-        .value-badge { background: var(--neon); color: #000; font-size: 0.5rem; padding: 2px 4px; border-radius: 3px; margin-left: 5px; font-weight: 900; vertical-align: middle; }
-
-        .dot { width: 18px; height: 18px; border-radius: 4px; font-size: 9px; line-height: 18px; text-align: center; color: #000; font-weight: 800; display: inline-block; margin: 1px; }
-        .W { background: var(--neon); } .D { background: var(--draw); } .L { background: var(--away); }
-        .loader { border: 3px solid #222; border-top: 3px solid var(--neon); border-radius: 50%; width: 30px; height: 30px; margin: 20px auto; animation: spin 1s linear infinite; }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        :root { --neon: #00ff9d; --bg: #0a0b10; --card: #111318; --border: #23262f; --away: #ff3366; }
+        body { background: var(--bg); color: #e5e7eb; font-family: Inter, sans-serif; padding: 20px; display: flex; justify-content: center; }
+        .container { width: 100%; max-width: 450px; }
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 15px; }
+        input, select, button { width: 100%; padding: 12px; margin-bottom: 10px; border-radius: 8px; background: #000; border: 1px solid var(--border); color: #fff; }
+        button { background: var(--neon); color: #000; font-family: Orbitron; font-weight: 900; border: none; cursor: pointer; }
+        .score { font-family: Orbitron; font-size: 3rem; text-align: center; color: var(--neon); margin: 10px 0; }
+        .market-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        .market-table td { padding: 10px 5px; border-top: 1px solid var(--border); font-size: 0.8rem; }
+        .bookie-input { width: 55px; background: #1a1c22; border: 1px solid #333; color: var(--neon); text-align: center; padding: 4px; font-family: Orbitron; }
+        .prime-value { color: var(--neon); font-weight: 900; text-shadow: 0 0 10px var(--neon); }
+        .badge { background: var(--neon); color: #000; font-size: 0.5rem; padding: 2px 4px; border-radius: 3px; font-weight: 900; }
+        .dot { width: 15px; height: 15px; border-radius: 3px; display: inline-block; font-size: 8px; text-align: center; line-height: 15px; margin: 1px; color: #000; }
+        .W { background: var(--neon); } .D { background: #6b7280; color: #fff; } .L { background: var(--away); }
     </style>
 </head>
 <body>
 <div class="container">
-    <h1>THE GAFFER</h1>
+    <h2 style="font-family:Orbitron; color:var(--neon); text-align:center; margin-bottom:20px;">THE GAFFER</h2>
+    
     <div class="card">
+        <input type="number" id="bankroll" placeholder="Enter Bankroll (e.g. 1000)" value="1000">
         <input type="date" id="date" onchange="getFixtures()">
-        <select id="matches" onchange="document.getElementById('btn').disabled = false"><option value="">Select Match...</option></select>
-        <button id="btn" onclick="predict()" disabled>RUN ANALYTICS</button>
+        <select id="matches" onchange="document.getElementById('btn').disabled=false"><option>Select Match...</option></select>
+        <button id="btn" onclick="predict()" disabled>ANALYZE FIXTURE</button>
     </div>
+
     <div id="output"></div>
 </div>
 
 <script>
-const API = "https://football-api-9e4p.onrender.com";
-let fixturesData = [];
+const API = "https://football-api-9e4p.onrender.com"; // UPDATE TO YOUR URL
+let fixtures = [];
 
 async function getFixtures() {
     const d = document.getElementById("date").value;
-    const s = document.getElementById("matches");
-    if(!d) return;
-    s.innerHTML = "<option>Scanning...</option>";
-    try {
-        const res = await fetch(`${API}/fixtures?date=${d}`);
-        const data = await res.json();
-        fixturesData = data;
-        s.innerHTML = data.length ? "<option value=''>Select Match</option>" : "<option>No Matches</option>";
-        data.forEach((m, i) => s.innerHTML += `<option value="${i}">${m.home} vs ${m.away}</option>`);
-    } catch (e) { s.innerHTML = "<option>Offline</option>"; }
+    const res = await fetch(`${API}/fixtures?date=${d}`);
+    fixtures = await res.json();
+    const sel = document.getElementById("matches");
+    sel.innerHTML = fixtures.length ? "<option value=''>Select Match</option>" : "<option>No Matches</option>";
+    fixtures.forEach((m, i) => sel.innerHTML += `<option value="${i}">${m.home} vs ${m.away}</option>`);
 }
 
 async function predict() {
     const idx = document.getElementById("matches").value;
     const out = document.getElementById("output");
-    out.innerHTML = "<div class='loader'></div>";
+    out.innerHTML = "<div style='text-align:center;'>Calculating Matrix...</div>";
 
-    try {
-        const res = await fetch(`${API}/predict`, {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({...fixturesData[idx]})
-        });
-        const d = await res.json();
+    const res = await fetch(`${API}/predict`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(fixtures[idx])
+    });
+    const d = await res.json();
+
+    window.checkValue = (input, fair, targetId) => {
+        const bVal = parseFloat(input.value);
+        const target = document.getElementById(targetId);
+        const bank = parseFloat(document.getElementById('bankroll').value) || 1000;
         
-        // 🧠 REFACTORED LOGIC: Value Thresholding
-        window.checkValue = (input, fairOdd, targetId) => {
-            const bVal = parseFloat(input.value);
-            const target = document.getElementById(targetId);
-            if (!bVal) { target.innerHTML = '--'; return; }
+        if (!bVal || bVal <= fair) { target.innerHTML = '--'; target.className=''; return; }
 
-            const prob = 1 / fairOdd;
-            const edge = (bVal * prob) - 1;
-            const minEdge = 0.05; // 5% cushion
+        const edge = (bVal * (1/fair)) - 1;
+        if (edge > 0.05) {
+            const kelly = (((bVal-1)*(1/fair)) - (1-(1/fair))) / (bVal-1);
+            const stake = (kelly * 0.25 * bank).toFixed(2);
+            target.className = 'prime-value';
+            target.innerHTML = `${bVal.toFixed(2)} <span class="badge">VALUE</span><br><span style="font-size:0.6rem; color:#fff">Stake: $${stake}</span>`;
+        } else {
+            target.innerHTML = bVal.toFixed(2) + " (Thin)";
+        }
+    };
 
-            if (edge >= minEdge) {
-                target.className = 'prime-value';
-                target.innerHTML = `${bVal.toFixed(2)} <span class="value-badge">PRIME VALUE</span>`;
-            } else if (edge > 0) {
-                target.className = 'thin-value';
-                target.innerHTML = `${bVal.toFixed(2)} <span style="font-size:0.5rem;">(Thin)</span>`;
-            } else {
-                target.className = '';
-                target.style.color = "#4b5563";
-                target.innerHTML = bVal.toFixed(2);
-            }
-        };
-
-        const renderRow = (label, key) => {
-            const fair = d.market[key].gaffer_odds;
-            const uniqueId = `res-${key}`;
-            return `<tr>
-                <td style="color:#6b7280;">${label}</td>
-                <td style="font-family:Orbitron; font-weight:700;">${fair.toFixed(2)}</td>
+    const row = (label, key) => {
+        const fair = d.market[key].gaffer_odds;
+        return `<tr><td>${label}</td><td style="font-family:Orbitron;">${fair}</td>
                 <td style="text-align:right;">
-                    <input type="number" class="bookie-input" placeholder="0.00" oninput="checkValue(this, ${fair}, '${uniqueId}')">
-                    <div id="${uniqueId}" style="font-size:0.7rem; margin-top:4px; color:#4b5563;">--</div>
-                </td>
-            </tr>`;
-        };
+                <input type="number" class="bookie-input" step="0.01" oninput="checkValue(this, ${fair}, 'v-${key}')">
+                <div id="v-${key}" style="margin-top:4px;">--</div></td></tr>`;
+    };
 
-        out.innerHTML = `
-        <div class="card" style="border-top: 4px solid var(--neon);">
-            <div style="display:flex; justify-content:space-between; margin-bottom:15px;">
-                <div style="width:35%"><b>${fixturesData[idx].home}</b><br>${d.h_form.split('').map(c=>`<div class="dot ${c}">${c}</div>`).join('')}</div>
-                <div class="score-display">${d.score}</div>
-                <div style="width:35%; text-align:right;"><b>${fixturesData[idx].away}</b><br>${d.a_form.split('').map(c=>`<div class="dot ${c}">${c}</div>`).join('')}</div>
-            </div>
-            <table class="market-table">
-                <thead><tr><th>MARKET</th><th>GAFFER FAIR</th><th style="text-align:right;">BOOKIE LIVE</th></tr></thead>
-                <tbody>
-                    ${renderRow('HOME WIN', 'home')}${renderRow('DRAW', 'draw')}${row = renderRow('AWAY WIN', 'away')}
-                    ${renderRow('BTTS YES', 'btts')}${renderRow('OVER 2.5', 'over25')}
-                </tbody>
-            </table>
-        </div>`;
-    } catch (e) { out.innerHTML = "<div class='card'>Error. Check Gaffer Core.</div>"; }
+    out.innerHTML = `
+    <div class="card">
+        <div style="display:flex; justify-content:space-between; font-size:0.7rem;">
+            <div><b>${fixtures[idx].home}</b><br>${d.h_form.split('').map(c=>`<span class="dot ${c}">${c}</span>`).join('')}</div>
+            <div class="score">${d.score}</div>
+            <div style="text-align:right;"><b>${fixtures[idx].away}</b><br>${d.a_form.split('').map(c=>`<span class="dot ${c}">${c}</span>`).join('')}</div>
+        </div>
+        <table class="market-table">
+            <tr><th>MARKET</th><th>FAIR</th><th style="text-align:right;">BOOKIE</th></tr>
+            ${row('HOME WIN', 'home')}${row('DRAW', 'draw')}${row('AWAY WIN', 'away')}
+            ${row('BTTS YES', 'btts')}${row('OVER 2.5', 'over25')}
+        </table>
+    </div>`;
 }
 </script>
 </body>

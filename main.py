@@ -12,33 +12,34 @@ API_KEY = os.getenv("FOOTBALL_API_KEY")
 BASE_URL = "https://api.football-data.org/v4"
 HEADERS = {"X-Auth-Token": API_KEY}
 
-# ✅ FULL FREE TIER SET (correct + complete)
 COMPETITIONS = [
-    "CL",   # Champions League
-    "PL",   # Premier League
-    "PD",   # La Liga
-    "BL1",  # Bundesliga
-    "SA",   # Serie A
-    "FL1",  # Ligue 1
-    "ELC",  # Championship
-    "DED",  # Eredivisie
-    "PPL",  # Primeira Liga
-    "BSA"   # Brazil Serie A
+    "CL","PL","PD","BL1","SA","FL1","ELC","DED","PPL","BSA"
 ]
 
-cache_standings = {}
+# ---------------- CACHE LAYERS ----------------
+standings_cache = {}
+fixtures_cache = {}      # 🚀 NEW
+form_cache = {}          # 🚀 NEW
 
+# ---------------- POISSON (UNCHANGED) ----------------
 def poisson(k, lam):
     lam = max(min(lam, 4.0), 0.1)
     return (math.pow(lam, k) * math.exp(-lam)) / math.factorial(k)
 
+# ---------------- FAST FORM (CACHED) ----------------
 def get_detailed_form(team_id):
+    now = time.time()
+
+    if team_id in form_cache and now - form_cache[team_id]["t"] < 600:
+        return form_cache[team_id]["d"], form_cache[team_id]["s"]
+
     try:
         r = requests.get(
             f"{BASE_URL}/teams/{team_id}/matches?status=FINISHED&limit=5",
             headers=HEADERS,
             timeout=5
         )
+
         if r.status_code != 200:
             return 1.0, "???"
 
@@ -55,24 +56,32 @@ def get_detailed_form(team_id):
             is_home = m["homeTeam"]["id"] == team_id
 
             if (is_home and hs > aw) or (not is_home and aw > hs):
-                history.append("W")
-                pts += 3
+                history.append("W"); pts += 3
             elif hs == aw:
-                history.append("D")
-                pts += 1
+                history.append("D"); pts += 1
             else:
                 history.append("L")
 
-        return 0.85 + (pts / 15) * 0.3, "".join(history)
+        form_string = "".join(history)
+        multiplier = 0.85 + (pts / 15) * 0.3
+
+        form_cache[team_id] = {
+            "t": now,
+            "d": multiplier,
+            "s": form_string
+        }
+
+        return multiplier, form_string
 
     except:
         return 1.0, "???"
 
+# ---------------- STANDINGS (UNCHANGED BUT SAFE) ----------------
 def get_standings(code):
     now = time.time()
 
-    if code in cache_standings and now - cache_standings[code]["t"] < 86400:
-        return cache_standings[code]["d"]
+    if code in standings_cache and now - standings_cache[code]["t"] < 86400:
+        return standings_cache[code]["d"]
 
     try:
         r = requests.get(
@@ -86,9 +95,7 @@ def get_standings(code):
 
         data = r.json()
 
-        table_data = next(
-            s for s in data["standings"] if s["type"] == "TOTAL"
-        )["table"]
+        table = next(s for s in data["standings"] if s["type"] == "TOTAL")["table"]
 
         out = {
             str(t["team"]["id"]): {
@@ -96,21 +103,27 @@ def get_standings(code):
                 "gf": t["goalsFor"] / max(t["playedGames"], 1),
                 "ga": t["goalsAgainst"] / max(t["playedGames"], 1)
             }
-            for t in table_data
+            for t in table
         }
 
-        cache_standings[code] = {"t": now, "d": out}
+        standings_cache[code] = {"t": now, "d": out}
         return out
 
     except:
         return {}
 
-# 🚀 FIXED FIXTURES (GLOBAL MATCH ENDPOINT - NO MISSING COMPETITIONS)
+# ---------------- 🚀 FIXTURES (ULTRA FAST CACHE) ----------------
 @app.route("/fixtures")
 def fixtures():
     date = request.args.get("date")
     if not date:
         return jsonify([])
+
+    now = time.time()
+
+    # 🚀 return cached result instantly
+    if date in fixtures_cache and now - fixtures_cache[date]["t"] < 300:
+        return jsonify(fixtures_cache[date]["d"])
 
     try:
         r = requests.get(
@@ -144,11 +157,18 @@ def fixtures():
                 "league": m["competition"]["name"]
             })
 
+        # cache result
+        fixtures_cache[date] = {
+            "t": now,
+            "d": all_matches
+        }
+
         return jsonify(all_matches)
 
     except:
         return jsonify([])
 
+# ---------------- PREDICTION (UNCHANGED MODEL) ----------------
 @app.route("/predict", methods=["POST"])
 def predict():
     data = request.json
@@ -183,11 +203,8 @@ def predict():
 
     h_name, a_name = data["home"], data["away"]
 
-    if h_team["rank"] != "N/A" and a_team["rank"] != "N/A":
-        diff = abs(int(h_team["rank"]) - int(a_team["rank"]))
-        vibe = "A high-intensity clash for position." if diff <= 3 else "A David vs Goliath scenario."
-    else:
-        vibe = "The atmosphere is electric for this one."
+    diff = abs(int(h_team["rank"]) - int(a_team["rank"])) if h_team["rank"] != "N/A" else 999
+    vibe = "A high-intensity clash for position." if diff <= 3 else "A David vs Goliath scenario."
 
     h_wins = h_form.count("W")
 
@@ -198,11 +215,7 @@ def predict():
     else:
         form_note = "Expect a measured approach from both dugouts."
 
-    tactics = (
-        "We're likely to see a high press today."
-        if h_lam + a_lam > 2.8
-        else "It'll be won in the mud and the shadows of the midfield."
-    )
+    tactics = "We're likely to see a high press today." if h_lam + a_lam > 2.8 else "It'll be won in the mud and the shadows of the midfield."
 
     insight = f"{vibe} {form_note} {tactics} I’m going with {predicted_score} on my sheet."
 

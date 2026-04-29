@@ -37,10 +37,16 @@
     </div>
     <div id="output"></div>
 </div>
+
 <script>
 const API = "https://football-api-9e4p.onrender.com";
 let fixturesData = [];
-const toggleBtn = () => document.getElementById("btn").disabled = !document.getElementById("matches").value;
+
+// Enables/Disables the "Get Verdict" button based on selection
+const toggleBtn = () => {
+    const s = document.getElementById("matches");
+    document.getElementById("btn").disabled = (s.value === "");
+};
 
 async function getFixtures() {
     const d = document.getElementById("date").value;
@@ -48,46 +54,91 @@ async function getFixtures() {
     const out = document.getElementById("output");
     if(!d) return;
 
+    // Reset UI for new scan
     s.innerHTML = "<option>Accessing Satellites...</option>";
     out.innerHTML = "";
     document.getElementById("btn").disabled = true;
 
     try {
         const res = await fetch(`${API}/fixtures?date=${d}`);
+        
+        // Handle API Rate Limiting (The 429 Shield)
         if (res.status === 429) {
             out.innerHTML = `<div class="gaffer-box" style="color:#ff6b35;">⚡ TACTICAL OVERLOAD: API Shield Active. Try in 60s.</div>`;
+            s.innerHTML = "<option value=''>Stream Capped</option>";
             return;
         }
+
         const data = await res.json();
-        if (!Array.isArray(data)) {
-            out.innerHTML = `<div class="gaffer-box">${data.message || "Syncing..."}</div>`;
-            if(data.status === "loading") out.innerHTML += '<div class="loader"></div>';
+
+        // Handle Backend "Syncing" state
+        if (data.status === "loading") {
+            out.innerHTML = `<div class="gaffer-box">⏳ ${data.message}<div class="loader"></div></div>`;
+            s.innerHTML = "<option value=''>Synchronizing...</option>";
             return;
         }
+
+        // Handle Days with no supported matches
+        if (data.status === "no_games") {
+            out.innerHTML = `<div class="gaffer-box">${data.message}</div>`;
+            s.innerHTML = "<option value=''>No Matches Found</option>";
+            return;
+        }
+
+        // Success: Populate Match List
         fixturesData = data;
-        s.innerHTML = fixturesData.length ? "<option value=''>Select Match</option>" : "<option>No Games Today</option>";
-        fixturesData.forEach((m, i) => s.innerHTML += `<option value="${i}">[${m.comp}] ${m.home} vs ${m.away}</option>`);
-    } catch (e) { out.innerHTML = "<div class='gaffer-box'>❌ Critical Link Failure.</div>"; }
+        s.innerHTML = fixturesData.length ? "<option value=''>Select Match</option>" : "<option value=''>No Matches Found</option>";
+        fixturesData.forEach((m, i) => {
+            s.innerHTML += `<option value="${i}">[${m.comp}] ${m.home} vs ${m.away}</option>`;
+        });
+
+    } catch (e) { 
+        out.innerHTML = "<div class='gaffer-box'>❌ Critical Link Failure. Check API connection.</div>"; 
+        s.innerHTML = "<option value=''>Offline</option>";
+    }
 }
 
 async function predict() {
-    const i = document.getElementById("matches").value;
+    const idx = document.getElementById("matches").value;
     const out = document.getElementById("output");
+    
+    // Safety check
+    if (idx === "") return;
+    
     out.innerHTML = "<div class='loader'></div>";
+
     try {
         const res = await fetch(`${API}/predict`, {
-            method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(fixturesData[i])
+            method: "POST", 
+            headers: {"Content-Type": "application/json"}, 
+            body: JSON.stringify(fixturesData[idx])
         });
+
         if (res.status === 429) {
             out.innerHTML = `<div class="gaffer-box" style="color:#ff6b35;">⚡ INTEL OVERLOAD: Prediction stream capped.</div>`;
             return;
         }
+
         const d = await res.json();
+
+        if (d.error) {
+            out.innerHTML = `<div class="gaffer-box">⚠️ Intelligence Error: ${d.error}</div>`;
+            return;
+        }
+
         out.innerHTML = `
         <div class="card">
             <div style="display:flex; justify-content:space-between; font-size:0.85rem;">
-                <div><b>${fixturesData[i].home}</b><br>Rank: ${d.h_rank}<div class="form-section">${d.h_form.split('').map(c=>`<div class="dot ${c}">${c}</div>`).join('')}</div></div>
-                <div style="text-align:right;"><b>${fixturesData[i].away}</b><br>Rank: ${d.a_rank}<div class="form-section">${d.a_form.split('').map(c=>`<div class="dot ${c}">${c}</div>`).join('')}</div></div>
+                <div>
+                    <b>${fixturesData[idx].home}</b><br>
+                    Rank: ${d.h_rank}
+                    <div class="form-section">${d.h_form.split('').map(c=>`<div class="dot ${c}">${c}</div>`).join('')}</div>
+                </div>
+                <div style="text-align:right;">
+                    <b>${fixturesData[idx].away}</b><br>
+                    Rank: ${d.a_rank}
+                    <div class="form-section">${d.a_form.split('').map(c=>`<div class="dot ${c}">${c}</div>`).join('')}</div>
+                </div>
             </div>
             <div class="score">${d.score}</div>
             <div class="prob-bar">
@@ -95,9 +146,15 @@ async function predict() {
                 <div class="p-d" style="width:${d.probs.draw}%">${d.probs.draw}%</div>
                 <div class="p-a" style="width:${d.probs.away}%">${d.probs.away}%</div>
             </div>
-            <div class="gaffer-box"><b>THE GAFFER'S VERDICT:</b> Tactical analysis suggests a <b>${d.score}</b> outcome. Confidence: ${Math.max(d.probs.home, d.probs.draw, d.probs.away)}%. <div class="signature">THE GAFFER</div></div>
+            <div class="gaffer-box">
+                <b>THE GAFFER'S VERDICT:</b> Tactical analysis suggests a <b>${d.score}</b> outcome. 
+                Confidence: ${Math.max(d.probs.home, d.probs.draw, d.probs.away)}%. 
+                <div class="signature">THE GAFFER</div>
+            </div>
         </div>`;
-    } catch (e) { out.innerHTML = "<div class='gaffer-box'>❌ Prediction failed.</div>"; }
+    } catch (e) { 
+        out.innerHTML = "<div class='gaffer-box'>❌ Prediction failed. Backend unreachable.</div>"; 
+    }
 }
 </script>
 </body>

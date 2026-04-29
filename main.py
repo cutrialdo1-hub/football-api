@@ -123,7 +123,7 @@ def get_standings(code):
     except:
         return {}
 
-# ---------------- 🚀 FIXED FIXTURES (REAL FIX) ----------------
+# ---------------- 🚀 FIXED FIXTURES (FINAL VERSION) ----------------
 @app.route("/fixtures")
 def fixtures():
     date = request.args.get("date")
@@ -137,7 +137,6 @@ def fixtures():
         return jsonify(fixtures_cache[date]["d"])
 
     try:
-        # ⚡ FIX: REMOVED competitions filter (THIS WAS BREAKING YOUR DATA)
         r = requests.get(
             f"{BASE_URL}/matches",
             headers=HEADERS,
@@ -152,30 +151,34 @@ def fixtures():
             return jsonify([])
 
         matches = r.json().get("matches", [])
-
         all_matches = []
 
         for m in matches:
-            if not m.get("homeTeam") or not m.get("awayTeam"):
+            # safety checks (IMPORTANT)
+            home = m.get("homeTeam")
+            away = m.get("awayTeam")
+            comp = m.get("competition")
+
+            if not home or not away or not comp:
                 continue
 
-            comp_code = m["competition"]["code"]
+            comp_code = comp.get("code")
+            comp_name = comp.get("name")
 
-            # filter locally instead (correct way)
-            if comp_code not in COMPETITIONS:
+            # 🔥 FIX: no aggressive filtering (this was breaking results)
+            if not comp_code or not comp_name:
                 continue
 
             all_matches.append({
-                "home": m["homeTeam"]["name"],
-                "home_id": m["homeTeam"]["id"],
-                "away": m["awayTeam"]["name"],
-                "away_id": m["awayTeam"]["id"],
+                "home": home["name"],
+                "home_id": home["id"],
+                "away": away["name"],
+                "away_id": away["id"],
                 "comp": comp_code,
-                "league": m["competition"]["name"]
+                "league": comp_name
             })
 
         fixtures_cache[date] = {"t": now, "d": all_matches}
-
         return jsonify(all_matches)
 
     except:

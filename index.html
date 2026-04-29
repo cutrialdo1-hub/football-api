@@ -12,7 +12,7 @@
         h1 { font-family:Orbitron; color:var(--neon); text-align:center; letter-spacing:5px; font-size:1.2rem; }
         .card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:20px; }
         input, select, button { width:100%; padding:14px; margin-bottom:12px; border-radius:10px; background:#000; border:1px solid var(--border); color:#fff; box-sizing:border-box; }
-        button { background:var(--neon); color:#000; font-weight:800; font-family:Orbitron; cursor:pointer; border:none; }
+        button { background:var(--neon); color:#000; font-weight:800; font-family:Orbitron; cursor:pointer; border:none; transition:0.3s; }
         button:disabled { background:#1a1a1a; color:#444; cursor:not-allowed; }
         .score { font-family:Orbitron; font-size:4rem; text-align:center; color:var(--neon); }
         .prob-bar { display:flex; height:24px; border-radius:6px; overflow:hidden; margin:20px 0; font-family:Orbitron; font-size:0.7rem; line-height:24px; text-align:center; }
@@ -20,7 +20,7 @@
         .form-section { display:flex; gap:4px; margin-top:8px; }
         .dot { width:20px; height:20px; border-radius:4px; font-size:10px; line-height:20px; text-align:center; color:#000; font-weight:bold; }
         .W { background:var(--neon); } .D { background:var(--draw); } .L { background:var(--away); }
-        .gaffer-box { background:rgba(0,255,157,0.05); border-left:4px solid var(--neon); padding:15px; margin-top:20px; font-style:italic; font-size:0.9rem; }
+        .gaffer-box { background:rgba(0,255,157,0.05); border-left:4px solid var(--neon); padding:15px; margin-top:20px; font-style:italic; font-size:0.9rem; line-height:1.4; }
         .signature { font-family:Orbitron; color:var(--neon); font-size:0.7rem; text-align:right; margin-top:10px; }
         .loader { border:3px solid #222; border-top:3px solid var(--neon); border-radius:50%; width:30px; height:30px; margin:10px auto; animation:spin 1s linear infinite; }
         @keyframes spin { to { transform:rotate(360deg); } }
@@ -31,7 +31,7 @@
     <h1>THE GAFFER</h1>
     <div class="card">
         <input type="date" id="date">
-        <button onclick="getFixtures()">SCAN BOARD</button>
+        <button onclick="getFixtures()">SCAN TACTICAL BOARD</button>
         <select id="matches" onchange="toggleBtn()"><option value="">Select Match...</option></select>
         <button id="btn" onclick="predict()" disabled>GET VERDICT</button>
     </div>
@@ -47,28 +47,27 @@ async function getFixtures() {
     const s = document.getElementById("matches");
     const out = document.getElementById("output");
     if(!d) return;
-    s.innerHTML = "<option>Scanning...</option>";
+
+    s.innerHTML = "<option>Accessing Satellites...</option>";
     out.innerHTML = "";
     document.getElementById("btn").disabled = true;
-    fixturesData = [];
 
     try {
         const res = await fetch(`${API}/fixtures?date=${d}`);
+        if (res.status === 429) {
+            out.innerHTML = `<div class="gaffer-box" style="color:#ff6b35;">⚡ TACTICAL OVERLOAD: API Shield Active. Try in 60s.</div>`;
+            return;
+        }
         const data = await res.json();
         if (!Array.isArray(data)) {
-            if (data.status === "loading") {
-                s.innerHTML = "<option>Syncing...</option>";
-                out.innerHTML = `<div class="gaffer-box">Updating tactical data...<div class="loader"></div></div>`;
-            } else {
-                s.innerHTML = "<option>No Games Today</option>";
-                out.innerHTML = `<div class="gaffer-box">Radar clear. No matches scheduled.</div>`;
-            }
+            out.innerHTML = `<div class="gaffer-box">${data.message || "Syncing..."}</div>`;
+            if(data.status === "loading") out.innerHTML += '<div class="loader"></div>';
             return;
         }
         fixturesData = data;
         s.innerHTML = fixturesData.length ? "<option value=''>Select Match</option>" : "<option>No Games Today</option>";
         fixturesData.forEach((m, i) => s.innerHTML += `<option value="${i}">[${m.comp}] ${m.home} vs ${m.away}</option>`);
-    } catch (e) { s.innerHTML = "<option>Offline</option>"; }
+    } catch (e) { out.innerHTML = "<div class='gaffer-box'>❌ Critical Link Failure.</div>"; }
 }
 
 async function predict() {
@@ -79,13 +78,16 @@ async function predict() {
         const res = await fetch(`${API}/predict`, {
             method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(fixturesData[i])
         });
+        if (res.status === 429) {
+            out.innerHTML = `<div class="gaffer-box" style="color:#ff6b35;">⚡ INTEL OVERLOAD: Prediction stream capped.</div>`;
+            return;
+        }
         const d = await res.json();
-        if(d.error) throw new Error();
         out.innerHTML = `
         <div class="card">
-            <div style="display:flex; justify-content:space-between;">
-                <div><b>${fixturesData[i].home}</b><br><small>Rank: ${d.h_rank}</small><div class="form-section">${d.h_form.split('').map(c=>`<div class="dot ${c}">${c}</div>`).join('')}</div></div>
-                <div style="text-align:right;"><b>${fixturesData[i].away}</b><br><small>Rank: ${d.a_rank}</small><div class="form-section">${d.a_form.split('').map(c=>`<div class="dot ${c}">${c}</div>`).join('')}</div></div>
+            <div style="display:flex; justify-content:space-between; font-size:0.85rem;">
+                <div><b>${fixturesData[i].home}</b><br>Rank: ${d.h_rank}<div class="form-section">${d.h_form.split('').map(c=>`<div class="dot ${c}">${c}</div>`).join('')}</div></div>
+                <div style="text-align:right;"><b>${fixturesData[i].away}</b><br>Rank: ${d.a_rank}<div class="form-section">${d.a_form.split('').map(c=>`<div class="dot ${c}">${c}</div>`).join('')}</div></div>
             </div>
             <div class="score">${d.score}</div>
             <div class="prob-bar">
@@ -93,10 +95,9 @@ async function predict() {
                 <div class="p-d" style="width:${d.probs.draw}%">${d.probs.draw}%</div>
                 <div class="p-a" style="width:${d.probs.away}%">${d.probs.away}%</div>
             </div>
-            <div class="gaffer-box"><b>VERDICT:</b> Analysis of league standings suggests a <b>${d.score}</b> scoreline. 
-            Confidence: ${Math.max(d.probs.home, d.probs.draw, d.probs.away)}%.<div class="signature">THE GAFFER</div></div>
+            <div class="gaffer-box"><b>THE GAFFER'S VERDICT:</b> Tactical analysis suggests a <b>${d.score}</b> outcome. Confidence: ${Math.max(d.probs.home, d.probs.draw, d.probs.away)}%. <div class="signature">TACTICAL INTEL UNIT</div></div>
         </div>`;
-    } catch (e) { out.innerHTML = "<div class='gaffer-box'>Error: Intel stream interrupted.</div>"; }
+    } catch (e) { out.innerHTML = "<div class='gaffer-box'>❌ Prediction failed.</div>"; }
 }
 </script>
 </body>

@@ -18,7 +18,6 @@ BASE_URL = "https://api.football-data.org/v4"
 HEADERS = {"X-Auth-Token": API_KEY, "User-Agent": "GafferTacticalBot/1.0"}
 COMPETITIONS = ["CL","PL","PD","BL1","SA","FL1","ELC","DED","PPL","BSA"]
 
-CACHE_FILE = "cache.json"
 CACHE_MAX_AGE = 3600  
 STANDINGS_EXPIRY = 86400 
 FORM_EXPIRY = 86400 
@@ -55,7 +54,6 @@ def get_detailed_form(team_id):
         return c["atk"], c["def"], c["s"]
     try:
         r = requests.get(f"{BASE_URL}/teams/{team_id}/matches?status=FINISHED&limit=5", headers=HEADERS, timeout=10)
-        if r.status_code != 200: return 1.0, 1.0, "???"
         matches = r.json().get("matches", [])
         history = []
         for m in matches:
@@ -103,17 +101,15 @@ def fixtures():
     d = request.args.get("date", "").split("T")[0]
     if not fixtures_store: fetch_all_fixtures()
     res = fixtures_store.get(d)
-    return jsonify(res) if res is not None else jsonify({"status": "no_games", "message": "No tactical data today."})
+    return jsonify(res) if res is not None else jsonify({"status": "no_games", "message": "No matches found."})
 
 @app.route("/predict", methods=["POST"])
 def predict():
     try:
         req = request.json
-        bookie_odds = req.get("bookie_odds", {})
         stats = get_standings(req["comp"])
         h_atk, h_def, h_f = get_detailed_form(req["home_id"])
         a_atk, a_def, a_f = get_detailed_form(req["away_id"])
-        
         h_t = stats.get(str(req["home_id"]), {"gf":1.2, "ga":1.2, "rank":"N/A"})
         a_t = stats.get(str(req["away_id"]), {"gf":1.0, "ga":1.3, "rank":"N/A"})
         
@@ -125,17 +121,12 @@ def predict():
         p_d = sum(matrix[i][j] for i in range(6) for j in range(6) if i == j)
         p_a = sum(matrix[i][j] for i in range(6) for j in range(6) if i < j)
         tot = p_h + p_d + p_a
-        h_pct, d_pct, a_pct = round((p_h/tot)*100), round((p_d/tot)*100), round((p_a/tot)*100)
-        
-        btts_pct = round((1 - sum(matrix[0][j] for j in range(6))) * (1 - sum(matrix[i][0] for i in range(6))) * 100)
-        over25_pct = round(sum(matrix[i][j] for i in range(6) for j in range(6) if i+j >= 3) * 100)
 
-        value_alerts = {}
-        for outcome, g_pct in {"home": h_pct, "draw": d_pct, "away": a_pct}.items():
-            odds = bookie_odds.get(outcome)
-            if odds and odds > 1.0:
-                edge = round(g_pct - (100/odds), 1)
-                value_alerts[outcome] = {"edge": edge, "value_edge": edge > 5.0}
+        h_pct, d_pct, a_pct = (p_h/tot), (p_d/tot), (p_a/tot)
+        btts_pct = (1 - sum(matrix[0][j] for j in range(6))) * (1 - sum(matrix[i][0] for i in range(6)))
+        over25_pct = sum(matrix[i][j] for i in range(6) for j in range(6) if i+j >= 3)
+
+        def to_odds(p): return round(1/p, 2) if p > 0.01 else 99.0
 
         max_p, best_s = -1, "1-1"
         for i in range(6):
@@ -143,11 +134,16 @@ def predict():
                 if matrix[i][j] > max_p: max_p, best_s = matrix[i][j], f"{i}-{j}"
 
         return jsonify({
-            "score": best_s, "probs": {"home": h_pct, "draw": d_pct, "away": a_pct},
-            "h_rank": h_t["rank"], "a_rank": a_t["rank"], "h_form": h_f, "a_form": a_f,
-            "market": {"btts": btts_pct, "over25": over25_pct}, "value_alerts": value_alerts
+            "score": best_s, "h_rank": h_t["rank"], "a_rank": a_t["rank"], "h_form": h_f, "a_form": a_f,
+            "analysis": {
+                "home": {"pct": round(h_pct*100), "fair": to_odds(h_pct)},
+                "draw": {"pct": round(d_pct*100), "fair": to_odds(d_pct)},
+                "away": {"pct": round(a_pct*100), "fair": to_odds(a_pct)},
+                "btts": {"pct": round(btts_pct*100), "fair": to_odds(btts_pct)},
+                "over25": {"pct": round(over25_pct*100), "fair": to_odds(over25_pct)}
+            }
         })
-    except: return jsonify({"error": "Failed"}), 500
+    except: return jsonify({"error": "Prediction failed"}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))

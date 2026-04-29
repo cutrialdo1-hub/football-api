@@ -25,7 +25,10 @@ HEADERS = {
 COMPETITIONS = ["CL","PL","PD","BL1","SA","FL1","ELC","DED","PPL","BSA"]
 
 CACHE_FILE = "cache.json"
+# 🛡️ INCREASED SHIELDING: 1 Hour for fixtures, 24 Hours for standings/form
 CACHE_MAX_AGE = 3600  
+STANDINGS_EXPIRY = 86400 
+FORM_EXPIRY = 86400 
 
 # =========================================================
 # 🔒 LOCKS & CACHE
@@ -71,15 +74,19 @@ def poisson(k, lam):
     except: return 0.0
 
 # =========================================================
-# 📈 DATA ENGINES (BASE44 MOMENTUM VERSION)
+# 📈 DATA ENGINES (SHIELDED VERSION)
 # =========================================================
 def get_standings(code):
     now = time.time()
-    if code in standings_cache and now - standings_cache[code]["t"] < 86400:
+    # Check memory cache first
+    if code in standings_cache and now - standings_cache[code]["t"] < STANDINGS_EXPIRY:
         return standings_cache[code]["d"]
+    
     try:
         r = requests.get(f"{BASE_URL}/competitions/{code}/standings", headers=HEADERS, timeout=10)
-        if r.status_code != 200: return standings_cache.get(code, {}).get("d", {})
+        if r.status_code == 429: return standings_cache.get(code, {}).get("d", {})
+        if r.status_code != 200: return {}
+        
         data = r.json()
         table = next(s for s in data["standings"] if s["type"] == "TOTAL")["table"]
         out = {str(t["team"]["id"]): {
@@ -89,20 +96,21 @@ def get_standings(code):
         } for t in table}
         standings_cache[code] = {"t": now, "d": out}
         return out
-    except: return {}
+    except: return standings_cache.get(code, {}).get("d", {})
 
 def get_detailed_form(team_id):
     now = time.time()
-    if team_id in form_cache and now - form_cache[team_id]["t"] < 600:
+    # 🛡️ Check if we already know this team's form (24h memory)
+    if team_id in form_cache and now - form_cache[team_id]["t"] < FORM_EXPIRY:
         c = form_cache[team_id]
         return c["atk"], c["def"], c["s"]
+    
     try:
         r = requests.get(f"{BASE_URL}/teams/{team_id}/matches?status=FINISHED&limit=5", headers=HEADERS, timeout=10)
         if r.status_code == 429:
             cached = form_cache.get(team_id)
             return (cached["atk"], cached["def"], cached["s"]) if cached else (1.0, 1.0, "???")
-        if r.status_code != 200: return 1.0, 1.0, "???"
-
+        
         matches = r.json().get("matches", [])
         history, goals_scored, goals_conceded = [], [], []
 
@@ -110,10 +118,8 @@ def get_detailed_form(team_id):
             score = m["score"]["fullTime"]
             if score["home"] is None: continue
             hs, aw, is_home = score["home"], score["away"], m["homeTeam"]["id"] == team_id
-            gf = hs if is_home else aw
-            ga = aw if is_home else hs
-            goals_scored.append(gf)
-            goals_conceded.append(ga)
+            gf, ga = (hs, aw) if is_home else (aw, hs)
+            goals_scored.append(gf); goals_conceded.append(ga)
             if gf > ga: history.append("W")
             elif gf == ga: history.append("D")
             else: history.append("L")
@@ -121,32 +127,19 @@ def get_detailed_form(team_id):
         form_str, n = "".join(history), len(history)
         if n == 0: return 1.0, 1.0, "???"
 
-        # ── Recency-weighted Win Ratio ──
         weights = list(range(n, 0, -1))
         total_w = sum(weights)
         win_score = sum(w for r, w in zip(history, weights) if r == "W")
         win_ratio = win_score / total_w
 
-        atk_mult = 0.80 + (win_ratio * 0.40) 
-        def_mult = 0.85 + (win_ratio * 0.30) 
-
-        # ── Streak Logic ──
-        streak_result, streak_len = history[0], 0
-        for r in history:
-            if r == streak_result: streak_len += 1
-            else: break
-
-        if streak_len >= 3:
-            bonus = min((streak_len - 2) * 0.05, 0.10)
-            if streak_result == "W": atk_mult += bonus
-            elif streak_result == "L": atk_mult -= bonus
-
-        atk_mult = max(min(atk_mult, 1.30), 0.70)
-        def_mult = max(min(def_mult, 1.20), 0.80)
+        atk_mult = max(min(0.80 + (win_ratio * 0.40), 1.30), 0.70)
+        def_mult = max(min(0.85 + (win_ratio * 0.30), 1.20), 0.80)
 
         form_cache[team_id] = {"t": now, "atk": atk_mult, "def": def_mult, "s": form_str}
         return atk_mult, def_mult, form_str
-    except: return 1.0, 1.0, "???"
+    except:
+        cached = form_cache.get(team_id)
+        return (cached["atk"], cached["def"], cached["s"]) if cached else (1.0, 1.0, "???")
 
 # =========================================================
 # ⚡ CORE ENGINES
@@ -159,8 +152,7 @@ def fetch_all_fixtures():
         now = time.time()
         start = time.strftime("%Y-%m-%d", time.gmtime(now - 86400))
         end = time.strftime("%Y-%m-%d", time.gmtime(now + (5 * 86400)))
-        r = requests.get(f"{BASE_URL}/matches", headers=HEADERS, 
-                         params={"dateFrom": start, "dateTo": end}, timeout=25)
+        r = requests.get(f"{BASE_URL}/matches", headers=HEADERS, params={"dateFrom": start, "dateTo": end}, timeout=25)
         if r.status_code != 200: return False
         temp = {}
         for m in r.json().get("matches", []):
@@ -172,10 +164,7 @@ def fetch_all_fixtures():
                 a_name = a_team.get("name") or a_team.get("shortName") or "Unknown"
                 h_id, a_id = h_team.get("id"), a_team.get("id")
                 if not h_id or not a_id: continue
-                temp.setdefault(date, []).append({
-                    "home": h_name, "home_id": h_id, "away": a_name, "away_id": a_id,
-                    "comp": c, "league": m.get("competition", {}).get("name", "Unknown")
-                })
+                temp.setdefault(date, []).append({"home": h_name, "home_id": h_id, "away": a_name, "away_id": a_id, "comp": c})
         fixtures_store = temp
         save_cache_to_disk(temp)
         return True
@@ -187,9 +176,7 @@ def fixtures():
     d = request.args.get("date", "").split("T")[0]
     if not d: return jsonify([])
     if not fixtures_store: load_cache_from_disk()
-    if not fixtures_store: 
-        fetch_all_fixtures()
-        if not fixtures_store: return jsonify({"status": "loading", "message": "Syncing tactical board..."})
+    if not fixtures_store: fetch_all_fixtures()
     res = fixtures_store.get(d)
     return jsonify(res) if res is not None else jsonify({"status": "no_games", "message": "No tactical data today."})
 
@@ -198,16 +185,12 @@ def predict():
     try:
         req = request.json
         stats = get_standings(req["comp"])
-        if not stats: return jsonify({"error": "Stats stream 429 limited"}), 429
+        h_atk, h_def, h_f = get_detailed_form(req["home_id"])
+        a_atk, a_def, a_f = get_detailed_form(req["away_id"])
         
         h_t = stats.get(str(req["home_id"]), {"gf":1.2, "ga":1.2, "rank":"N/A"})
         a_t = stats.get(str(req["away_id"]), {"gf":1.0, "ga":1.3, "rank":"N/A"})
         
-        # ── BASE44 NEW FORM LOGIC ──
-        h_atk, h_def, h_f = get_detailed_form(req["home_id"])
-        a_atk, a_def, a_f = get_detailed_form(req["away_id"])
-        
-        # Calculate Lamdas: Attack Form vs Defense Form
         h_l = h_t["gf"] * a_t["ga"] * h_atk * (1.0 / a_def) * 1.15
         a_l = a_t["gf"] * h_t["ga"] * a_atk * (1.0 / h_def)
         
@@ -229,17 +212,6 @@ def predict():
         })
     except: return jsonify({"error": "Prediction failed"}), 500
 
-def scheduler():
-    fetch_all_fixtures()
-    while True:
-        time.sleep(3600)
-        fetch_all_fixtures()
-
-_started = False
-if not _started:
-    _started = True
-    load_cache_from_disk()
-    threading.Thread(target=scheduler, daemon=True).start()
-
 if __name__ == "__main__":
+    load_cache_from_disk()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))

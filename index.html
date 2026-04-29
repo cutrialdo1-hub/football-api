@@ -10,29 +10,18 @@
         body { background:var(--bg); color:#fff; font-family:Inter,sans-serif; display:flex; justify-content:center; padding:20px; }
         .container { width:100%; max-width:480px; }
         h1 { font-family:Orbitron; color:var(--neon); text-align:center; letter-spacing:5px; font-size:1.2rem; }
-        .card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:20px; position: relative; }
+        .card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:20px; }
         input, select, button { width:100%; padding:14px; margin-bottom:12px; border-radius:10px; background:#000; border:1px solid var(--border); color:#fff; box-sizing:border-box; }
-        button { background:var(--neon); color:#000; font-weight:800; font-family:Orbitron; cursor:pointer; border:none; transition:0.3s; }
+        button { background:var(--neon); color:#000; font-weight:800; font-family:Orbitron; cursor:pointer; border:none; }
         .score { font-family:Orbitron; font-size:4rem; text-align:center; color:var(--neon); margin:10px 0; }
-        
-        /* Value Pills */
-        .pills-row { display: flex; gap: 8px; margin-bottom: 15px; flex-wrap: wrap; }
-        .pill { padding: 4px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: 700; font-family: Orbitron; background: rgba(255,255,255,0.05); color: #888; }
-        .pill--value { border: 1px solid var(--neon); color: var(--neon); background: rgba(0,255,157,0.1); animation: pulse 1.5s infinite; }
-        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(0,255,157,0.4); } 70% { box-shadow: 0 0 0 10px rgba(0,255,157,0); } 100% { box-shadow: 0 0 0 0 rgba(0,255,157,0); } }
-
-        /* Odds Inputs */
-        .odds-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 15px; }
-        .odds-grid input { margin-bottom: 0; font-size: 0.8rem; padding: 10px; }
-
-        /* Prob Bar */
         .prob-bar { display:flex; height:24px; border-radius:6px; overflow:hidden; margin:15px 0; font-family:Orbitron; font-size:0.7rem; line-height:24px; text-align:center; }
         .p-h { background:var(--neon); color:#000; } .p-d { background:var(--draw); color:#000; } .p-a { background:var(--away); color:#000; }
-        
         .gaffer-box { background:rgba(0,255,157,0.05); border-left:4px solid var(--neon); padding:15px; margin-top:15px; font-style:italic; font-size:0.9rem; }
-        details { cursor: pointer; margin-top: 15px; border-top: 1px solid var(--border); padding-top: 10px; }
-        summary { font-family: Orbitron; font-size: 0.7rem; color: var(--neon); list-style: none; }
-        .extra-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+        .odds-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 15px; }
+        .odds-grid input { margin-bottom: 0; padding: 10px; font-size: 0.8rem; }
+        .pill { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 0.65rem; font-family: Orbitron; border: 1px solid var(--neon); color: var(--neon); margin-bottom: 10px; animation: glow 1.5s infinite; }
+        @keyframes glow { 0% { box-shadow: 0 0 5px var(--neon); } 50% { box-shadow: 0 0 15px var(--neon); } 100% { box-shadow: 0 0 5px var(--neon); } }
+        .extra-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
         .extra-item { background: #000; padding: 10px; border-radius: 8px; text-align: center; border: 1px solid var(--border); }
     </style>
 </head>
@@ -40,19 +29,8 @@
 <div class="container">
     <h1>THE GAFFER</h1>
     <div class="card">
-        <input type="date" id="date">
-        <button onclick="getFixtures()">SCAN TACTICAL BOARD</button>
-        <select id="matches" onchange="document.getElementById('btn').disabled = !this.value">
-            <option value="">Select Match...</option>
-        </select>
-        
-        <div class="odds-grid">
-            <input type="number" id="oH" placeholder="Home Odds" step="0.01">
-            <input type="number" id="oD" placeholder="Draw Odds" step="0.01">
-            <input type="number" id="oA" placeholder="Away Odds" step="0.01">
-        </div>
-
-        <button id="btn" onclick="predict()" disabled>GET VERDICT</button>
+        <input type="date" id="date" onchange="getFixtures()">
+        <select id="matches" onchange="setupMatch()"><option value="">Select Match...</option></select>
     </div>
     <div id="output"></div>
 </div>
@@ -60,6 +38,7 @@
 <script>
 const API = "https://football-api-9e4p.onrender.com";
 let fixturesData = [];
+let selectedIdx = null;
 
 async function getFixtures() {
     const d = document.getElementById("date").value;
@@ -70,43 +49,52 @@ async function getFixtures() {
         const res = await fetch(`${API}/fixtures?date=${d}`);
         const data = await res.json();
         fixturesData = data;
-        s.innerHTML = data.length ? "<option value=''>Select Match</option>" : "<option>No Games</option>";
+        s.innerHTML = data.length ? "<option value=''>Select Match</option>" : "<option>No Games Found</option>";
         data.forEach((m, i) => s.innerHTML += `<option value="${i}">[${m.comp}] ${m.home} vs ${m.away}</option>`);
     } catch (e) { s.innerHTML = "<option>Error</option>"; }
 }
 
-async function predict() {
-    const i = document.getElementById("matches").value;
-    const out = document.getElementById("output");
-    const bookie_odds = { 
-        home: parseFloat(document.getElementById("oH").value), 
-        draw: parseFloat(document.getElementById("oD").value), 
-        away: parseFloat(document.getElementById("oA").value) 
-    };
+function setupMatch() {
+    selectedIdx = document.getElementById("matches").value;
+    if(selectedIdx === "") return;
+    const m = fixturesData[selectedIdx];
+    document.getElementById("output").innerHTML = `
+        <div class="card">
+            <h3 style="font-family:Orbitron; font-size:0.8rem; color:var(--neon); margin-top:0;">PRE-CHECK: ${m.home} vs ${m.away}</h3>
+            <label style="font-size:0.6rem; opacity:0.6; display:block; margin-bottom:5px;">OPTIONAL: BOOKIE ODDS (DECIMAL)</label>
+            <div class="odds-grid">
+                <input type="number" id="oH" placeholder="Home">
+                <input type="number" id="oD" placeholder="Draw">
+                <input type="number" id="oA" placeholder="Away">
+            </div>
+            <button onclick="predict()">RUN VERDICT ENGINE</button>
+        </div>`;
+}
 
-    out.innerHTML = "<div style='text-align:center;'>Calculating Matrix...</div>";
+async function predict() {
+    const out = document.getElementById("output");
+    const odds = {
+        home: parseFloat(document.getElementById("oH").value) || 0,
+        draw: parseFloat(document.getElementById("oD").value) || 0,
+        away: parseFloat(document.getElementById("oA").value) || 0
+    };
+    out.innerHTML = "<div class='card' style='text-align:center;'>Calculating Probabilities...</div>";
     try {
         const res = await fetch(`${API}/predict`, {
-            method: "POST", 
-            headers: {"Content-Type": "application/json"}, 
-            body: JSON.stringify({...fixturesData[i], bookie_odds})
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({...fixturesData[selectedIdx], bookie_odds: odds})
         });
         const d = await res.json();
-        
-        // Value Alerts
         let alerts = "";
-        for (let key in d.value_alerts) {
-            if (d.value_alerts[key].value_edge) {
-                alerts += `<span class="pill pill--value">✦ ${key.toUpperCase()} EDGE: +${d.value_alerts[key].edge}%</span>`;
-            }
-        }
+        for(let k in d.value_alerts) if(d.value_alerts[k].value_edge) alerts += `<div class="pill">✦ ${k.toUpperCase()} EDGE +${d.value_alerts[k].edge}%</div>`;
 
         out.innerHTML = `
         <div class="card">
-            <div class="pills-row">${alerts}</div>
-            <div style="display:flex; justify-content:space-between; font-size:0.8rem;">
-                <span><b>${fixturesData[i].home}</b> (Rank: ${d.h_rank})</span>
-                <span><b>${fixturesData[i].away}</b> (Rank: ${d.a_rank})</span>
+            ${alerts}
+            <div style="display:flex; justify-content:space-between; font-size:0.8rem; opacity:0.7;">
+                <span><b>${fixturesData[selectedIdx].home}</b> (Rank: ${d.h_rank})</span>
+                <span><b>${fixturesData[selectedIdx].away}</b> (Rank: ${d.a_rank})</span>
             </div>
             <div class="score">${d.score}</div>
             <div class="prob-bar">
@@ -114,14 +102,12 @@ async function predict() {
                 <div class="p-d" style="width:${d.probs.draw}%">${d.probs.draw}%</div>
                 <div class="p-a" style="width:${d.probs.away}%">${d.probs.away}%</div>
             </div>
-            <div class="gaffer-box"><b>VERDICT:</b> The matrix favors <b>${d.score}</b>.</div>
-            <details>
-                <summary>▼ TACTICAL EXTRAS</summary>
-                <div class="extra-grid">
-                    <div class="extra-item"><small>BTTS YES</small><br><b>${d.market.btts}%</b></div>
-                    <div class="extra-item"><small>OVER 2.5</small><br><b>${d.market.over25}%</b></div>
-                </div>
-            </details>
+            <div class="extra-grid">
+                <div class="extra-item"><small>BTTS YES</small><br><b>${d.market.btts}%</b></div>
+                <div class="extra-item"><small>OVER 2.5</small><br><b>${d.market.over25}%</b></div>
+            </div>
+            <div class="gaffer-box"><b>THE GAFFER:</b> Result favors <b>${d.score}</b> scoreline.</div>
+            <button style="margin-top:20px; background:none; border:1px solid var(--border); color:var(--draw); font-size:0.6rem;" onclick="setupMatch()">NEW ANALYSIS</button>
         </div>`;
     } catch (e) { out.innerHTML = "Error."; }
 }

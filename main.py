@@ -123,7 +123,7 @@ def get_standings(code):
     except:
         return {}
 
-# ---------------- 🚀 FIXED FIXTURES (TRUE INSTANT + COMPLETE) ----------------
+# ---------------- 🚀 FIXED FIXTURES (REAL FIX) ----------------
 @app.route("/fixtures")
 def fixtures():
     date = request.args.get("date")
@@ -132,18 +132,18 @@ def fixtures():
 
     now = time.time()
 
-    # cache per date (correct key)
+    # cache per date
     if date in fixtures_cache and now - fixtures_cache[date]["t"] < 300:
         return jsonify(fixtures_cache[date]["d"])
 
     try:
+        # ⚡ FIX: REMOVED competitions filter (THIS WAS BREAKING YOUR DATA)
         r = requests.get(
             f"{BASE_URL}/matches",
             headers=HEADERS,
             params={
                 "dateFrom": date,
-                "dateTo": date,
-                "competitions": ",".join(COMPETITIONS)
+                "dateTo": date
             },
             timeout=10
         )
@@ -159,12 +159,18 @@ def fixtures():
             if not m.get("homeTeam") or not m.get("awayTeam"):
                 continue
 
+            comp_code = m["competition"]["code"]
+
+            # filter locally instead (correct way)
+            if comp_code not in COMPETITIONS:
+                continue
+
             all_matches.append({
                 "home": m["homeTeam"]["name"],
                 "home_id": m["homeTeam"]["id"],
                 "away": m["awayTeam"]["name"],
                 "away_id": m["awayTeam"]["id"],
-                "comp": m["competition"]["code"],
+                "comp": comp_code,
                 "league": m["competition"]["name"]
             })
 

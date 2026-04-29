@@ -44,15 +44,14 @@ def preload_standings():
                 timeout=5
             )
 
-            # 🔥 RATE LIMIT SAFETY (10 req/min max)
-            time.sleep(6)
+            time.sleep(6)  # RATE LIMIT SAFETY
 
         except Exception as e:
             print("[STANDINGS ERROR]", comp, e)
 
 
 # =========================================================
-# ⚽ FORM DATA
+# ⚽ FORM
 # =========================================================
 def get_detailed_form(team_id):
     now = time.time()
@@ -143,7 +142,7 @@ def get_standings(code):
 
 
 # =========================================================
-# ⚽ FIXTURE ENGINE (RATE SAFE + DEBUG + SMART SYNC)
+# ⚽ FIXTURE ENGINE (SAFE + NON-EMPTY CACHE)
 # =========================================================
 def fetch_all_fixtures():
     global fixtures_store, last_refresh
@@ -153,11 +152,10 @@ def fetch_all_fixtures():
     now = time.time()
     new_store = {}
 
-    for i in range(0, 7):
+    for i in range(7):
         date = time.strftime("%Y-%m-%d", time.gmtime(now + i * 86400))
 
-        # 🔥 RATE LIMIT SAFETY
-        time.sleep(6)
+        time.sleep(6)  # RATE LIMIT SAFETY
 
         day_matches = []
 
@@ -184,7 +182,6 @@ def fetch_all_fixtures():
 
                 comp_code = comp.get("code")
 
-                # FILTER ONLY SUPPORTED LEAGUES
                 if comp_code not in COMPETITIONS:
                     continue
 
@@ -197,13 +194,12 @@ def fetch_all_fixtures():
                     "league": comp.get("name")
                 })
 
-            # 🔥 DEBUG LOGGING
             print(f"DEBUG: Successfully fetched {len(day_matches)} matches for {date}")
 
         except Exception as e:
             print("[FIXTURE ERROR]", date, e)
 
-        # ❗ ONLY STORE NON-EMPTY DATA
+        # ONLY STORE IF NOT EMPTY
         if day_matches:
             new_store[date] = day_matches
 
@@ -214,19 +210,22 @@ def fetch_all_fixtures():
 
 
 # =========================================================
-# ⚽ FIXTURES ENDPOINT (LOADING SAFE)
+# ⚽ FIXTURES ENDPOINT (FRONTEND SAFE)
 # =========================================================
 @app.route("/fixtures")
 def fixtures():
     date = request.args.get("date")
+
     if not date:
         return jsonify([])
 
     date = date.split("T")[0]
 
+    # LOADING STATE (FRONTEND SAFE OBJECT WRAPPER)
     if date not in fixtures_store:
         return jsonify({
             "status": "loading",
+            "data": [],
             "message": "Data is still syncing, please refresh in 30 seconds"
         })
 
@@ -312,7 +311,7 @@ def predict():
 
 
 # =========================================================
-# 🚀 STARTUP (THREAD SAFE)
+# 🚀 STARTUP (THREAD SAFE + RENDER READY)
 # =========================================================
 def boot_sequence():
     print("[BOOT] Boot sequence started...")
@@ -331,11 +330,8 @@ def scheduler():
 
 if __name__ == "__main__":
 
-    # background boot
     threading.Thread(target=boot_sequence, daemon=True).start()
-
-    # scheduler thread
     threading.Thread(target=scheduler, daemon=True).start()
 
-    # run server (Render compatible)
+    # Render-compatible port fix
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))

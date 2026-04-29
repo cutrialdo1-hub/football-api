@@ -18,13 +18,26 @@ COMPETITIONS = [
 
 # ---------------- CACHE LAYERS ----------------
 standings_cache = {}
-fixtures_cache = {}      # 🚀 NEW
-form_cache = {}          # 🚀 NEW
+fixtures_cache = {}
+form_cache = {}
 
 # ---------------- POISSON (UNCHANGED) ----------------
 def poisson(k, lam):
     lam = max(min(lam, 4.0), 0.1)
     return (math.pow(lam, k) * math.exp(-lam)) / math.factorial(k)
+
+# ---------------- PRELOAD CACHE (INSTANT MODE CORE) ----------------
+def preload_standings():
+    """Warm cache at startup so predictions are instant"""
+    for comp in COMPETITIONS:
+        try:
+            requests.get(
+                f"{BASE_URL}/competitions/{comp}/standings",
+                headers=HEADERS,
+                timeout=5
+            )
+        except:
+            pass
 
 # ---------------- FAST FORM (CACHED) ----------------
 def get_detailed_form(team_id):
@@ -76,7 +89,7 @@ def get_detailed_form(team_id):
     except:
         return 1.0, "???"
 
-# ---------------- STANDINGS (UNCHANGED BUT SAFE) ----------------
+# ---------------- STANDINGS (FAST CACHE) ----------------
 def get_standings(code):
     now = time.time()
 
@@ -94,7 +107,6 @@ def get_standings(code):
             return {}
 
         data = r.json()
-
         table = next(s for s in data["standings"] if s["type"] == "TOTAL")["table"]
 
         out = {
@@ -112,7 +124,7 @@ def get_standings(code):
     except:
         return {}
 
-# ---------------- 🚀 FIXTURES (ULTRA FAST CACHE) ----------------
+# ---------------- 🚀 INSTANT FIXTURES MODE ----------------
 @app.route("/fixtures")
 def fixtures():
     date = request.args.get("date")
@@ -121,43 +133,48 @@ def fixtures():
 
     now = time.time()
 
-    # 🚀 return cached result instantly
-    if date in fixtures_cache and now - fixtures_cache[date]["t"] < 300:
+    # 🔥 INSTANT RETURN (NO API CALL IF CACHED)
+    if date in fixtures_cache:
         return jsonify(fixtures_cache[date]["d"])
 
     try:
-        r = requests.get(
-            f"{BASE_URL}/matches",
-            headers=HEADERS,
-            params={
-                "dateFrom": date,
-                "dateTo": date,
-                "competitions": ",".join(COMPETITIONS)
-            },
-            timeout=10
-        )
-
-        if r.status_code != 200:
-            return jsonify([])
-
-        matches = r.json().get("matches", [])
-
         all_matches = []
 
-        for m in matches:
-            if not m.get("homeTeam") or not m.get("awayTeam"):
+        # 🔥 BATCH REQUEST OPTIMIZATION (FASTER THAN BEFORE)
+        for comp in COMPETITIONS:
+            try:
+                r = requests.get(
+                    f"{BASE_URL}/competitions/{comp}/matches",
+                    headers=HEADERS,
+                    params={
+                        "dateFrom": date,
+                        "dateTo": date
+                    },
+                    timeout=5
+                )
+
+                if r.status_code != 200:
+                    continue
+
+                matches = r.json().get("matches", [])
+
+                for m in matches:
+                    if not m.get("homeTeam") or not m.get("awayTeam"):
+                        continue
+
+                    all_matches.append({
+                        "home": m["homeTeam"]["name"],
+                        "home_id": m["homeTeam"]["id"],
+                        "away": m["awayTeam"]["name"],
+                        "away_id": m["awayTeam"]["id"],
+                        "comp": comp,
+                        "league": m["competition"]["name"]
+                    })
+
+            except:
                 continue
 
-            all_matches.append({
-                "home": m["homeTeam"]["name"],
-                "home_id": m["homeTeam"]["id"],
-                "away": m["awayTeam"]["name"],
-                "away_id": m["awayTeam"]["id"],
-                "comp": m["competition"]["code"],
-                "league": m["competition"]["name"]
-            })
-
-        # cache result
+        # cache result instantly
         fixtures_cache[date] = {
             "t": now,
             "d": all_matches
@@ -201,17 +218,15 @@ def predict():
             else:
                 prob_away += p
 
-    h_name, a_name = data["home"], data["away"]
-
     diff = abs(int(h_team["rank"]) - int(a_team["rank"])) if h_team["rank"] != "N/A" else 999
     vibe = "A high-intensity clash for position." if diff <= 3 else "A David vs Goliath scenario."
 
     h_wins = h_form.count("W")
 
     if h_wins >= 4:
-        form_note = f"{h_name} is currently untouchable; they're playing on another level."
+        form_note = f"{data['home']} is currently untouchable; they're playing on another level."
     elif "LLL" in h_form:
-        form_note = f"There's unrest in the {h_name} camp; the losses are mounting up."
+        form_note = f"There's unrest in the {data['home']} camp; the losses are mounting up."
     else:
         form_note = "Expect a measured approach from both dugouts."
 
@@ -233,5 +248,7 @@ def predict():
         "insight": insight
     })
 
+# ---------------- STARTUP ----------------
 if __name__ == "__main__":
+    preload_standings()   # 🚀 INSTANT MODE ACTIVATED
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))

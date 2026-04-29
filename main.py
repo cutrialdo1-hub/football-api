@@ -6,6 +6,9 @@ import threading
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
+# =========================================================
+# 🚀 APP INIT
+# =========================================================
 app = Flask(__name__)
 CORS(app)
 
@@ -17,21 +20,27 @@ COMPETITIONS = [
     "CL", "PL", "PD", "BL1", "SA", "FL1", "ELC", "DED", "PPL", "BSA"
 ]
 
-# ---------------- CACHE ----------------
+print("[INIT] Background workers initiated at top-level import")
+
+# =========================================================
+# 🧠 CACHE
+# =========================================================
 standings_cache = {}
 form_cache = {}
 fixtures_store = {}
 last_refresh = 0
 
 
-# ---------------- POISSON ----------------
+# =========================================================
+# 📊 POISSON
+# =========================================================
 def poisson(k, lam):
     lam = max(min(lam, 4.0), 0.1)
     return (math.pow(lam, k) * math.exp(-lam)) / math.factorial(k)
 
 
 # =========================================================
-# 📊 RATE SAFE PRELOAD (STANDINGS - REQUIRED SLOW LOOP)
+# 📊 STANDINGS PRELOAD (RATE SAFE)
 # =========================================================
 def preload_standings():
     print("[BOOT] Preloading standings...")
@@ -44,7 +53,7 @@ def preload_standings():
                 timeout=5
             )
 
-            # 🔥 REQUIRED RATE LIMIT SAFETY
+            # REQUIRED RATE LIMIT PROTECTION
             time.sleep(6)
 
         except Exception as e:
@@ -52,7 +61,7 @@ def preload_standings():
 
 
 # =========================================================
-# ⚽ FORM
+# ⚽ FORM ENGINE
 # =========================================================
 def get_detailed_form(team_id):
     now = time.time()
@@ -92,11 +101,7 @@ def get_detailed_form(team_id):
         form_string = "".join(history)
         multiplier = 0.85 + (pts / 15) * 0.3
 
-        form_cache[team_id] = {
-            "t": now,
-            "d": multiplier,
-            "s": form_string
-        }
+        form_cache[team_id] = {"t": now, "d": multiplier, "s": form_string}
 
         return multiplier, form_string
 
@@ -143,7 +148,7 @@ def get_standings(code):
 
 
 # =========================================================
-# ⚡ FIXTURE ENGINE (TURBO MODE - SINGLE BATCH REQUEST)
+# ⚡ FIXTURE ENGINE (TURBO MODE - SINGLE REQUEST)
 # =========================================================
 def fetch_all_fixtures():
     global fixtures_store, last_refresh
@@ -151,8 +156,6 @@ def fetch_all_fixtures():
     print("[CACHE] Fetching fixtures (TURBO MODE)...")
 
     now = time.time()
-
-    # 🔥 FIX: single request instead of 7-day loop
     today = time.strftime("%Y-%m-%d", time.gmtime(now))
     next_week = time.strftime("%Y-%m-%d", time.gmtime(now + 7 * 86400))
 
@@ -162,10 +165,7 @@ def fetch_all_fixtures():
         r = requests.get(
             f"{BASE_URL}/matches",
             headers=HEADERS,
-            params={
-                "dateFrom": today,
-                "dateTo": next_week
-            },
+            params={"dateFrom": today, "dateTo": next_week},
             timeout=15
         )
 
@@ -184,11 +184,10 @@ def fetch_all_fixtures():
                 continue
 
             comp_code = comp.get("code")
-
             if comp_code not in COMPETITIONS:
                 continue
 
-            date = m.get("utcDate", "")[:10]  # YYYY-MM-DD
+            date = m.get("utcDate", "")[:10]
 
             if date not in new_store:
                 new_store[date] = []
@@ -202,7 +201,6 @@ def fetch_all_fixtures():
                 "league": comp.get("name")
             })
 
-        # 🔥 DEBUG OUTPUT
         for date, games in new_store.items():
             print(f"DEBUG: Successfully fetched {len(games)} matches for {date}")
 
@@ -216,7 +214,7 @@ def fetch_all_fixtures():
 
 
 # =========================================================
-# ⚽ FIXTURES ENDPOINT (FRONTEND SAFE + LOADING STATE)
+# ⚽ FIXTURES ROUTE (FRONTEND SAFE)
 # =========================================================
 @app.route("/fixtures")
 def fixtures():
@@ -227,7 +225,7 @@ def fixtures():
 
     date = date.split("T")[0]
 
-    # 🔥 LOADING STATE (FRONTEND SAFE FIX)
+    # frontend loading-safe structure
     if date not in fixtures_store:
         return jsonify({
             "status": "loading",
@@ -273,32 +271,16 @@ def predict():
             else:
                 prob_away += p
 
-    # SAFE RANK LOGIC
     try:
         h_rank = int(h_team["rank"]) if str(h_team["rank"]).isdigit() else None
         a_rank = int(a_team["rank"]) if str(a_team["rank"]).isdigit() else None
-        diff = abs(h_rank - a_rank) if h_rank is not None and a_rank is not None else 999
+        diff = abs(h_rank - a_rank) if h_rank and a_rank else 999
     except:
         diff = 999
 
     vibe = "A high-intensity clash for position." if diff <= 3 else "A David vs Goliath scenario."
 
-    h_wins = h_form.count("W")
-
-    if h_wins >= 4:
-        form_note = f"{data['home']} is currently untouchable; they're playing on another level."
-    elif "LLL" in h_form:
-        form_note = f"There's unrest in the {data['home']} camp; the losses are mounting up."
-    else:
-        form_note = "Expect a measured approach from both dugouts."
-
-    tactics = (
-        "We're likely to see a high press today."
-        if h_lam + a_lam > 2.8
-        else "It'll be won in the mud and the shadows of the midfield."
-    )
-
-    insight = f"{vibe} {form_note} {tactics} I’m going with {predicted_score} on my sheet."
+    insight = f"{vibe} I’m going with {predicted_score}."
 
     return jsonify({
         "score": predicted_score,
@@ -316,7 +298,7 @@ def predict():
 
 
 # =========================================================
-# 🚀 STARTUP (THREAD SAFE + FAST BOOT)
+# 🚀 STARTUP (GUNICORN SAFE)
 # =========================================================
 def boot_sequence():
     print("[BOOT] Boot sequence started...")
@@ -333,10 +315,19 @@ def scheduler():
         preload_standings()
 
 
-if __name__ == "__main__":
-
+def start_background_tasks():
     threading.Thread(target=boot_sequence, daemon=True).start()
     threading.Thread(target=scheduler, daemon=True).start()
 
-    # Render-compatible port
+
+# =========================================================
+# 🚀 AUTO START (IMPORTANT FOR RENDER + GUNICORN)
+# =========================================================
+start_background_tasks()
+
+
+# =========================================================
+# 🚀 RUN SERVER
+# =========================================================
+if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))

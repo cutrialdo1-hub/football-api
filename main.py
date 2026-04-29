@@ -12,7 +12,19 @@ API_KEY = os.getenv("FOOTBALL_API_KEY")
 BASE_URL = "https://api.football-data.org/v4"
 HEADERS = {"X-Auth-Token": API_KEY}
 
-COMPETITIONS = ["PL", "PD", "BL1", "SA", "FL1", "ELC", "CL"]
+# ✅ FIXED: FULL FREE TIER SET (no duplicates, correct codes)
+COMPETITIONS = [
+    "CL",   # Champions League
+    "PL",   # Premier League
+    "PD",   # La Liga
+    "BL1",  # Bundesliga
+    "SA",   # Serie A (Italy)
+    "FL1",  # Ligue 1
+    "ELC",  # Championship (England)
+    "DED",  # Eredivisie (Netherlands)
+    "PPL",  # Primeira Liga (Portugal)
+    "BSA",  # Brazil Serie A
+]
 
 cache_standings = {}
 
@@ -61,24 +73,55 @@ def get_standings(code):
         return out
     except: return {}
 
+# 🔥 FIXED FIXTURES (more reliable + less missing competitions)
 @app.route("/fixtures")
 def fixtures():
     date = request.args.get("date")
-    if not date: return jsonify([])
+    if not date:
+        return jsonify([])
+
     all_matches = []
+
+    date_to = date  # same day filter (API expects range)
+
     for comp in COMPETITIONS:
         try:
-            r = requests.get(f"{BASE_URL}/competitions/{comp}/matches", headers=HEADERS, params={"dateFrom": date, "dateTo": date}, timeout=5)
-            if r.status_code == 200:
-                for m in r.json().get("matches", []):
-                    all_matches.append({
-                        "home": m["homeTeam"]["name"], "home_id": m["homeTeam"]["id"],
-                        "away": m["awayTeam"]["name"], "away_id": m["awayTeam"]["id"],
-                        "comp": comp, "league": m["competition"]["name"]
-                    })
-            time.sleep(0.6) 
-        except: continue
+            r = requests.get(
+                f"{BASE_URL}/competitions/{comp}/matches",
+                headers=HEADERS,
+                params={
+                    "dateFrom": date,
+                    "dateTo": date_to
+                },
+                timeout=5
+            )
+
+            if r.status_code != 200:
+                continue
+
+            data = r.json().get("matches", [])
+
+            for m in data:
+                # safety check (prevents broken fixtures)
+                if not m.get("homeTeam") or not m.get("awayTeam"):
+                    continue
+
+                all_matches.append({
+                    "home": m["homeTeam"]["name"],
+                    "home_id": m["homeTeam"]["id"],
+                    "away": m["awayTeam"]["name"],
+                    "away_id": m["awayTeam"]["id"],
+                    "comp": comp,
+                    "league": m["competition"]["name"]
+                })
+
+            time.sleep(0.4)  # keeps you under rate limit
+
+        except Exception:
+            continue
+
     return jsonify(all_matches)
+
 
 @app.route("/predict", methods=["POST"])
 def predict():
@@ -107,16 +150,19 @@ def predict():
 
     h_name, a_name = data['home'], data['away']
     
-    # Refined Narrative (Gaffer focused on strategy)
     if h_team['rank'] != "N/A" and a_team['rank'] != "N/A":
         diff = abs(int(h_team['rank']) - int(a_team['rank']))
         vibe = "A high-intensity clash for position." if diff <= 3 else "A David vs Goliath scenario."
-    else: vibe = "The atmosphere is electric for this one."
+    else:
+        vibe = "The atmosphere is electric for this one."
 
     h_wins = h_form.count("W")
-    if h_wins >= 4: form_note = f"{h_name} is currently untouchable; they're playing on another level."
-    elif "L" * 3 in h_form: form_note = f"There's unrest in the {h_name} camp; the losses are mounting up."
-    else: form_note = "Expect a measured approach from both dugouts."
+    if h_wins >= 4:
+        form_note = f"{h_name} is currently untouchable; they're playing on another level."
+    elif "LLL" in h_form:
+        form_note = f"There's unrest in the {h_name} camp; the losses are mounting up."
+    else:
+        form_note = "Expect a measured approach from both dugouts."
 
     tactics = "We're likely to see a high press today." if h_lam + a_lam > 2.8 else "It'll be won in the mud and the shadows of the midfield."
 
@@ -124,9 +170,16 @@ def predict():
 
     return jsonify({
         "score": predicted_score,
-        "probs": {"home": round(prob_home*100), "draw": round(prob_draw*100), "away": round(prob_away*100)},
-        "h_rank": h_team["rank"], "a_rank": a_team["rank"],
-        "h_form": h_form, "a_form": a_form, "insight": insight
+        "probs": {
+            "home": round(prob_home*100),
+            "draw": round(prob_draw*100),
+            "away": round(prob_away*100)
+        },
+        "h_rank": h_team["rank"],
+        "a_rank": a_team["rank"],
+        "h_form": h_form,
+        "a_form": a_form,
+        "insight": insight
     })
 
 if __name__ == "__main__":

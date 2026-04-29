@@ -24,10 +24,9 @@
 </head>
 <body>
 <div class="container">
-    <h2 style="font-family:Orbitron; color:var(--neon); text-align:center; margin-bottom:20px;">THE GAFFER</h2>
+    <h1 style="font-family:Orbitron; color:var(--neon); text-align:center; margin-bottom:20px;">THE GAFFER</h1>
     
-    <div class="card">
-        <input type="number" id="bankroll" placeholder="Enter Bankroll (e.g. 1000)" value="1000">
+    <div class="card" id="main-panel">
         <input type="date" id="date" onchange="getFixtures()">
         <select id="matches" onchange="document.getElementById('btn').disabled=false"><option>Select Match...</option></select>
         <button id="btn" onclick="predict()" disabled>ANALYZE FIXTURE</button>
@@ -37,7 +36,7 @@
 </div>
 
 <script>
-const API = "https://football-api-9e4p.onrender.com"; // UPDATE TO YOUR URL
+const API = "https://football-api-9e4p.onrender.com"; 
 let fixtures = [];
 
 async function getFixtures() {
@@ -52,7 +51,7 @@ async function getFixtures() {
 async function predict() {
     const idx = document.getElementById("matches").value;
     const out = document.getElementById("output");
-    out.innerHTML = "<div style='text-align:center;'>Calculating Matrix...</div>";
+    out.innerHTML = "<div class='card' style='text-align:center;'>Calculating Matrix...</div>";
 
     const res = await fetch(`${API}/predict`, {
         method: "POST",
@@ -61,43 +60,47 @@ async function predict() {
     });
     const d = await res.json();
 
+    // KELLY STAKING LOGIC: Hidden inside the verdict card logic
     window.checkValue = (input, fair, targetId) => {
         const bVal = parseFloat(input.value);
         const target = document.getElementById(targetId);
-        const bank = parseFloat(document.getElementById('bankroll').value) || 1000;
+        const bankroll = 1000; // Fixed starting point, or add bankroll input here
         
         if (!bVal || bVal <= fair) { target.innerHTML = '--'; target.className=''; return; }
 
         const edge = (bVal * (1/fair)) - 1;
         if (edge > 0.05) {
+            // Quarter-Kelly calculation
             const kelly = (((bVal-1)*(1/fair)) - (1-(1/fair))) / (bVal-1);
-            const stake = (kelly * 0.25 * bank).toFixed(2);
+            const stake = (kelly * 0.25 * bankroll).toFixed(2);
             target.className = 'prime-value';
-            target.innerHTML = `${bVal.toFixed(2)} <span class="badge">VALUE</span><br><span style="font-size:0.6rem; color:#fff">Stake: $${stake}</span>`;
+            target.innerHTML = `${bVal.toFixed(2)} <span class="badge">VALUE</span><br><span style="font-size:0.6rem; color:#fff">Rec. Stake: $${stake}</span>`;
         } else {
-            target.innerHTML = bVal.toFixed(2) + " (Thin)";
+            target.innerHTML = bVal.toFixed(2) + " <span style='font-size:0.6rem;'>(Thin)</span>";
         }
     };
 
-    const row = (label, key) => {
+    const renderRow = (label, key) => {
         const fair = d.market[key].gaffer_odds;
         return `<tr><td>${label}</td><td style="font-family:Orbitron;">${fair}</td>
                 <td style="text-align:right;">
-                <input type="number" class="bookie-input" step="0.01" oninput="checkValue(this, ${fair}, 'v-${key}')">
-                <div id="v-${key}" style="margin-top:4px;">--</div></td></tr>`;
+                <input type="number" class="bookie-input" step="0.01" placeholder="0.00" oninput="checkValue(this, ${fair}, 'v-${key}')">
+                <div id="v-${key}" style="margin-top:4px; height:20px;">--</div></td></tr>`;
     };
 
     out.innerHTML = `
     <div class="card">
-        <div style="display:flex; justify-content:space-between; font-size:0.7rem;">
-            <div><b>${fixtures[idx].home}</b><br>${d.h_form.split('').map(c=>`<span class="dot ${c}">${c}</span>`).join('')}</div>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="width:35%"><b>${fixtures[idx].home}</b><br>${d.h_form.split('').map(c=>`<span class="dot ${c}">${c}</span>`).join('')}</div>
             <div class="score">${d.score}</div>
-            <div style="text-align:right;"><b>${fixtures[idx].away}</b><br>${d.a_form.split('').map(c=>`<span class="dot ${c}">${c}</span>`).join('')}</div>
+            <div style="text-align:right; width:35%"><b>${fixtures[idx].away}</b><br>${d.a_form.split('').map(c=>`<span class="dot ${c}">${c}</span>`).join('')}</div>
         </div>
         <table class="market-table">
-            <tr><th>MARKET</th><th>FAIR</th><th style="text-align:right;">BOOKIE</th></tr>
-            ${row('HOME WIN', 'home')}${row('DRAW', 'draw')}${row('AWAY WIN', 'away')}
-            ${row('BTTS YES', 'btts')}${row('OVER 2.5', 'over25')}
+            <thead><tr><th align="left" style="font-size:0.6rem; color:#666;">MARKET</th><th align="left" style="font-size:0.6rem; color:#666;">FAIR</th><th align="right" style="font-size:0.6rem; color:#666;">BOOKIE</th></tr></thead>
+            <tbody>
+                ${renderRow('HOME WIN', 'home')}${renderRow('DRAW', 'draw')}${renderRow('AWAY WIN', 'away')}
+                ${renderRow('BTTS YES', 'btts')}${renderRow('OVER 2.5', 'over25')}
+            </tbody>
         </table>
     </div>`;
 }

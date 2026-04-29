@@ -2,96 +2,277 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>THE GAFFER | Tactical Intelligence</title>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@300;500;700&display=swap" rel="stylesheet">
     <style>
-        :root { --neon:#00ff9d; --bg:#0a0b10; --card:#151821; --border:#2a2d3a; --away:#ff3366; --draw:#8892b0; }
-        body { background:var(--bg); color:#fff; font-family:Inter,sans-serif; display:flex; justify-content:center; padding:20px; }
-        .container { width:100%; max-width:480px; }
-        h1 { font-family:Orbitron; color:var(--neon); text-align:center; letter-spacing:5px; font-size:1.2rem; margin-bottom:30px; }
-        .card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:20px; }
-        input, select, button { width:100%; padding:14px; margin-bottom:12px; border-radius:10px; background:#000; border:1px solid var(--border); color:#fff; box-sizing:border-box; }
-        button { background:var(--neon); color:#000; font-weight:800; font-family:Orbitron; cursor:pointer; border:none; }
-        button:disabled { background:#1a1a1a; color:#444; }
-        .score { font-family:Orbitron; font-size:4rem; text-align:center; margin:10px 0; color:var(--neon); }
-        .prob-bar { display:flex; height:24px; border-radius:6px; overflow:hidden; margin:20px 0; font-family:Orbitron; font-size:0.7rem; line-height:24px; text-align:center; }
-        .p-h { background:var(--neon); color:#000; } .p-d { background:var(--draw); color:#000; } .p-a { background:var(--away); color:#000; }
-        .form-section { display:flex; gap:4px; margin-top:8px; }
-        .dot { width:22px; height:22px; border-radius:4px; font-size:10px; line-height:22px; text-align:center; font-weight:bold; color:#000; }
-        .W { background:var(--neon); } .D { background:var(--draw); } .L { background:var(--away); }
-        .gaffer-box { background:rgba(0,255,157,0.05); border-left:4px solid var(--neon); padding:15px; margin-top:20px; font-style:italic; font-size:0.95rem; line-height:1.6; }
-        .signature { font-family:Orbitron; color:var(--neon); font-size:0.8rem; text-align:right; margin-top:15px; letter-spacing:2px; font-weight:700; border-top: 1px solid rgba(0,255,157,0.1); padding-top:10px; }
-        .loader { border:3px solid #222; border-top:3px solid var(--neon); border-radius:50%; width:30px; height:30px; margin:20px auto; animation:spin 1s linear infinite; }
-        @keyframes spin { to { transform:rotate(360deg); } }
+        :root { 
+            --neon: #00ff9d; 
+            --bg: #0a0b10; 
+            --card: #151821; 
+            --border: #2a2d3a; 
+            --away: #ff3366; 
+            --draw: #8892b0; 
+        }
+        body { 
+            background: var(--bg); 
+            color: #fff; 
+            font-family: 'Inter', sans-serif; 
+            display: flex; 
+            justify-content: center; 
+            padding: 20px; 
+            margin: 0;
+        }
+        .container { width: 100%; max-width: 480px; }
+        h1 { 
+            font-family: 'Orbitron'; 
+            color: var(--neon); 
+            text-align: center; 
+            letter-spacing: 5px; 
+            font-size: 1.2rem; 
+            margin-bottom: 30px; 
+            text-shadow: 0 0 10px rgba(0,255,157,0.3);
+        }
+        .card { 
+            background: var(--card); 
+            border: 1px solid var(--border); 
+            border-radius: 16px; 
+            padding: 20px; 
+            margin-bottom: 20px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        input, select, button { 
+            width: 100%; 
+            padding: 14px; 
+            margin-bottom: 12px; 
+            border-radius: 10px; 
+            background: #000; 
+            border: 1px solid var(--border); 
+            color: #fff; 
+            font-size: 0.9rem;
+            box-sizing: border-box; 
+            transition: 0.3s;
+        }
+        input:focus, select:focus { border-color: var(--neon); outline: none; }
+        button { 
+            background: var(--neon); 
+            color: #000; 
+            font-weight: 800; 
+            font-family: 'Orbitron'; 
+            cursor: pointer; 
+            border: none; 
+            text-transform: uppercase;
+        }
+        button:hover { background: #00cc7e; transform: translateY(-2px); }
+        button:disabled { background: #1a1a1a; color: #444; cursor: not-allowed; transform: none; }
+        
+        .score { font-family: 'Orbitron'; font-size: 4rem; text-align: center; margin: 10px 0; color: var(--neon); }
+        
+        .prob-bar { 
+            display: flex; 
+            height: 28px; 
+            border-radius: 8px; 
+            overflow: hidden; 
+            margin: 20px 0; 
+            font-family: 'Orbitron'; 
+            font-size: 0.75rem; 
+            line-height: 28px; 
+            text-align: center; 
+        }
+        .p-h { background: var(--neon); color: #000; font-weight: bold; } 
+        .p-d { background: var(--draw); color: #000; font-weight: bold; } 
+        .p-a { background: var(--away); color: #000; font-weight: bold; }
+        
+        .form-section { display: flex; gap: 4px; margin-top: 8px; }
+        .dot { 
+            width: 22px; 
+            height: 22px; 
+            border-radius: 4px; 
+            font-size: 10px; 
+            line-height: 22px; 
+            text-align: center; 
+            font-weight: bold; 
+            color: #000; 
+        }
+        .W { background: var(--neon); } 
+        .D { background: var(--draw); } 
+        .L { background: var(--away); }
+        .question { background: #444; color: #fff; }
+
+        .gaffer-box { 
+            background: rgba(0,255,157,0.05); 
+            border-left: 4px solid var(--neon); 
+            padding: 15px; 
+            margin-top: 20px; 
+            font-style: italic; 
+            font-size: 0.9rem; 
+            line-height: 1.6; 
+            color: #ccd6f6;
+        }
+        .signature { 
+            font-family: 'Orbitron'; 
+            color: var(--neon); 
+            font-size: 0.7rem; 
+            text-align: right; 
+            margin-top: 15px; 
+            letter-spacing: 2px; 
+            font-weight: 700; 
+            border-top: 1px solid rgba(0,255,157,0.1); 
+            padding-top: 10px; 
+        }
+        .loader { 
+            border: 3px solid #222; 
+            border-top: 3px solid var(--neon); 
+            border-radius: 50%; 
+            width: 30px; 
+            height: 30px; 
+            margin: 20px auto; 
+            animation: spin 1s linear infinite; 
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
 <div class="container">
     <h1>THE GAFFER</h1>
+    
     <div class="card">
         <input type="date" id="date">
         <button onclick="getFixtures()">SCAN TACTICAL BOARD</button>
-        <select id="matches" onchange="toggleBtn()"><option value="">Select Match...</option></select>
+        <select id="matches" onchange="toggleBtn()">
+            <option value="">Select Match...</option>
+        </select>
         <button id="btn" onclick="predict()" disabled>GET VERDICT</button>
     </div>
+
     <div id="output"></div>
 </div>
+
 <script>
-const API = "https://football-api-9e4p.onrender.com";
-let fixtures = [];
-const toggleBtn = () => document.getElementById("btn").disabled = !document.getElementById("matches").value;
+    // 🔥 CONFIG: Replace with your actual Render URL
+    const API = "https://football-api-9e4p.onrender.com";
+    let fixturesData = [];
 
-async function getFixtures() {
-    const d = document.getElementById("date").value;
-    const s = document.getElementById("matches");
-    const out = document.getElementById("output");
-    if(!d) return;
-    s.innerHTML = "<option>Accessing Satellites...</option>";
-    out.innerHTML = "";
-    
-    try {
-        const res = await fetch(`${API}/fixtures?date=${d}`);
-        const data = await res.json();
+    const toggleBtn = () => {
+        const select = document.getElementById("matches");
+        document.getElementById("btn").disabled = !select.value;
+    };
 
-        if (data.status === "loading") {
-            s.innerHTML = "<option>Syncing...</option>";
-            out.innerHTML = `<div class="gaffer-box" style="text-align:center;"><b>SYSTEM SYNC IN PROGRESS</b><br>${data.message}<div class="loader"></div></div>`;
-            return;
+    async function getFixtures() {
+        const dateInput = document.getElementById("date").value;
+        const select = document.getElementById("matches");
+        const output = document.getElementById("output");
+        
+        if(!dateInput) return;
+        
+        select.innerHTML = "<option>Accessing Satellites...</option>";
+        output.innerHTML = "";
+        
+        try {
+            const res = await fetch(`${API}/fixtures?date=${dateInput}`);
+            const data = await res.json();
+
+            // 1. Handle Syncing/Loading State
+            if (data.status === "loading") {
+                select.innerHTML = "<option>System Syncing...</option>";
+                output.innerHTML = `
+                    <div class="gaffer-box" style="text-align:center;">
+                        <b>ENCRYPTED DATA STREAM DETECTED</b><br>
+                        ${data.message || "Establishing connection to football-data.org..."}
+                        <div class="loader"></div>
+                    </div>`;
+                return;
+            }
+
+            // 2. Handle No Games / Out of Range State
+            if (data.status === "no_games") {
+                select.innerHTML = "<option>No Games Today</option>";
+                output.innerHTML = `
+                    <div class="gaffer-box" style="text-align:center;">
+                        <b>RADAR CLEAR</b><br>
+                        ${data.message || "No tactical data available for this sector."}
+                    </div>`;
+                fixturesData = [];
+                return;
+            }
+
+            // 3. Handle Successful Fixture Array
+            fixturesData = data;
+            if (fixturesData.length === 0) {
+                select.innerHTML = "<option>No Games Today</option>";
+                return;
+            }
+
+            select.innerHTML = "<option value=''>Select Match</option>";
+            fixturesData.forEach((m, i) => {
+                select.innerHTML += `<option value="${i}">[${m.comp}] ${m.home} vs ${m.away}</option>`;
+            });
+
+        } catch (e) { 
+            console.error(e);
+            select.innerHTML = "<option>Connection Offline</option>"; 
         }
+    }
 
-        fixtures = data;
-        s.innerHTML = fixtures.length ? "<option value=''>Select Match</option>" : "<option>No Games Today</option>";
-        fixtures.forEach((m, i) => s.innerHTML += `<option value="${i}">[${m.comp}] ${m.home} vs ${m.away}</option>`);
-    } catch (e) { s.innerHTML = "<option>Offline</option>"; }
-}
+    function renderForm(str) {
+        if (!str || str === "???") return `<div class="form-section"><div class="dot question">?</div></div>`;
+        return `<div class="form-section">
+            ${str.split('').map(c => `<div class="dot ${c}">${c}</div>`).join('')}
+        </div>`;
+    }
 
-function renderForm(str) {
-    return `<div class="form-section">${str.split('').map(c => `<div class="dot ${c}">${c}</div>`).join('')}</div>`;
-}
+    async function predict() {
+        const index = document.getElementById("matches").value;
+        const output = document.getElementById("output");
+        
+        if (!fixturesData[index]) return;
 
-async function predict() {
-    const i = document.getElementById("matches").value;
-    const out = document.getElementById("output");
-    out.innerHTML = "<div class='loader'></div>";
-    const res = await fetch(`${API}/predict`, {
-        method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(fixtures[i])
-    });
-    const d = await res.json();
-    out.innerHTML = `
-    <div class="card">
-        <div style="display:flex;justify-content:space-between;">
-            <div style="width:45%"><b>${fixtures[i].home}</b><br><small>Rank: ${d.h_rank}</small>${renderForm(d.h_form)}</div>
-            <div style="width:45%;text-align:right;"><b>${fixtures[i].away}</b><br><small>Rank: ${d.a_rank}</small>${renderForm(d.a_form)}</div>
-        </div>
-        <div class="score">${d.score}</div>
-        <div class="prob-bar">
-            <div class="p-h" style="width:${d.probs.home}%">${d.probs.home}%</div>
-            <div class="p-d" style="width:${d.probs.draw}%">${d.probs.draw}%</div>
-            <div class="p-a" style="width:${d.probs.away}%">${d.probs.away}%</div>
-        </div>
-        <div class="gaffer-box"><b>REPORT:</b><br>${d.insight}<div class="signature">THE GAFFER</div></div>
-    </div>`;
-}
+        output.innerHTML = "<div class='loader'></div>";
+        
+        try {
+            const res = await fetch(`${API}/predict`, {
+                method: "POST", 
+                headers: {"Content-Type": "application/json"}, 
+                body: JSON.stringify(fixturesData[index])
+            });
+            const d = await res.json();
+
+            if (d.error) throw new Error(d.error);
+
+            output.innerHTML = `
+            <div class="card">
+                <div style="display:flex; justify-content:space-between; align-items: flex-start;">
+                    <div style="width:45%">
+                        <b style="color:var(--neon)">${fixturesData[index].home}</b><br>
+                        <small>Rank: ${d.h_rank}</small>
+                        ${renderForm(d.h_form)}
+                    </div>
+                    <div style="width:45%; text-align:right;">
+                        <b style="color:var(--away)">${fixturesData[index].away}</b><br>
+                        <small>Rank: ${d.a_rank}</small>
+                        ${renderForm(d.a_form)}
+                    </div>
+                </div>
+                
+                <div class="score">${d.score}</div>
+                
+                <div class="prob-bar">
+                    <div class="p-h" style="width:${d.probs.home}%">${d.probs.home}%</div>
+                    <div class="p-d" style="width:${d.probs.draw}%">${d.probs.draw}%</div>
+                    <div class="p-a" style="width:${d.probs.away}%">${d.probs.away}%</div>
+                </div>
+                
+                <div class="gaffer-box">
+                    <b>THE GAFFER'S VERDICT:</b><br>
+                    Analysis of ${fixturesData[index].league} form suggests a <b>${d.score}</b> outcome. 
+                    Calculated confidence: ${Math.max(d.probs.home, d.probs.draw, d.probs.away)}%.
+                    <div class="signature">TACTICAL INTEL UNIT</div>
+                </div>
+            </div>`;
+        } catch (e) {
+            output.innerHTML = `<div class="gaffer-box">ERROR: Intelligence fetch failed. Re-scan board.</div>`;
+        }
+    }
 </script>
 </body>
 </html>

@@ -22,6 +22,7 @@ COMPETITIONS = [
 
 print("[INIT] Background workers initiated at top-level import")
 
+
 # =========================================================
 # 🧠 CACHE
 # =========================================================
@@ -53,11 +54,12 @@ def preload_standings():
                 timeout=5
             )
 
-            # REQUIRED RATE LIMIT PROTECTION
             time.sleep(6)
 
         except Exception as e:
             print("[STANDINGS ERROR]", comp, e)
+
+    print("[BOOT] Standings preload complete")
 
 
 # =========================================================
@@ -148,7 +150,7 @@ def get_standings(code):
 
 
 # =========================================================
-# ⚡ FIXTURE ENGINE (TURBO MODE - SINGLE REQUEST)
+# ⚡ FIXTURE ENGINE (TURBO + DEBUG + ROBUST API HANDLING)
 # =========================================================
 def fetch_all_fixtures():
     global fixtures_store, last_refresh
@@ -156,8 +158,15 @@ def fetch_all_fixtures():
     print("[CACHE] Fetching fixtures (TURBO MODE)...")
 
     now = time.time()
-    today = time.strftime("%Y-%m-%d", time.gmtime(now))
-    next_week = time.strftime("%Y-%m-%d", time.gmtime(now + 7 * 86400))
+
+    # 🔥 FIXED RANGE: 1 day ago → 5 days ahead (6 days total)
+    start = now - 86400
+    end = now + (5 * 86400)
+
+    start_date = time.strftime("%Y-%m-%d", time.gmtime(start))
+    end_date = time.strftime("%Y-%m-%d", time.gmtime(end))
+
+    print(f"[DEBUG] Requesting range: {start_date} → {end_date}")
 
     new_store = {}
 
@@ -165,15 +174,24 @@ def fetch_all_fixtures():
         r = requests.get(
             f"{BASE_URL}/matches",
             headers=HEADERS,
-            params={"dateFrom": today, "dateTo": next_week},
-            timeout=15
+            params={"dateFrom": start_date, "dateTo": end_date},
+            timeout=20  # 🔥 INCREASED TIMEOUT
         )
 
+        # =====================================================
+        # 🔥 DEBUG API RESPONSE
+        # =====================================================
+        print(f"[DEBUG] API Status Code: {r.status_code}")
+
         if r.status_code != 200:
-            print("[FIXTURE ERROR] API failed")
+            print("[DEBUG] API Response Snippet:", r.text[:200])
+            print("[FIXTURE ERROR] API failed but continuing boot...")
             return
 
-        matches = r.json().get("matches", [])
+        data = r.json()
+        matches = data.get("matches", [])
+
+        print(f"[DEBUG] Total matches returned: {len(matches)}")
 
         for m in matches:
             home = m.get("homeTeam")
@@ -201,6 +219,7 @@ def fetch_all_fixtures():
                 "league": comp.get("name")
             })
 
+        # DEBUG OUTPUT PER DAY
         for date, games in new_store.items():
             print(f"DEBUG: Successfully fetched {len(games)} matches for {date}")
 
@@ -211,6 +230,7 @@ def fetch_all_fixtures():
 
     except Exception as e:
         print("[FIXTURE ENGINE ERROR]", e)
+        print("[BOOT SAFE MODE] Continuing startup...")
 
 
 # =========================================================
@@ -225,7 +245,6 @@ def fixtures():
 
     date = date.split("T")[0]
 
-    # frontend loading-safe structure
     if date not in fixtures_store:
         return jsonify({
             "status": "loading",
@@ -302,8 +321,17 @@ def predict():
 # =========================================================
 def boot_sequence():
     print("[BOOT] Boot sequence started...")
-    fetch_all_fixtures()
-    preload_standings()
+
+    try:
+        fetch_all_fixtures()
+    except Exception as e:
+        print("[BOOT ERROR] Fixtures failed:", e)
+
+    try:
+        preload_standings()
+    except Exception as e:
+        print("[BOOT ERROR] Standings failed:", e)
+
     print("[BOOT] Complete")
 
 
@@ -321,13 +349,13 @@ def start_background_tasks():
 
 
 # =========================================================
-# 🚀 AUTO START (IMPORTANT FOR RENDER + GUNICORN)
+# 🚀 AUTO START (IMPORTANT FOR GUNICORN)
 # =========================================================
 start_background_tasks()
 
 
 # =========================================================
-# 🚀 RUN SERVER
+# 🚀 RUN SERVER (RENDER SAFE)
 # =========================================================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))

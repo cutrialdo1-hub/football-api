@@ -22,7 +22,6 @@ COMPETITIONS = [
 
 print("[INIT] Background workers initiated at top-level import")
 
-
 # =========================================================
 # 🧠 CACHE
 # =========================================================
@@ -53,9 +52,7 @@ def preload_standings():
                 headers=HEADERS,
                 timeout=5
             )
-
             time.sleep(6)
-
         except Exception as e:
             print("[STANDINGS ERROR]", comp, e)
 
@@ -150,7 +147,7 @@ def get_standings(code):
 
 
 # =========================================================
-# ⚡ FIXTURE ENGINE (TURBO + DEBUG + ROBUST API HANDLING)
+# ⚡ FIXTURE ENGINE (SAFE TURBO MODE)
 # =========================================================
 def fetch_all_fixtures():
     global fixtures_store, last_refresh
@@ -159,7 +156,6 @@ def fetch_all_fixtures():
 
     now = time.time()
 
-    # 🔥 FIXED RANGE: 1 day ago → 5 days ahead (6 days total)
     start = now - 86400
     end = now + (5 * 86400)
 
@@ -175,23 +171,16 @@ def fetch_all_fixtures():
             f"{BASE_URL}/matches",
             headers=HEADERS,
             params={"dateFrom": start_date, "dateTo": end_date},
-            timeout=20  # 🔥 INCREASED TIMEOUT
+            timeout=20
         )
 
-        # =====================================================
-        # 🔥 DEBUG API RESPONSE
-        # =====================================================
         print(f"[DEBUG] API Status Code: {r.status_code}")
 
         if r.status_code != 200:
-            print("[DEBUG] API Response Snippet:", r.text[:200])
-            print("[FIXTURE ERROR] API failed but continuing boot...")
-            return
+            print(f"[DEBUG] API Response Snippet: {r.text[:200]}")
+            return False
 
-        data = r.json()
-        matches = data.get("matches", [])
-
-        print(f"[DEBUG] Total matches returned: {len(matches)}")
+        matches = r.json().get("matches", [])
 
         for m in matches:
             home = m.get("homeTeam")
@@ -219,22 +208,23 @@ def fetch_all_fixtures():
                 "league": comp.get("name")
             })
 
-        # DEBUG OUTPUT PER DAY
         for date, games in new_store.items():
             print(f"DEBUG: Successfully fetched {len(games)} matches for {date}")
 
-        fixtures_store = new_store
+        fixtures_store.update(new_store)
         last_refresh = time.time()
 
         print(f"[CACHE] Fixtures loaded: {len(fixtures_store)} days")
 
+        return True
+
     except Exception as e:
         print("[FIXTURE ENGINE ERROR]", e)
-        print("[BOOT SAFE MODE] Continuing startup...")
+        return False
 
 
 # =========================================================
-# ⚽ FIXTURES ROUTE (FRONTEND SAFE)
+# ⚽ FIXTURES ROUTE (ON-DEMAND FIX)
 # =========================================================
 @app.route("/fixtures")
 def fixtures():
@@ -244,6 +234,19 @@ def fixtures():
         return jsonify([])
 
     date = date.split("T")[0]
+
+    # 🔥 ON-DEMAND FETCH (CRITICAL FIX)
+    if not fixtures_store:
+        print(f"[ON-DEMAND] Store empty. Triggering API fetch for {date}...")
+
+        success = fetch_all_fixtures()
+
+        if not success:
+            return jsonify({
+                "status": "loading",
+                "data": [],
+                "message": "Data is still syncing, please refresh in 30 seconds"
+            })
 
     if date not in fixtures_store:
         return jsonify({
@@ -299,8 +302,6 @@ def predict():
 
     vibe = "A high-intensity clash for position." if diff <= 3 else "A David vs Goliath scenario."
 
-    insight = f"{vibe} I’m going with {predicted_score}."
-
     return jsonify({
         "score": predicted_score,
         "probs": {
@@ -312,26 +313,17 @@ def predict():
         "a_rank": a_team["rank"],
         "h_form": h_form,
         "a_form": a_form,
-        "insight": insight
+        "insight": f"{vibe} I’m going with {predicted_score}."
     })
 
 
 # =========================================================
-# 🚀 STARTUP (GUNICORN SAFE)
+# 🚀 BACKGROUND TASKS (BACKUP SYSTEM)
 # =========================================================
 def boot_sequence():
     print("[BOOT] Boot sequence started...")
-
-    try:
-        fetch_all_fixtures()
-    except Exception as e:
-        print("[BOOT ERROR] Fixtures failed:", e)
-
-    try:
-        preload_standings()
-    except Exception as e:
-        print("[BOOT ERROR] Standings failed:", e)
-
+    fetch_all_fixtures()
+    preload_standings()
     print("[BOOT] Complete")
 
 
@@ -355,7 +347,7 @@ start_background_tasks()
 
 
 # =========================================================
-# 🚀 RUN SERVER (RENDER SAFE)
+# 🚀 RUN SERVER
 # =========================================================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))

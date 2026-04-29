@@ -4,172 +4,433 @@ import time
 import json
 import requests
 import threading
+import netrc  # prevent import deadlock in some environments
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
+# =========================================================
+# 🚀 APP INIT & ENV CHECK
+# =========================================================
 app = Flask(__name__)
 CORS(app)
 
 API_KEY = os.getenv("FOOTBALL_API_KEY")
 if not API_KEY:
-    raise RuntimeError("CRITICAL: FOOTBALL_API_KEY not set!")
+    raise RuntimeError("CRITICAL: FOOTBALL_API_KEY environment variable not set!")
 
 BASE_URL = "https://api.football-data.org/v4"
-HEADERS = {"X-Auth-Token": API_KEY, "User-Agent": "Mozilla/5.0 (GafferTacticalBot/1.0)"}
-COMPETITIONS = ["CL","PL","PD","BL1","SA","FL1","ELC","DED","PPL","BSA"]
+HEADERS = {"X-Auth-Token": API_KEY}
 
-CACHE_FILE = "cache.json"
-CACHE_MAX_AGE = 3600  
-STANDINGS_EXPIRY = 86400 
-FORM_EXPIRY = 86400 
+COMPETITIONS = ["CL", "PL", "PD", "BL1", "SA", "FL1", "ELC", "DED", "PPL", "BSA"]
 
-fetch_lock = threading.Lock()
-standings_cache = {}
-form_cache = {}
-fixtures_store = {}
+# League-specific average goals (used for atk/def normalisation)
+# Source: historical averages per competition
+LEAGUE_AVG_GOALS = {
+    "BL1": 1.55,  # Bundesliga — high scoring
+    "PL":  1.35,  # Premier League
+    "PD":  1.25,  # La Liga — lower scoring
+    "SA":  1.25,  # Serie A
+    "FL1": 1.20,  # Ligue 1
+    "CL":  1.30,  # Champions League
+    "ELC": 1.40,  # Championship
+    "DED": 1.30,  # Eredivisie
+    "PPL": 1.25,  # Primeira Liga
+    "BSA": 1.35,  # Brasileirao
+}
+DEFAULT_LEAGUE_AVG = 1.30
 
-def load_cache_from_disk():
+# =========================================================
+# 🔒 LOCKS & CACHE
+# =========================================================
+fetch_lock    = threading.Lock()
+standings_cache: dict = {}
+form_cache:     dict = {}
+fixtures_store: dict = {}
+
+CACHE_FILE        = "cache.json"
+CACHE_MAX_AGE     = 3600   # 1 hour for fixtures
+STANDINGS_EXPIRY  = 86400  # 24 hours
+FORM_EXPIRY       = 3600   # 1 hour
+
+# =========================================================
+# 💾 DISK CACHE
+# =========================================================
+def load_cache_from_disk() -> bool:
     global fixtures_store
-    if not os.path.exists(CACHE_FILE): return False
+    if not os.path.exists(CACHE_FILE):
+        return False
     try:
         with open(CACHE_FILE, "r") as f:
             data = json.load(f)
-            fixtures_store = data.get("fixtures", {})
-            return True
-    except: return False
+        age = time.time() - data.get("timestamp", 0)
+        if age > CACHE_MAX_AGE * 6:          # discard if very stale (>6h)
+            print(f"[DISK] Cache too old ({age/3600:.1f}h), ignoring")
+            return False
+        fixtures_store = data.get("fixtures", {})
+        print(f"[DISK] Loaded cache ({age/60:.0f}m old). Dates: {list(fixtures_store.keys())}")
+        return bool(fixtures_store)
+    except Exception as e:
+        print(f"[DISK] Load error: {e}")
+        return False
 
-def save_cache_to_disk(fixtures):
+def save_cache_to_disk(fixtures: dict):
     try:
         with open(CACHE_FILE, "w") as f:
             json.dump({"timestamp": time.time(), "fixtures": fixtures}, f)
-    except: pass
+        print("[DISK] Cache saved.")
+    except Exception as e:
+        print(f"[DISK] Save error: {e}")
 
-def get_cache_age():
-    if not os.path.exists(CACHE_FILE): return float("inf")
+def get_cache_age() -> float:
+    if not os.path.exists(CACHE_FILE):
+        return float("inf")
     try:
         with open(CACHE_FILE, "r") as f:
             return time.time() - json.load(f).get("timestamp", 0)
-    except: return float("inf")
+    except:
+        return float("inf")
 
-def poisson(k, lam):
-    lam = max(min(float(lam or 0.1), 4.0), 0.1)
+# =========================================================
+# 📊 POISSON MATH
+# =========================================================
+def poisson(k: int, lam: float) -> float:
+    """Poisson PMF. lam is clamped to prevent extreme predictions."""
+    lam = max(min(float(lam or DEFAULT_LEAGUE_AVG), 3.5), 0.3)
     try:
         return (math.pow(lam, k) * math.exp(-lam)) / math.factorial(k)
-    except: return 0.0
+    except (OverflowError, ValueError):
+        return 0.0
 
-def get_standings(code):
+# =========================================================
+# 📈 STANDINGS ENGINE
+# =========================================================
+def get_standings(code: str) -> dict:
+    """Fetch league standings. Returns dict keyed by team_id string."""
     now = time.time()
-    if code in standings_cache and now - standings_cache[code]["t"] < STANDINGS_EXPIRY:
-        return standings_cache[code]["d"]
+    cached = standings_cache.get(code)
+    if cached and now - cached["t"] < STANDINGS_EXPIRY:
+        return cached["d"]
+
     try:
-        r = requests.get(f"{BASE_URL}/competitions/{code}/standings", headers=HEADERS, timeout=10)
-        if r.status_code == 429: return standings_cache.get(code, {}).get("d", {})
-        data = r.json()
-        table = next(s for s in data["standings"] if s["type"] == "TOTAL")["table"]
-        out = {str(t["team"]["id"]): {"rank": t["position"], "gf": t["goalsFor"] / max(t["playedGames"], 1), "ga": t["goalsAgainst"] / max(t["playedGames"], 1)} for t in table}
+        r = requests.get(
+            f"{BASE_URL}/competitions/{code}/standings",
+            headers=HEADERS, timeout=10
+        )
+        if r.status_code == 429:
+            print(f"[RATE LIMIT] standings {code} — using stale cache")
+            return cached["d"] if cached else {}
+        if r.status_code != 200:
+            print(f"[STANDINGS] {code} returned {r.status_code}")
+            return cached["d"] if cached else {}
+
+        data  = r.json()
+        table = next(
+            s for s in data["standings"] if s["type"] == "TOTAL"
+        )["table"]
+
+        out = {
+            str(t["team"]["id"]): {
+                "rank": t["position"],
+                "played": max(t["playedGames"], 1),
+                "gf":  t["goalsFor"]      / max(t["playedGames"], 1),
+                "ga":  t["goalsAgainst"]  / max(t["playedGames"], 1),
+                "pts": t["points"],
+            }
+            for t in table
+        }
         standings_cache[code] = {"t": now, "d": out}
         return out
-    except: return standings_cache.get(code, {}).get("d", {})
 
-def get_detailed_form(team_id):
+    except Exception as e:
+        print(f"[STANDINGS ERROR] {code}: {e}")
+        return cached["d"] if cached else {}
+
+# =========================================================
+# ⚽ FORM ENGINE  (weighted, split atk/def)
+# =========================================================
+# Recent-game weights: most recent match gets highest weight.
+FORM_WEIGHTS = [1.0, 0.85, 0.70, 0.55, 0.40]   # index 0 = most recent
+
+def get_detailed_form(team_id: int, league_avg: float = DEFAULT_LEAGUE_AVG):
+    """
+    Returns (atk_mult, def_mult, form_string).
+    atk_mult  > 1.0 → team scores more than league average
+    def_mult  > 1.0 → team concedes less than league average (inverted)
+    Both clamped to [0.82, 1.18] to prevent outlier λ values.
+    """
     now = time.time()
-    if team_id in form_cache and now - form_cache[team_id]["t"] < FORM_EXPIRY:
-        c = form_cache[team_id]
-        return c["atk"], c["def"], c["s"]
+    cached = form_cache.get(team_id)
+    if cached and now - cached["t"] < FORM_EXPIRY:
+        return cached["atk"], cached["def"], cached["s"]
+
     try:
-        r = requests.get(f"{BASE_URL}/teams/{team_id}/matches?status=FINISHED&limit=5", headers=HEADERS, timeout=10)
+        r = requests.get(
+            f"{BASE_URL}/teams/{team_id}/matches?status=FINISHED&limit=5",
+            headers=HEADERS, timeout=10
+        )
         if r.status_code == 429:
-            cached = form_cache.get(team_id)
-            return (cached["atk"], cached["def"], cached["s"]) if cached else (1.0, 1.0, "???")
+            print(f"[RATE LIMIT] form team {team_id} — using stale cache")
+            if cached:
+                return cached["atk"], cached["def"], cached["s"]
+            return 1.0, 1.0, "???"
+        if r.status_code != 200:
+            return 1.0, 1.0, "???"
+
         matches = r.json().get("matches", [])
-        history, gf_list, ga_list = [], [], []
-        for m in matches:
+        history  = []
+        w_gf = w_ga = w_total = 0.0
+
+        for idx, m in enumerate(matches):
             score = m["score"]["fullTime"]
-            if score["home"] is None: continue
-            hs, aw, is_home = score["home"], score["away"], m["homeTeam"]["id"] == team_id
-            gf, ga = (hs, aw) if is_home else (aw, hs)
+            if score["home"] is None:
+                continue
+            hs, aw   = score["home"], score["away"]
+            is_home  = m["homeTeam"]["id"] == team_id
+            gf, ga   = (hs, aw) if is_home else (aw, hs)
+
+            w = FORM_WEIGHTS[idx] if idx < len(FORM_WEIGHTS) else 0.30
+            w_gf    += gf * w
+            w_ga    += ga * w
+            w_total += w
+
             history.append("W" if gf > ga else ("D" if gf == ga else "L"))
-        n = len(history)
-        if n == 0: return 1.0, 1.0, "???"
-        win_ratio = history.count("W") / n
-        # TIGHT CLAMPING: Prevents form from creating outliers
-        atk_mult = max(min(0.85 + (win_ratio * 0.30), 1.15), 0.85)
-        def_mult = max(min(0.85 + (win_ratio * 0.30), 1.15), 0.85)
-        form_cache[team_id] = {"t": now, "atk": atk_mult, "def": def_mult, "s": "".join(history)}
-        return atk_mult, def_mult, "".join(history)
-    except:
-        cached = form_cache.get(team_id)
-        return (cached["atk"], cached["def"], cached["s"]) if cached else (1.0, 1.0, "???")
 
-def fetch_all_fixtures():
+        if w_total == 0 or not history:
+            return 1.0, 1.0, "???"
+
+        avg_gf = w_gf / w_total   # weighted goals scored per game
+        avg_ga = w_ga / w_total   # weighted goals conceded per game
+
+        # Attack multiplier: how does this team score vs league average?
+        atk = avg_gf / league_avg if league_avg > 0 else 1.0
+        # Defence multiplier: inverted — conceding less → multiplier > 1
+        def_ = league_avg / avg_ga if avg_ga > 0 else 1.0
+
+        # Clamp both to prevent extreme λ tunnelling
+        atk  = max(min(atk,  1.18), 0.82)
+        def_ = max(min(def_, 1.18), 0.82)
+
+        form_str = "".join(history)
+        form_cache[team_id] = {"t": now, "atk": atk, "def": def_, "s": form_str}
+        return atk, def_, form_str
+
+    except Exception as e:
+        print(f"[FORM ERROR] team {team_id}: {e}")
+        if cached:
+            return cached["atk"], cached["def"], cached["s"]
+        return 1.0, 1.0, "???"
+
+# =========================================================
+# ⚡ FIXTURE ENGINE (atomic swap + disk persistence)
+# =========================================================
+def fetch_all_fixtures() -> bool:
     global fixtures_store
-    if get_cache_age() < CACHE_MAX_AGE and fixtures_store: return True
-    if not fetch_lock.acquire(blocking=False): return False
-    try:
-        now = time.time()
-        start = time.strftime("%Y-%m-%d", time.gmtime(now - 86400))
-        end = time.strftime("%Y-%m-%d", time.gmtime(now + (5 * 86400)))
-        r = requests.get(f"{BASE_URL}/matches", headers=HEADERS, params={"dateFrom": start, "dateTo": end}, timeout=25)
-        if r.status_code != 200: return False
-        temp = {}
-        for m in r.json().get("matches", []):
-            c = m.get("competition", {}).get("code")
-            if c in COMPETITIONS:
-                date = m.get("utcDate", "")[:10]
-                h_t, a_t = m.get("homeTeam", {}), m.get("awayTeam", {})
-                temp.setdefault(date, []).append({"home": h_t.get("name"), "home_id": h_t.get("id"), "away": a_t.get("name"), "away_id": a_t.get("id"), "comp": c})
-        fixtures_store = temp
-        save_cache_to_disk(temp)
-        return True
-    except: return False
-    finally: fetch_lock.release()
 
+    # Skip fetch if in-memory store AND disk cache are both fresh
+    if fixtures_store and get_cache_age() < CACHE_MAX_AGE:
+        print("[CACHE] Fixtures fresh, skipping fetch")
+        return True
+
+    if not fetch_lock.acquire(blocking=False):
+        print("[CACHE] Fetch already in progress, skipping")
+        return bool(fixtures_store)
+
+    try:
+        print("[CACHE] Fetching fixtures from API...")
+        now        = time.time()
+        start_date = time.strftime("%Y-%m-%d", time.gmtime(now - 86400))
+        end_date   = time.strftime("%Y-%m-%d", time.gmtime(now + 5 * 86400))
+
+        r = requests.get(
+            f"{BASE_URL}/matches",
+            headers=HEADERS,
+            params={"dateFrom": start_date, "dateTo": end_date},
+            timeout=25
+        )
+
+        if r.status_code == 429:
+            print("[RATE LIMIT] fixtures — keeping existing store")
+            return bool(fixtures_store)
+        if r.status_code != 200:
+            print(f"[FIXTURE] API returned {r.status_code}: {r.text[:120]}")
+            return False
+
+        temp: dict = {}
+        for m in r.json().get("matches", []):
+            comp      = m.get("competition", {})
+            comp_code = comp.get("code")
+            if comp_code not in COMPETITIONS:
+                continue
+
+            date  = m.get("utcDate", "")[:10]
+            h_t   = m.get("homeTeam", {})
+            a_t   = m.get("awayTeam", {})
+
+            if not h_t.get("id") or not a_t.get("id"):
+                continue
+
+            temp.setdefault(date, []).append({
+                "home":    h_t.get("name", "Unknown"),
+                "home_id": h_t["id"],
+                "away":    a_t.get("name", "Unknown"),
+                "away_id": a_t["id"],
+                "comp":    comp_code,
+                "league":  comp.get("name", comp_code),
+            })
+
+        fixtures_store = temp   # atomic swap
+        save_cache_to_disk(temp)
+        print(f"[CACHE] Loaded {sum(len(v) for v in temp.values())} matches across {len(temp)} days")
+        return True
+
+    except Exception as e:
+        print(f"[FIXTURE ERROR] {e}")
+        return False
+    finally:
+        fetch_lock.release()
+
+# =========================================================
+# ⚽ ROUTES
+# =========================================================
 @app.route("/fixtures")
 def fixtures():
-    d = request.args.get("date", "").split("T")[0]
-    if not d: return jsonify([])
-    if not fixtures_store: load_cache_from_disk()
-    if not fixtures_store: fetch_all_fixtures()
-    res = fixtures_store.get(d)
-    return jsonify(res) if res is not None else jsonify({"status": "no_games", "message": "No tactical data today."})
+    date = request.args.get("date", "").split("T")[0]
+    if not date:
+        return jsonify([])
+
+    # If memory store is empty, try disk then API
+    if not fixtures_store:
+        loaded = load_cache_from_disk()
+        if not loaded:
+            fetch_all_fixtures()
+        if not fixtures_store:
+            return jsonify({"status": "loading", "message": "Server is syncing match data..."})
+
+    result = fixtures_store.get(date)
+    if result is None:
+        return jsonify({"status": "no_games", "data": [], "message": "No matches scheduled for this date."})
+
+    return jsonify(result)
+
 
 @app.route("/predict", methods=["POST"])
 def predict():
+    req = request.json
+    if not req or "comp" not in req or "home_id" not in req or "away_id" not in req:
+        return jsonify({"error": "Invalid request body"}), 400
+
     try:
-        req = request.json
-        stats = get_standings(req["comp"])
-        h_atk, h_def, h_f = get_detailed_form(req["home_id"])
-        a_atk, a_def, a_f = get_detailed_form(req["away_id"])
-        h_t = stats.get(str(req["home_id"]), {"gf":1.2, "ga":1.2, "rank":"N/A"})
-        a_t = stats.get(str(req["away_id"]), {"gf":1.0, "ga":1.3, "rank":"N/A"})
+        comp  = req["comp"]
+        h_id  = req["home_id"]
+        a_id  = req["away_id"]
 
-        # --- REALITY TUNNEL FIX ---
-        h_l = max(min(h_t["gf"] * a_t["ga"] * h_atk * (1.0 / a_def) * 1.15, 2.8), 0.4)
-        a_l = max(min(a_t["gf"] * h_t["ga"] * a_atk * (1.0 / h_def), 2.8), 0.4)
+        league_avg = LEAGUE_AVG_GOALS.get(comp, DEFAULT_LEAGUE_AVG)
 
-        p_h = p_d = p_a = 0
-        p_btts_y = 0
-        max_p, best_s = -1, "1-1"
-        for i in range(6):
-            for j in range(6):
-                p = poisson(i, h_l) * poisson(j, a_l)
-                if p > max_p: max_p, best_s = p, f"{i}-{j}"
-                if i > j: p_h += p
+        # --- Standings ---
+        stats  = get_standings(comp)
+        h_s    = stats.get(str(h_id), {"gf": 1.2, "ga": 1.2, "rank": "N/A"})
+        a_s    = stats.get(str(a_id), {"gf": 1.0, "ga": 1.3, "rank": "N/A"})
+
+        # --- Form (weighted, split atk/def) ---
+        h_atk, h_def, h_form = get_detailed_form(h_id, league_avg)
+        a_atk, a_def, a_form = get_detailed_form(a_id, league_avg)
+
+        # --- Lambda Calculation ---
+        # Home λ: team's attack rate × opponent's defensive weakness × home advantage
+        # Opponent defensive weakness = a_s["ga"] / league_avg (how much more/less they concede)
+        # Form multipliers applied independently for attack and defence
+        h_raw = h_s["gf"] * (a_s["ga"] / league_avg) * h_atk * (1.0 / a_def) * 1.10
+        a_raw = a_s["gf"] * (h_s["ga"] / league_avg) * a_atk * (1.0 / h_def)
+
+        # Clamp λ to realistic range; log when extreme values hit the ceiling
+        h_lam = max(min(h_raw, 3.2), 0.35)
+        a_lam = max(min(a_raw, 3.2), 0.35)
+        if h_raw != h_lam: print(f"[CLAMP] h_lam {h_raw:.3f}→{h_lam}")
+        if a_raw != a_lam: print(f"[CLAMP] a_lam {a_raw:.3f}→{a_lam}")
+
+        # --- Score Matrix (0–6 goals) ---
+        p_h = p_d = p_a = 0.0
+        p_btts      = 0.0
+        p_over25    = 0.0
+        max_p, best = -1.0, "1-1"
+
+        for i in range(7):
+            for j in range(7):
+                p = poisson(i, h_lam) * poisson(j, a_lam)
+                if p > max_p:
+                    max_p, best = p, f"{i}-{j}"
+                if   i > j: p_h += p
                 elif i == j: p_d += p
-                else: p_a += p
-                if i > 0 and j > 0: p_btts_y += p
-        
-        tot = p_h + p_d + p_a
-        def to_o(p): return round(1/p, 2) if p > 0.05 else 18.0
+                else:        p_a += p
+                if i > 0 and j > 0:  p_btts   += p
+                if i + j > 2:        p_over25  += p
+
+        # --- Normalise 1X2 to 100% ---
+        tot   = p_h + p_d + p_a
+        h_pct = round((p_h / tot) * 100)
+        d_pct = round((p_d / tot) * 100)
+        a_pct = 100 - h_pct - d_pct  # guarantees sum = 100
+
+        # --- Fair Decimal Odds ---
+        def fair_odds(p: float) -> float:
+            return round(1 / p, 2) if p > 0.04 else 25.0
 
         return jsonify({
-            "score": best_s, 
-            "probs": {"home": round((p_h/tot)*100), "draw": round((p_d/tot)*100), "away": round((p_a/tot)*100)},
-            "market": {"home": to_o(p_h/tot), "draw": to_o(p_d/tot), "away": to_o(p_a/tot), "btts": to_o(p_btts_y)},
-            "h_rank": h_t["rank"], "a_rank": a_t["rank"], "h_form": h_f, "a_form": a_f
+            "score":   best,
+            "probs":   {"home": h_pct, "draw": d_pct, "away": a_pct},
+            "market":  {
+                "home":    fair_odds(p_h / tot),
+                "draw":    fair_odds(p_d / tot),
+                "away":    fair_odds(p_a / tot),
+                "btts":    fair_odds(p_btts),
+                "over25":  fair_odds(p_over25),
+            },
+            "h_rank":  h_s.get("rank", "N/A"),
+            "a_rank":  a_s.get("rank", "N/A"),
+            "h_form":  h_form,
+            "a_form":  a_form,
+            "h_lam":   round(h_lam, 3),
+            "a_lam":   round(a_lam, 3),
         })
-    except Exception as e: return jsonify({"error": str(e)}), 500
+
+    except Exception as e:
+        print(f"[PREDICT ERROR] {e}")
+        return jsonify({"error": "Prediction engine failed", "detail": str(e)}), 500
+
+
+# =========================================================
+# 🚀 BACKGROUND SCHEDULER
+# =========================================================
+def preload_standings():
+    print("[BOOT] Preloading standings cache...")
+    for comp in COMPETITIONS:
+        get_standings(comp)
+        time.sleep(7)   # stay under 10 req/min rate limit
+    print("[BOOT] Standings preload complete")
+
+def run_scheduler():
+    """Boot fetch, then refresh every hour."""
+    fetch_all_fixtures()
+    # Preload standings in a separate thread so fixtures are immediately available
+    threading.Thread(target=preload_standings, daemon=True).start()
+    while True:
+        time.sleep(3600)
+        print("[SCHEDULER] Hourly refresh...")
+        fetch_all_fixtures()
+        preload_standings()
+
+# Gunicorn-safe single-start guard
+_started = False
+def start_once():
+    global _started
+    if not _started:
+        _started = True
+        print("[INIT] Starting background scheduler...")
+        threading.Thread(target=run_scheduler, daemon=True).start()
+
+# Load disk cache immediately so first requests are served even before API responds
+load_cache_from_disk()
+start_once()
 
 if __name__ == "__main__":
-    load_cache_from_disk()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))

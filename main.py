@@ -26,9 +26,8 @@ def poisson(k, lam):
     lam = max(min(lam, 4.0), 0.1)
     return (math.pow(lam, k) * math.exp(-lam)) / math.factorial(k)
 
-# ---------------- PRELOAD CACHE (INSTANT MODE CORE) ----------------
+# ---------------- PRELOAD CACHE ----------------
 def preload_standings():
-    """Warm cache at startup so predictions are instant"""
     for comp in COMPETITIONS:
         try:
             requests.get(
@@ -39,7 +38,7 @@ def preload_standings():
         except:
             pass
 
-# ---------------- FAST FORM (CACHED) ----------------
+# ---------------- FORM (CACHED) ----------------
 def get_detailed_form(team_id):
     now = time.time()
 
@@ -89,7 +88,7 @@ def get_detailed_form(team_id):
     except:
         return 1.0, "???"
 
-# ---------------- STANDINGS (FAST CACHE) ----------------
+# ---------------- STANDINGS ----------------
 def get_standings(code):
     now = time.time()
 
@@ -124,7 +123,7 @@ def get_standings(code):
     except:
         return {}
 
-# ---------------- 🚀 INSTANT FIXTURES MODE ----------------
+# ---------------- 🚀 FIXED FIXTURES (TRUE INSTANT + COMPLETE) ----------------
 @app.route("/fixtures")
 def fixtures():
     date = request.args.get("date")
@@ -133,59 +132,50 @@ def fixtures():
 
     now = time.time()
 
-    # 🔥 INSTANT RETURN (NO API CALL IF CACHED)
-    if date in fixtures_cache:
+    # cache per date (correct key)
+    if date in fixtures_cache and now - fixtures_cache[date]["t"] < 300:
         return jsonify(fixtures_cache[date]["d"])
 
     try:
+        r = requests.get(
+            f"{BASE_URL}/matches",
+            headers=HEADERS,
+            params={
+                "dateFrom": date,
+                "dateTo": date,
+                "competitions": ",".join(COMPETITIONS)
+            },
+            timeout=10
+        )
+
+        if r.status_code != 200:
+            return jsonify([])
+
+        matches = r.json().get("matches", [])
+
         all_matches = []
 
-        # 🔥 BATCH REQUEST OPTIMIZATION (FASTER THAN BEFORE)
-        for comp in COMPETITIONS:
-            try:
-                r = requests.get(
-                    f"{BASE_URL}/competitions/{comp}/matches",
-                    headers=HEADERS,
-                    params={
-                        "dateFrom": date,
-                        "dateTo": date
-                    },
-                    timeout=5
-                )
-
-                if r.status_code != 200:
-                    continue
-
-                matches = r.json().get("matches", [])
-
-                for m in matches:
-                    if not m.get("homeTeam") or not m.get("awayTeam"):
-                        continue
-
-                    all_matches.append({
-                        "home": m["homeTeam"]["name"],
-                        "home_id": m["homeTeam"]["id"],
-                        "away": m["awayTeam"]["name"],
-                        "away_id": m["awayTeam"]["id"],
-                        "comp": comp,
-                        "league": m["competition"]["name"]
-                    })
-
-            except:
+        for m in matches:
+            if not m.get("homeTeam") or not m.get("awayTeam"):
                 continue
 
-        # cache result instantly
-        fixtures_cache[date] = {
-            "t": now,
-            "d": all_matches
-        }
+            all_matches.append({
+                "home": m["homeTeam"]["name"],
+                "home_id": m["homeTeam"]["id"],
+                "away": m["awayTeam"]["name"],
+                "away_id": m["awayTeam"]["id"],
+                "comp": m["competition"]["code"],
+                "league": m["competition"]["name"]
+            })
+
+        fixtures_cache[date] = {"t": now, "d": all_matches}
 
         return jsonify(all_matches)
 
     except:
         return jsonify([])
 
-# ---------------- PREDICTION (UNCHANGED MODEL) ----------------
+# ---------------- PREDICTION ----------------
 @app.route("/predict", methods=["POST"])
 def predict():
     data = request.json
@@ -248,7 +238,6 @@ def predict():
         "insight": insight
     })
 
-# ---------------- STARTUP ----------------
 if __name__ == "__main__":
-    preload_standings()   # 🚀 INSTANT MODE ACTIVATED
+    preload_standings()
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))

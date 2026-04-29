@@ -30,7 +30,9 @@ def poisson(k, lam):
     return (math.pow(lam, k) * math.exp(-lam)) / math.factorial(k)
 
 
-# ---------------- RATE SAFE PRELOAD ----------------
+# =========================================================
+# 📊 RATE SAFE PRELOAD (STANDINGS)
+# =========================================================
 def preload_standings():
     print("[BOOT] Preloading standings...")
 
@@ -45,11 +47,13 @@ def preload_standings():
             # 🔥 RATE LIMIT SAFETY (10 req/min max)
             time.sleep(6)
 
-        except:
-            pass
+        except Exception as e:
+            print("[STANDINGS ERROR]", comp, e)
 
 
-# ---------------- FORM ----------------
+# =========================================================
+# ⚽ FORM DATA
+# =========================================================
 def get_detailed_form(team_id):
     now = time.time()
 
@@ -100,7 +104,9 @@ def get_detailed_form(team_id):
         return 1.0, "???"
 
 
-# ---------------- STANDINGS ----------------
+# =========================================================
+# 📈 STANDINGS
+# =========================================================
 def get_standings(code):
     now = time.time()
 
@@ -137,7 +143,7 @@ def get_standings(code):
 
 
 # =========================================================
-# 🔥 FIXTURE ENGINE (RATE SAFE + 6s DELAY ADDED)
+# ⚽ FIXTURE ENGINE (RATE SAFE + DEBUG + SMART SYNC)
 # =========================================================
 def fetch_all_fixtures():
     global fixtures_store, last_refresh
@@ -150,7 +156,7 @@ def fetch_all_fixtures():
     for i in range(0, 7):
         date = time.strftime("%Y-%m-%d", time.gmtime(now + i * 86400))
 
-        # 🔥 FIX 1: RATE LIMIT SAFETY (GLOBAL FIX FOR LOOP)
+        # 🔥 RATE LIMIT SAFETY
         time.sleep(6)
 
         day_matches = []
@@ -178,7 +184,7 @@ def fetch_all_fixtures():
 
                 comp_code = comp.get("code")
 
-                # IMPORTANT FILTER (keeps model stable)
+                # FILTER ONLY SUPPORTED LEAGUES
                 if comp_code not in COMPETITIONS:
                     continue
 
@@ -191,10 +197,15 @@ def fetch_all_fixtures():
                     "league": comp.get("name")
                 })
 
-        except:
-            pass
+            # 🔥 DEBUG LOGGING
+            print(f"DEBUG: Successfully fetched {len(day_matches)} matches for {date}")
 
-        new_store[date] = day_matches
+        except Exception as e:
+            print("[FIXTURE ERROR]", date, e)
+
+        # ❗ ONLY STORE NON-EMPTY DATA
+        if day_matches:
+            new_store[date] = day_matches
 
     fixtures_store = new_store
     last_refresh = time.time()
@@ -202,20 +213,29 @@ def fetch_all_fixtures():
     print(f"[CACHE] Fixtures loaded: {len(fixtures_store)} days")
 
 
-# ---------------- FIXTURES ENDPOINT ----------------
+# =========================================================
+# ⚽ FIXTURES ENDPOINT (LOADING SAFE)
+# =========================================================
 @app.route("/fixtures")
 def fixtures():
     date = request.args.get("date")
     if not date:
         return jsonify([])
 
-    # normalize ISO input
     date = date.split("T")[0]
+
+    if date not in fixtures_store:
+        return jsonify({
+            "status": "loading",
+            "message": "Data is still syncing, please refresh in 30 seconds"
+        })
 
     return jsonify(fixtures_store.get(date, []))
 
 
-# ---------------- PREDICTION (SAFE) ----------------
+# =========================================================
+# 🎯 PREDICTION (CRASH SAFE)
+# =========================================================
 @app.route("/predict", methods=["POST"])
 def predict():
     data = request.json
@@ -248,7 +268,7 @@ def predict():
             else:
                 prob_away += p
 
-    # SAFE RANK LOGIC (NO CRASHES)
+    # SAFE RANK LOGIC
     try:
         h_rank = int(h_team["rank"]) if str(h_team["rank"]).isdigit() else None
         a_rank = int(a_team["rank"]) if str(a_team["rank"]).isdigit() else None
@@ -292,11 +312,10 @@ def predict():
 
 
 # =========================================================
-# 🚀 STARTUP (NON-BLOCKING THREAD ARCHITECTURE)
+# 🚀 STARTUP (THREAD SAFE)
 # =========================================================
-
 def boot_sequence():
-    print("[BOOT] Starting boot sequence...")
+    print("[BOOT] Boot sequence started...")
     fetch_all_fixtures()
     preload_standings()
     print("[BOOT] Complete")
@@ -312,15 +331,11 @@ def scheduler():
 
 if __name__ == "__main__":
 
-    # 🚀 instant boot (non-blocking)
-    boot_thread = threading.Thread(target=boot_sequence)
-    boot_thread.daemon = True
-    boot_thread.start()
+    # background boot
+    threading.Thread(target=boot_sequence, daemon=True).start()
 
-    # 🚀 background scheduler
-    sched_thread = threading.Thread(target=scheduler)
-    sched_thread.daemon = True
-    sched_thread.start()
+    # scheduler thread
+    threading.Thread(target=scheduler, daemon=True).start()
 
-    # 🚀 Flask server
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+    # run server (Render compatible)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))

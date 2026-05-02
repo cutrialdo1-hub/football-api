@@ -2,6 +2,7 @@ import math
 import os
 import time
 import json
+import random
 import requests
 import threading
 import netrc  # prevent import deadlock in some environments
@@ -490,6 +491,232 @@ def predict():
     except Exception as e:
         print(f"[PREDICT ERROR] {e}")
         return jsonify({"error": "Prediction engine failed", "detail": str(e)}), 500
+
+
+
+# =========================================================
+# 🔍 SCAN — rank all fixtures across a date range by confidence
+# =========================================================
+@app.route("/scan")
+def scan():
+    """
+    Returns all fixtures across a date range, each enriched with
+    Poisson outcome probabilities and a confidence score.
+    Used by the Acca Builder to auto-rank legs.
+
+    Query params:
+        date_from  — YYYY-MM-DD (inclusive)
+        date_to    — YYYY-MM-DD (inclusive, max 5 days from today)
+    """
+    try:
+        date_from = request.args.get("date_from", "").split("T")[0]
+        date_to   = request.args.get("date_to",   "").split("T")[0]
+
+        if not date_from or not date_to:
+            return jsonify({"error": "date_from and date_to required"}), 400
+
+        if not fixtures_store:
+            load_cache_from_disk()
+        if not fixtures_store:
+            fetch_all_fixtures()
+        if not fixtures_store:
+            return jsonify({"status": "loading", "message": "Data syncing, try again shortly."})
+
+        # Collect all fixtures in range
+        from datetime import date as _date, timedelta
+        try:
+            d_from = _date.fromisoformat(date_from)
+            d_to   = _date.fromisoformat(date_to)
+        except ValueError:
+            return jsonify({"error": "Invalid date format"}), 400
+
+        # Cap at 5 days from today
+        today   = _date.today()
+        max_day = today + timedelta(days=5)
+        d_to    = min(d_to, max_day)
+
+        ranked = []
+        current = d_from
+        while current <= d_to:
+            ds       = current.isoformat()
+            matches  = fixtures_store.get(ds, [])
+            days_out = (current - today).days
+
+            for m in matches:
+                try:
+                    comp  = m.get("comp")
+                    h_id  = m.get("home_id")
+                    a_id  = m.get("away_id")
+                    if not comp or not h_id or not a_id:
+                        continue
+
+                    league_avg = LEAGUE_AVG_GOALS.get(comp, DEFAULT_LEAGUE_AVG)
+                    home_adv   = LEAGUE_HOME_ADV.get(comp, DEFAULT_HOME_ADV)
+
+                    all_stats   = get_standings(comp)
+                    home_stats  = all_stats.get("home",  {})
+                    away_stats  = all_stats.get("away",  {})
+                    total_stats = all_stats.get("total", {})
+
+                    fallback_h = {"gf": 1.2, "ga": 1.2, "rank": "N/A"}
+                    fallback_a = {"gf": 1.0, "ga": 1.3, "rank": "N/A"}
+
+                    h_venue = home_stats.get(str(h_id))  or total_stats.get(str(h_id), fallback_h)
+                    a_venue = away_stats.get(str(a_id))  or total_stats.get(str(a_id), fallback_a)
+
+                    h_atk, h_def, _ = get_detailed_form(h_id, league_avg, venue="HOME")
+                    a_atk, a_def, _ = get_detailed_form(a_id, league_avg, venue="AWAY")
+
+                    residual_adv = math.sqrt(home_adv)
+                    h_lam = max(min(h_venue["gf"] * (a_venue["ga"] / league_avg) * h_atk * (1.0 / a_def) * residual_adv, 3.2), 0.35)
+                    a_lam = max(min(a_venue["gf"] * (h_venue["ga"] / league_avg) * a_atk * (1.0 / h_def),                  3.2), 0.35)
+
+                    p_h = p_d = p_a = 0.0
+                    for i in range(7):
+                        for j in range(7):
+                            p = poisson(i, h_lam) * poisson(j, a_lam)
+                            if   i > j: p_h += p
+                            elif i == j: p_d += p
+                            else:        p_a += p
+
+                    tot   = p_h + p_d + p_a
+                    p_h  /= tot;  p_d /= tot;  p_a /= tot
+
+                    # Confidence = gap between top and second outcome
+                    probs_sorted = sorted([p_h, p_d, p_a], reverse=True)
+                    confidence   = probs_sorted[0] - probs_sorted[1]
+
+                    # Determine best pick
+                    if p_h >= p_d and p_h >= p_a:
+                        pick, pick_prob = "H", p_h
+                        pick_label = f"{m['home']} Win"
+                    elif p_a >= p_h and p_a >= p_d:
+                        pick, pick_prob = "A", p_a
+                        pick_label = f"{m['away']} Win"
+                    else:
+                        pick, pick_prob = "D", p_d
+                        pick_label = "Draw"
+
+                    # Confidence tier
+                    if confidence >= 0.30:   tier = "HIGH"
+                    elif confidence >= 0.15: tier = "MED"
+                    else:                    tier = "LOW"
+
+                    ranked.append({
+                        "date":       ds,
+                        "days_out":   days_out,
+                        "home":       m["home"],
+                        "away":       m["away"],
+                        "home_id":    h_id,
+                        "away_id":    a_id,
+                        "comp":       comp,
+                        "league":     m.get("league", comp),
+                        "pick":       pick,
+                        "pick_label": pick_label,
+                        "pick_prob":  round(pick_prob * 100, 1),
+                        "confidence": round(confidence, 4),
+                        "tier":       tier,
+                        "h_lam":      round(h_lam, 3),
+                        "a_lam":      round(a_lam, 3),
+                        "probs": {
+                            "home": round(p_h * 100, 1),
+                            "draw": round(p_d * 100, 1),
+                            "away": round(p_a * 100, 1),
+                        },
+                        "fair_odds":  round(1 / pick_prob, 2) if pick_prob > 0.04 else 25.0,
+                    })
+
+                except Exception as e:
+                    print(f"[SCAN] Skipped {m.get('home','?')} vs {m.get('away','?')}: {e}")
+                    continue
+
+            current += timedelta(days=1)
+
+        # Sort by confidence descending
+        ranked.sort(key=lambda x: x["confidence"], reverse=True)
+        return jsonify(ranked)
+
+    except Exception as e:
+        print(f"[SCAN ERROR] {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# =========================================================
+# 🎲 ACCA — Monte Carlo simulation across selected legs
+# =========================================================
+@app.route("/acca", methods=["POST"])
+def acca():
+    """
+    Runs a Monte Carlo simulation across selected acca legs.
+    Each leg provides h_lam, a_lam, and the user's pick (H/D/A).
+    Returns combined probability and fair acca odds.
+
+    Body: { "legs": [ { "h_lam": 1.2, "a_lam": 0.9, "pick": "H", "label": "..." }, ... ] }
+    """
+    try:
+        body = request.json
+        if not body or "legs" not in body or len(body["legs"]) < 2:
+            return jsonify({"error": "At least 2 legs required"}), 400
+
+        legs   = body["legs"]
+        n_sims = 10000
+        wins   = 0
+
+        for _ in range(n_sims):
+            acca_won = True
+            for leg in legs:
+                h_lam = float(leg["h_lam"])
+                a_lam = float(leg["a_lam"])
+                pick  = leg["pick"]   # "H", "D", or "A"
+
+                # Draw random scoreline from each team's Poisson distribution
+                hg = int(random.random() < 1 - math.exp(-h_lam))  # fast single-goal draw
+                # Full Poisson draw using CDF inversion
+                def pois_draw(lam):
+                    lam  = max(min(lam, 3.2), 0.35)
+                    u, p_cum, k = random.random(), 0.0, 0
+                    while k < 10:
+                        p_cum += (math.pow(lam, k) * math.exp(-lam)) / math.factorial(k)
+                        if u < p_cum:
+                            return k
+                        k += 1
+                    return k
+
+                h_goals = pois_draw(h_lam)
+                a_goals = pois_draw(a_lam)
+
+                if   h_goals > a_goals: result = "H"
+                elif h_goals < a_goals: result = "A"
+                else:                   result = "D"
+
+                if result != pick:
+                    acca_won = False
+                    break
+
+            if acca_won:
+                wins += 1
+
+        prob      = wins / n_sims
+        fair_odds = round(1 / prob, 2) if prob > 0.005 else 200.0
+
+        # Also compute expected value if bookie odds provided
+        bookie_odds = body.get("bookie_odds")
+        ev = None
+        if bookie_odds and float(bookie_odds) > 1:
+            bo = float(bookie_odds)
+            ev = round((prob * (bo - 1)) - (1 - prob), 4)
+
+        return jsonify({
+            "probability":  round(prob * 100, 2),
+            "fair_odds":    fair_odds,
+            "wins":         wins,
+            "simulations":  n_sims,
+            "ev":           ev,
+        })
+
+    except Exception as e:
+        print(f"[ACCA ERROR] {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 # =========================================================

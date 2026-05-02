@@ -118,10 +118,28 @@ def poisson(k: int, lam: float) -> float:
         return 0.0
 
 # =========================================================
-# 📈 STANDINGS ENGINE
+# 📈 STANDINGS ENGINE (home/away splits)
 # =========================================================
+def _parse_table(table: list) -> dict:
+    """Parse a standings table into a dict keyed by team_id string."""
+    return {
+        str(t["team"]["id"]): {
+            "rank":   t["position"],
+            "played": max(t["playedGames"], 1),
+            "gf":     t["goalsFor"]     / max(t["playedGames"], 1),
+            "ga":     t["goalsAgainst"] / max(t["playedGames"], 1),
+            "pts":    t["points"],
+        }
+        for t in table
+    }
+
 def get_standings(code: str) -> dict:
-    """Fetch league standings. Returns dict keyed by team_id string."""
+    """
+    Fetch league standings with HOME and AWAY splits.
+    Returns dict with three keys: 'total', 'home', 'away',
+    each a dict keyed by team_id string.
+    Falls back to total-only if splits are unavailable.
+    """
     now = time.time()
     cached = standings_cache.get(code)
     if cached and now - cached["t"] < STANDINGS_EXPIRY:
@@ -134,58 +152,70 @@ def get_standings(code: str) -> dict:
         )
         if r.status_code == 429:
             print(f"[RATE LIMIT] standings {code} — using stale cache")
-            return cached["d"] if cached else {}
+            return cached["d"] if cached else {"total": {}, "home": {}, "away": {}}
         if r.status_code != 200:
             print(f"[STANDINGS] {code} returned {r.status_code}")
-            return cached["d"] if cached else {}
+            return cached["d"] if cached else {"total": {}, "home": {}, "away": {}}
 
-        data  = r.json()
-        table = next(
-            s for s in data["standings"] if s["type"] == "TOTAL"
-        )["table"]
+        data = r.json()
+        standings = data["standings"]
+
+        # Pull all three table types — HOME and AWAY give venue-specific stats
+        def get_table(stype):
+            try:
+                return _parse_table(
+                    next(s for s in standings if s["type"] == stype)["table"]
+                )
+            except StopIteration:
+                return {}
 
         out = {
-            str(t["team"]["id"]): {
-                "rank": t["position"],
-                "played": max(t["playedGames"], 1),
-                "gf":  t["goalsFor"]      / max(t["playedGames"], 1),
-                "ga":  t["goalsAgainst"]  / max(t["playedGames"], 1),
-                "pts": t["points"],
-            }
-            for t in table
+            "total": get_table("TOTAL"),
+            "home":  get_table("HOME"),
+            "away":  get_table("AWAY"),
         }
+
         standings_cache[code] = {"t": now, "d": out}
         return out
 
     except Exception as e:
         print(f"[STANDINGS ERROR] {code}: {e}")
-        return cached["d"] if cached else {}
+        return cached["d"] if cached else {"total": {}, "home": {}, "away": {}}
 
 # =========================================================
-# ⚽ FORM ENGINE  (weighted, split atk/def)
+# ⚽ FORM ENGINE (venue-specific, weighted, split atk/def)
 # =========================================================
 # Recent-game weights: most recent match gets highest weight.
 FORM_WEIGHTS = [1.0, 0.85, 0.70, 0.55, 0.40]   # index 0 = most recent
 
-def get_detailed_form(team_id: int, league_avg: float = DEFAULT_LEAGUE_AVG):
+def get_detailed_form(team_id: int, league_avg: float = DEFAULT_LEAGUE_AVG, venue: str = ""):
     """
     Returns (atk_mult, def_mult, form_string).
-    atk_mult  > 1.0 → team scores more than league average
-    def_mult  > 1.0 → team concedes less than league average (inverted)
-    Both clamped to [0.82, 1.18] to prevent outlier λ values.
+
+    venue=""     → all matches (fallback)
+    venue="HOME" → home matches only  (use for the home team)
+    venue="AWAY" → away matches only  (use for the away team)
+
+    atk_mult > 1.0 → team scores more than league average at this venue
+    def_mult > 1.0 → team concedes less than league average at this venue
+    Both clamped to [0.90, 1.10] — form is a recency adjustment, not a base rate.
     """
     now = time.time()
-    cached = form_cache.get(team_id)
+    cache_key = (team_id, venue)
+    cached = form_cache.get(cache_key)
     if cached and now - cached["t"] < FORM_EXPIRY:
         return cached["atk"], cached["def"], cached["s"]
 
+    # Build URL — venue filter is optional
+    url = f"{BASE_URL}/teams/{team_id}/matches?status=FINISHED&limit=5"
+    if venue in ("HOME", "AWAY"):
+        url += f"&venue={venue}"
+
     try:
-        r = requests.get(
-            f"{BASE_URL}/teams/{team_id}/matches?status=FINISHED&limit=5",
-            headers=HEADERS, timeout=10
-        )
+        r = requests.get(url, headers=HEADERS, timeout=10)
+
         if r.status_code == 429:
-            print(f"[RATE LIMIT] form team {team_id} — using stale cache")
+            print(f"[RATE LIMIT] form team {team_id} {venue} — using stale cache")
             if cached:
                 return cached["atk"], cached["def"], cached["s"]
             return 1.0, 1.0, "???"
@@ -200,11 +230,11 @@ def get_detailed_form(team_id: int, league_avg: float = DEFAULT_LEAGUE_AVG):
             score = m["score"]["fullTime"]
             if score["home"] is None:
                 continue
-            hs, aw   = score["home"], score["away"]
-            is_home  = m["homeTeam"]["id"] == team_id
-            gf, ga   = (hs, aw) if is_home else (aw, hs)
+            hs, aw  = score["home"], score["away"]
+            is_home = m["homeTeam"]["id"] == team_id
+            gf, ga  = (hs, aw) if is_home else (aw, hs)
 
-            w = FORM_WEIGHTS[idx] if idx < len(FORM_WEIGHTS) else 0.30
+            w        = FORM_WEIGHTS[idx] if idx < len(FORM_WEIGHTS) else 0.30
             w_gf    += gf * w
             w_ga    += ga * w
             w_total += w
@@ -214,27 +244,22 @@ def get_detailed_form(team_id: int, league_avg: float = DEFAULT_LEAGUE_AVG):
         if w_total == 0 or not history:
             return 1.0, 1.0, "???"
 
-        avg_gf = w_gf / w_total          # weighted goals scored per game
-        avg_ga = max(w_ga / w_total, 0.1) # floor at 0.1 — prevents div explosion on clean-sheet runs
+        avg_gf = w_gf / w_total
+        avg_ga = max(w_ga / w_total, 0.1)  # floor prevents div explosion on clean-sheet runs
 
-        # Form multipliers represent RECENT deviation from league average.
-        # They are applied as a ±10% recency adjustment on top of the standings
-        # base rate in the lambda formula — NOT as a second independent attack measure.
-        # A value of 1.0 means recent form matches league average exactly.
+        # Form multipliers: recency adjustment on top of standings base (±10% max)
         atk  = avg_gf / league_avg if league_avg > 0 else 1.0
-        # Defence: inverted — conceding less than average → multiplier > 1
-        def_ = league_avg / avg_ga if avg_ga > 0 else 1.0
+        def_ = league_avg / avg_ga
 
-        # Clamp to ±10% max recency adjustment to prevent form dominating standings
         atk  = max(min(atk,  1.10), 0.90)
         def_ = max(min(def_, 1.10), 0.90)
 
         form_str = "".join(history)
-        form_cache[team_id] = {"t": now, "atk": atk, "def": def_, "s": form_str}
+        form_cache[cache_key] = {"t": now, "atk": atk, "def": def_, "s": form_str}
         return atk, def_, form_str
 
     except Exception as e:
-        print(f"[FORM ERROR] team {team_id}: {e}")
+        print(f"[FORM ERROR] team {team_id} {venue}: {e}")
         if cached:
             return cached["atk"], cached["def"], cached["s"]
         return 1.0, 1.0, "???"
@@ -346,22 +371,38 @@ def predict():
         league_avg = LEAGUE_AVG_GOALS.get(comp, DEFAULT_LEAGUE_AVG)
         home_adv   = LEAGUE_HOME_ADV.get(comp, DEFAULT_HOME_ADV)
 
-        # --- Standings ---
-        stats  = get_standings(comp)
-        h_s    = stats.get(str(h_id), {"gf": 1.2, "ga": 1.2, "rank": "N/A"})
-        a_s    = stats.get(str(a_id), {"gf": 1.0, "ga": 1.3, "rank": "N/A"})
+        # --- Standings (venue-specific) ---
+        # Use home stats for the home team, away stats for the away team.
+        # Fall back to total if the split table is empty (e.g. early season).
+        all_stats  = get_standings(comp)
+        home_stats = all_stats.get("home", {})
+        away_stats = all_stats.get("away", {})
+        total_stats = all_stats.get("total", {})
 
-        # --- Form (weighted, split atk/def) ---
-        h_atk, h_def, h_form = get_detailed_form(h_id, league_avg)
-        a_atk, a_def, a_form = get_detailed_form(a_id, league_avg)
+        fallback_h = {"gf": 1.2, "ga": 1.2, "rank": "N/A"}
+        fallback_a = {"gf": 1.0, "ga": 1.3, "rank": "N/A"}
+
+        # Home team — use home-venue stats; rank comes from total table
+        h_venue = home_stats.get(str(h_id)) or total_stats.get(str(h_id), fallback_h)
+        h_rank  = total_stats.get(str(h_id), fallback_h).get("rank", "N/A")
+
+        # Away team — use away-venue stats; rank comes from total table
+        a_venue = away_stats.get(str(a_id)) or total_stats.get(str(a_id), fallback_a)
+        a_rank  = total_stats.get(str(a_id), fallback_a).get("rank", "N/A")
+
+        # --- Form (venue-specific, weighted, split atk/def) ---
+        # Home team's recent HOME matches, away team's recent AWAY matches
+        h_atk, h_def, h_form = get_detailed_form(h_id, league_avg, venue="HOME")
+        a_atk, a_def, a_form = get_detailed_form(a_id, league_avg, venue="AWAY")
 
         # --- Lambda Calculation ---
-        # Base rate from standings (long-run ability).
-        # Form multipliers apply a ±10% recency adjustment only — they do not
-        # re-measure attack strength, they adjust the standings base for momentum.
-        # Home advantage is per-league, not a global flat multiplier.
-        h_raw = h_s["gf"] * (a_s["ga"] / league_avg) * h_atk * (1.0 / a_def) * home_adv
-        a_raw = a_s["gf"] * (h_s["ga"] / league_avg) * a_atk * (1.0 / h_def)
+        # Base rate from venue-specific standings (long-run home/away ability).
+        # Form multipliers apply a ±10% recency adjustment for recent venue momentum.
+        # home_adv is per-league and already baked into home_stats gf/ga — we apply
+        # a residual multiplier of sqrt(home_adv) to avoid double-counting.
+        residual_adv = math.sqrt(home_adv)
+        h_raw = h_venue["gf"] * (a_venue["ga"] / league_avg) * h_atk * (1.0 / a_def) * residual_adv
+        a_raw = a_venue["gf"] * (h_venue["ga"] / league_avg) * a_atk * (1.0 / h_def)
 
         # Clamp λ to realistic range; log when extreme values hit the ceiling
         h_lam = max(min(h_raw, 3.2), 0.35)
@@ -432,8 +473,8 @@ def predict():
                 "btts":    fair_odds(p_btts),
                 "over25":  fair_odds(p_over25),
             },
-            "h_rank":  h_s.get("rank", "N/A"),
-            "a_rank":  a_s.get("rank", "N/A"),
+            "h_rank":  h_rank,
+            "a_rank":  a_rank,
             "h_form":  h_form,
             "a_form":  a_form,
             "h_lam":   round(h_lam, 3),

@@ -412,8 +412,10 @@ def predict():
 
         # --- Score Matrix (0–6 goals) ---
         p_h = p_d = p_a = 0.0
-        p_btts      = 0.0
-        p_over25    = 0.0
+        p_btts   = 0.0
+        p_over15 = 0.0
+        p_over25 = 0.0
+        p_over35 = 0.0
         # Store per-cell probabilities for scoreline selection after outcome is known
         matrix = {}
 
@@ -425,7 +427,9 @@ def predict():
                 elif i == j: p_d += p
                 else:        p_a += p
                 if i > 0 and j > 0:  p_btts   += p
+                if i + j > 1:        p_over15  += p
                 if i + j > 2:        p_over25  += p
+                if i + j > 3:        p_over35  += p
 
         # --- Normalise 1X2 to 100% ---
         tot   = p_h + p_d + p_a
@@ -471,7 +475,9 @@ def predict():
                 "draw":    fair_odds(p_d / tot),
                 "away":    fair_odds(p_a / tot),
                 "btts":    fair_odds(p_btts),
+                "over15":  fair_odds(p_over15),
                 "over25":  fair_odds(p_over25),
+                "over35":  fair_odds(p_over35),
             },
             "h_rank":  h_rank,
             "a_rank":  a_rank,

@@ -373,13 +373,13 @@ def predict():
         p_h = p_d = p_a = 0.0
         p_btts      = 0.0
         p_over25    = 0.0
-        max_p, best = -1.0, "1-1"
+        # Store per-cell probabilities for scoreline selection after outcome is known
+        matrix = {}
 
         for i in range(7):
             for j in range(7):
                 p = poisson(i, h_lam) * poisson(j, a_lam)
-                if p > max_p:
-                    max_p, best = p, f"{i}-{j}"
+                matrix[(i, j)] = p
                 if   i > j: p_h += p
                 elif i == j: p_d += p
                 else:        p_a += p
@@ -388,6 +388,32 @@ def predict():
 
         # --- Normalise 1X2 to 100% ---
         tot   = p_h + p_d + p_a
+
+        # --- Scoreline: outcome-consistent if model has clear conviction ---
+        # If the leading outcome is >5% ahead of the second-placed outcome,
+        # restrict the scoreline to cells within that outcome bracket.
+        # If the match is too close to call (<5% margin), use the full matrix —
+        # the raw most-probable cell is the most honest answer in that case.
+        sorted_probs = sorted([p_h, p_d, p_a], reverse=True)
+        lead = sorted_probs[0] - sorted_probs[1]
+
+        if lead >= 0.05:
+            # Clear favourite — filter scoreline to winning outcome bracket
+            if p_h >= p_d and p_h >= p_a:
+                valid = lambda i, j: i > j   # home win cells only
+            elif p_a >= p_h and p_a >= p_d:
+                valid = lambda i, j: j > i   # away win cells only
+            else:
+                valid = lambda i, j: i == j  # draw cells only
+        else:
+            # Too close to call — use full matrix, no bracket filter
+            valid = lambda i, j: True
+
+        best  = "1-1"
+        max_p = -1.0
+        for (i, j), p in matrix.items():
+            if valid(i, j) and p > max_p:
+                max_p, best = p, f"{i}-{j}"
         h_pct = round((p_h / tot) * 100)
         d_pct = round((p_d / tot) * 100)
         a_pct = 100 - h_pct - d_pct  # guarantees sum = 100

@@ -1,317 +1,374 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>THE GAFFER | Tactical Intelligence</title>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;700&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --neon:   #00ff9d;
-            --bg:     #0a0b10;
-            --card:   #151821;
-            --border: #2a2d3a;
-            --away:   #ff3366;
-            --draw:   #8892b0;
-            --dim:    #4a5060;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>THE GAFFER | Tactical Intelligence</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+    :root {
+        --neon:   #00ff9d;
+        --bg:     #0a0b10;
+        --card:   #151821;
+        --border: #2a2d3a;
+        --away:   #ff3366;
+        --draw:   #8892b0;
+        --dim:    #4a5060;
+    }
 
-        * { box-sizing: border-box; }
+    * { box-sizing: border-box; }
 
-        body {
-            background: var(--bg);
-            color: #fff;
-            font-family: Inter, sans-serif;
-            display: flex;
-            justify-content: center;
-            padding: 20px;
-            min-height: 100vh;
-        }
+    body {
+        background: var(--bg);
+        color: #fff;
+        font-family: Inter, sans-serif;
+        display: flex;
+        justify-content: center;
+        padding: 20px;
+        min-height: 100vh;
+    }
 
-        .container { width: 100%; max-width: 480px; }
+    .container { width: 100%; max-width: 480px; }
 
-        h1 {
-            font-family: Orbitron, sans-serif;
-            color: var(--neon);
-            text-align: center;
-            letter-spacing: 5px;
-            font-size: 1.2rem;
-            margin-bottom: 6px;
-        }
+    h1 {
+        font-family: Orbitron, sans-serif;
+        color: var(--neon);
+        text-align: center;
+        letter-spacing: 5px;
+        font-size: 1.2rem;
+        margin-bottom: 6px;
+    }
 
-        .tagline {
-            text-align: center;
-            font-size: 0.65rem;
-            color: var(--dim);
-            letter-spacing: 3px;
-            text-transform: uppercase;
-            margin-bottom: 24px;
-        }
+    .tagline {
+        text-align: center;
+        font-size: 0.65rem;
+        color: var(--dim);
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        margin-bottom: 24px;
+    }
 
-        .card {
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 20px;
-            margin-bottom: 20px;
-        }
+    .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
 
-        input[type="date"],
-        select {
-            width: 100%;
-            padding: 14px;
-            margin-bottom: 12px;
-            border-radius: 10px;
-            background: #000;
-            border: 1px solid var(--border);
-            color: #fff;
-            font-family: Inter, sans-serif;
-            font-size: 0.9rem;
-        }
+    input[type="date"],
+    select {
+        width: 100%;
+        padding: 14px;
+        margin-bottom: 12px;
+        border-radius: 10px;
+        background: #000;
+        border: 1px solid var(--border);
+        color: #fff;
+        font-family: Inter, sans-serif;
+        font-size: 0.9rem;
+    }
 
-        input[type="date"]:focus,
-        select:focus { outline: 1px solid var(--neon); }
+    input[type="date"]:focus,
+    select:focus { outline: 1px solid var(--neon); }
 
-        button {
-            width: 100%;
-            padding: 14px;
-            margin-bottom: 12px;
-            border-radius: 10px;
-            background: var(--neon);
-            color: #000;
-            font-weight: 800;
-            font-family: Orbitron, sans-serif;
-            font-size: 0.75rem;
-            letter-spacing: 2px;
-            cursor: pointer;
-            border: none;
-            transition: opacity 0.2s, box-shadow 0.2s;
-        }
+    button {
+        width: 100%;
+        padding: 14px;
+        margin-bottom: 12px;
+        border-radius: 10px;
+        background: var(--neon);
+        color: #000;
+        font-weight: 800;
+        font-family: Orbitron, sans-serif;
+        font-size: 0.75rem;
+        letter-spacing: 2px;
+        cursor: pointer;
+        border: none;
+        transition: opacity 0.2s, box-shadow 0.2s;
+    }
 
-        button:hover:not(:disabled) {
-            box-shadow: 0 0 18px rgba(0,255,157,0.35);
-        }
+    button:hover:not(:disabled) {
+        box-shadow: 0 0 18px rgba(0,255,157,0.35);
+    }
 
-        button:disabled {
-            background: #1a1a1a;
-            color: #444;
-            cursor: not-allowed;
-            box-shadow: none;
-        }
+    button:disabled {
+        background: #1a1a1a;
+        color: #444;
+        cursor: not-allowed;
+        box-shadow: none;
+    }
 
-        /* ── Score ── */
-        .score {
-            font-family: Orbitron, sans-serif;
-            font-size: 4rem;
-            font-weight: 900;
-            text-align: center;
-            color: var(--neon);
-            margin: 12px 0 4px;
-            text-shadow: 0 0 24px rgba(0,255,157,0.4);
-        }
+    /* ── Bankroll input row ── */
+    .bankroll-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+        background: #000;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 14px;
+    }
 
-        .lambda-row {
-            display: flex;
-            justify-content: center;
-            gap: 20px;
-            font-size: 0.65rem;
-            color: var(--dim);
-            letter-spacing: 1px;
-            margin-bottom: 4px;
-        }
+    .bankroll-row label {
+        font-size: 0.65rem;
+        letter-spacing: 2px;
+        color: var(--dim);
+        text-transform: uppercase;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
 
-        /* ── Prob bar ── */
-        .prob-bar {
-            display: flex;
-            height: 24px;
-            border-radius: 6px;
-            overflow: hidden;
-            margin: 16px 0;
-            font-family: Orbitron, sans-serif;
-            font-size: 0.65rem;
-            line-height: 24px;
-            text-align: center;
-        }
+    .bankroll-symbol {
+        font-family: Orbitron, sans-serif;
+        font-size: 0.85rem;
+        color: var(--neon);
+        flex-shrink: 0;
+    }
 
-        .p-h { background: var(--neon); color: #000; }
-        .p-d { background: var(--draw); color: #000; }
-        .p-a { background: var(--away); color: #000; }
+    #bankroll-input {
+        flex: 1;
+        background: transparent;
+        border: none;
+        color: var(--neon);
+        font-family: Orbitron, sans-serif;
+        font-size: 0.85rem;
+        padding: 0;
+        margin: 0;
+        outline: none;
+        width: 100%;
+        min-width: 0;
+    }
 
-        /* ── Form dots ── */
-        .form-row { display: flex; gap: 3px; margin-top: 6px; flex-wrap: wrap; }
+    #bankroll-input::-webkit-inner-spin-button,
+    #bankroll-input::-webkit-outer-spin-button { -webkit-appearance: none; }
 
-        .dot {
-            width: 20px; height: 20px;
-            border-radius: 4px;
-            font-size: 10px;
-            line-height: 20px;
-            text-align: center;
-            color: #000;
-            font-weight: 700;
-            display: inline-block;
-        }
+    /* ── Score ── */
+    .score {
+        font-family: Orbitron, sans-serif;
+        font-size: 4rem;
+        font-weight: 900;
+        text-align: center;
+        color: var(--neon);
+        margin: 12px 0 4px;
+        text-shadow: 0 0 24px rgba(0,255,157,0.4);
+    }
 
-        .W { background: var(--neon); }
-        .D { background: var(--draw); }
-        .L { background: var(--away); }
-        .Q { background: #2a2d3a; color: #556; border: 1px solid #333; } /* unknown */
+    .lambda-row {
+        display: flex;
+        justify-content: center;
+        gap: 20px;
+        font-size: 0.65rem;
+        color: var(--dim);
+        letter-spacing: 1px;
+        margin-bottom: 4px;
+    }
 
-        /* ── Teams header ── */
-        .teams-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            font-size: 0.82rem;
-            margin-bottom: 4px;
-        }
+    /* ── Prob bar ── */
+    .prob-bar {
+        display: flex;
+        height: 24px;
+        border-radius: 6px;
+        overflow: hidden;
+        margin: 16px 0;
+        font-family: Orbitron, sans-serif;
+        font-size: 0.65rem;
+        line-height: 24px;
+        text-align: center;
+    }
 
-        .team-block { width: 48%; }
-        .team-block.right { text-align: right; }
-        .team-block b { font-size: 0.9rem; display: block; margin-bottom: 2px; }
-        .team-block small { color: var(--dim); font-size: 0.7rem; }
-        .team-block .form-row.right { justify-content: flex-end; }
+    /* min-width prevents text clipping on small probability segments */
+    .p-h { background: var(--neon); color: #000; min-width: 28px; }
+    .p-d { background: var(--draw); color: #000; min-width: 28px; }
+    .p-a { background: var(--away); color: #000; min-width: 28px; }
 
-        /* ── Section label ── */
-        .section-label {
-            font-size: 0.6rem;
-            letter-spacing: 3px;
-            color: var(--dim);
-            text-transform: uppercase;
-            margin: 16px 0 8px;
-            border-top: 1px solid #1a1d28;
-            padding-top: 12px;
-        }
+    /* ── Form dots ── */
+    .form-row { display: flex; gap: 3px; margin-top: 4px; flex-wrap: wrap; }
 
-        /* ── Market comparison table ── */
-        .market-table { width: 100%; border-collapse: collapse; }
+    .dot {
+        width: 20px; height: 20px;
+        border-radius: 4px;
+        font-size: 10px;
+        line-height: 20px;
+        text-align: center;
+        color: #000;
+        font-weight: 700;
+        display: inline-block;
+    }
 
-        .market-table th {
-            font-size: 0.6rem;
-            letter-spacing: 2px;
-            color: var(--dim);
-            text-transform: uppercase;
-            padding: 4px 0 8px;
-            text-align: left;
-            font-weight: 400;
-        }
+    .W { background: var(--neon); }
+    .D { background: var(--draw); }
+    .L { background: var(--away); }
+    .Q { background: #2a2d3a; color: #556; border: 1px solid #333; }
 
-        .market-table th:last-child,
-        .market-table td:last-child { text-align: right; }
+    /* ── Form venue label ── */
+    .form-venue-label {
+        font-size: 0.58rem;
+        letter-spacing: 2px;
+        color: var(--dim);
+        text-transform: uppercase;
+        margin-top: 6px;
+        margin-bottom: 2px;
+    }
 
-        .market-row-tr {
-            border-top: 1px solid #1a1d28;
-            transition: background 0.25s;
-        }
+    /* ── Teams header ── */
+    .teams-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        font-size: 0.82rem;
+        margin-bottom: 4px;
+    }
 
-        .market-row-tr td {
-            padding: 10px 4px;
-            font-size: 0.8rem;
-            vertical-align: middle;
-        }
+    .team-block { width: 48%; }
+    .team-block.right { text-align: right; }
+    .team-block b { font-size: 0.9rem; display: block; margin-bottom: 2px; }
+    .team-block small { color: var(--dim); font-size: 0.7rem; }
+    .team-block .form-row.right { justify-content: flex-end; }
+    .team-block.right .form-venue-label { text-align: right; }
 
-        .fair-price {
-            font-family: Orbitron, sans-serif;
-            font-size: 0.75rem;
-            color: var(--neon);
-        }
+    /* ── Section label ── */
+    .section-label {
+        font-size: 0.6rem;
+        letter-spacing: 3px;
+        color: var(--dim);
+        text-transform: uppercase;
+        margin: 16px 0 8px;
+        border-top: 1px solid #1a1d28;
+        padding-top: 12px;
+    }
 
-        .bookie-input {
-            width: 72px;
-            padding: 7px 8px;
-            border-radius: 7px;
-            background: #000;
-            border: 1px solid var(--border);
-            color: #fff;
-            font-family: Orbitron, sans-serif;
-            font-size: 0.72rem;
-            text-align: center;
-            transition: border-color 0.2s;
-        }
+    /* ── Market comparison table ── */
+    .market-table { width: 100%; border-collapse: collapse; }
 
-        .bookie-input:focus { outline: none; border-color: var(--neon); }
+    .market-table th {
+        font-size: 0.6rem;
+        letter-spacing: 2px;
+        color: var(--dim);
+        text-transform: uppercase;
+        padding: 4px 0 8px;
+        text-align: left;
+        font-weight: 400;
+    }
 
-        .kelly-result {
-            font-family: Orbitron, sans-serif;
-            font-size: 0.72rem;
-            color: var(--dim);
-            min-width: 80px;
-            text-align: right;
-        }
+    .market-table th:last-child,
+    .market-table td:last-child { text-align: right; }
 
-        /* Value highlight state */
-        .market-row-tr.value {
-            background: rgba(0,255,157,0.05);
-        }
+    .market-row-tr {
+        border-top: 1px solid #1a1d28;
+        transition: background 0.25s;
+    }
 
-        .market-row-tr.value td:first-child {
-            border-left: 2px solid var(--neon);
-            padding-left: 8px;
-        }
+    .market-row-tr td {
+        padding: 10px 4px;
+        font-size: 0.8rem;
+        vertical-align: middle;
+    }
 
-        .prime {
-            color: var(--neon);
-            font-weight: 700;
-            animation: pulse-text 2s ease-in-out infinite;
-        }
+    .fair-price {
+        font-family: Orbitron, sans-serif;
+        font-size: 0.75rem;
+        color: var(--neon);
+    }
 
-        @keyframes pulse-text {
-            0%, 100% { opacity: 1; }
-            50%       { opacity: 0.6; }
-        }
+    .bookie-input {
+        width: 72px;
+        padding: 7px 8px;
+        border-radius: 7px;
+        background: #000;
+        border: 1px solid var(--border);
+        color: #fff;
+        font-family: Orbitron, sans-serif;
+        font-size: 0.72rem;
+        text-align: center;
+        transition: border-color 0.2s;
+    }
 
-        .no-value { color: #3a3f50; }
-        .thin-edge { color: var(--draw); font-size: 0.65rem; }
+    .bookie-input:focus { outline: none; border-color: var(--neon); }
 
-        /* ── Gaffer verdict box ── */
-        .gaffer-box {
-            background: rgba(0,255,157,0.04);
-            border-left: 3px solid var(--neon);
-            border-radius: 0 8px 8px 0;
-            padding: 14px 16px;
-            margin-top: 16px;
-            font-size: 0.82rem;
-            line-height: 1.65;
-            color: #b0bcc8;
-        }
+    .kelly-result {
+        font-family: Orbitron, sans-serif;
+        font-size: 0.72rem;
+        color: var(--dim);
+        min-width: 80px;
+        text-align: right;
+    }
 
-        .gaffer-box .signature {
-            font-family: Orbitron, sans-serif;
-            color: var(--neon);
-            font-size: 0.65rem;
-            letter-spacing: 3px;
-            text-align: right;
-            margin-top: 10px;
-            padding-top: 10px;
-            border-top: 1px solid rgba(0,255,157,0.1);
-        }
+    /* Value highlight state */
+    .market-row-tr.value {
+        background: rgba(0,255,157,0.05);
+    }
 
-        /* ── Loader ── */
-        .loader {
-            border: 3px solid #1a1d28;
-            border-top: 3px solid var(--neon);
-            border-radius: 50%;
-            width: 32px;
-            height: 32px;
-            margin: 20px auto;
-            animation: spin 0.9s linear infinite;
-        }
+    .market-row-tr.value td:first-child {
+        border-left: 2px solid var(--neon);
+        padding-left: 8px;
+    }
 
-        @keyframes spin { to { transform: rotate(360deg); } }
+    .prime {
+        color: var(--neon);
+        font-weight: 700;
+        animation: pulse-text 2s ease-in-out infinite;
+    }
 
-        .status-msg {
-            text-align: center;
-            font-size: 0.75rem;
-            color: var(--dim);
-            padding: 10px 0;
-        }
+    @keyframes pulse-text {
+        0%, 100% { opacity: 1; }
+        50%       { opacity: 0.6; }
+    }
 
-        .error-msg {
-            text-align: center;
-            font-size: 0.78rem;
-            color: var(--away);
-            padding: 12px 0;
-        }
-    </style>
+    .no-value  { color: #3a3f50; }
+    .thin-edge { color: var(--draw); font-size: 0.65rem; }
+
+    /* ── Gaffer verdict box ── */
+    .gaffer-box {
+        background: rgba(0,255,157,0.04);
+        border-left: 3px solid var(--neon);
+        border-radius: 0 8px 8px 0;
+        padding: 14px 16px;
+        margin-top: 16px;
+        font-size: 0.82rem;
+        line-height: 1.65;
+        color: #b0bcc8;
+    }
+
+    .gaffer-box .signature {
+        font-family: Orbitron, sans-serif;
+        color: var(--neon);
+        font-size: 0.65rem;
+        letter-spacing: 3px;
+        text-align: right;
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(0,255,157,0.1);
+    }
+
+    /* ── Loader ── */
+    .loader {
+        border: 3px solid #1a1d28;
+        border-top: 3px solid var(--neon);
+        border-radius: 50%;
+        width: 32px;
+        height: 32px;
+        margin: 20px auto;
+        animation: spin 0.9s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .status-msg {
+        text-align: center;
+        font-size: 0.75rem;
+        color: var(--dim);
+        padding: 10px 0;
+    }
+
+    .error-msg {
+        text-align: center;
+        font-size: 0.78rem;
+        color: var(--away);
+        padding: 12px 0;
+    }
+</style>
 </head>
 <body>
 <div class="container">
@@ -321,6 +378,7 @@
 
     <div class="card">
         <input type="date" id="date">
+
         <button onclick="getFixtures()">SCAN TACTICAL BOARD</button>
         <select id="matches" onchange="toggleBtn()">
             <option value="">Select Match...</option>
@@ -333,11 +391,32 @@
 </div>
 
 <script>
-const API      = "https://football-api-9e4p.onrender.com";
-const BANKROLL = 1000;   // default bankroll for Kelly staking
+const API = "https://football-api-9e4p.onrender.com";
 let fixturesData = [];
 
-// ── Set today's date as default ──
+// Bankroll is read live from the input inside the verdict card.
+// Falls back to 1000 if the verdict card hasn't been rendered yet.
+function getBankroll() {
+    const el  = document.getElementById("bankroll-input");
+    const val = el ? parseFloat(el.value) : 1000;
+    return (!val || isNaN(val) || val <= 0) ? 1000 : val;
+}
+
+// When user changes bankroll, re-trigger calcKelly on every visible bookie input
+// so all stakes update instantly without a new API call.
+function refreshKellyStakes() {
+    document.querySelectorAll(".bookie-input").forEach(input => {
+        if (input.value) {
+            // Read the fairOdds from the oninput attribute to reuse same logic
+            const onInput = input.getAttribute("oninput");
+            if (onInput) {
+                try { eval(onInput.replace("this", "input")); } catch(e) {}
+            }
+        }
+    });
+}
+
+// Set today's date as default
 document.getElementById("date").value = new Date().toISOString().split("T")[0];
 
 const toggleBtn = () => {
@@ -345,19 +424,29 @@ const toggleBtn = () => {
         document.getElementById("matches").value === "";
 };
 
-// ── Render form dots ──
-function renderForm(str, align = "left") {
-    if (!str || str === "???") return `<div class="form-row" style="justify-content:${align === "right" ? "flex-end" : "flex-start"}">
-        <div class="dot Q">?</div><div class="dot Q">?</div><div class="dot Q">?</div>
-    </div>`;
+// Render form dots with venue label above
+function renderForm(str, align = "left", venueLabel = "") {
+    const isRight      = align === "right";
+    const justifyStyle = `justify-content:${isRight ? "flex-end" : "flex-start"}`;
+    const labelHtml    = venueLabel
+        ? `<div class="form-venue-label">${venueLabel}</div>`
+        : "";
+
+    if (!str || str === "???") {
+        return `${labelHtml}<div class="form-row" style="${justifyStyle}">
+            <div class="dot Q">?</div><div class="dot Q">?</div><div class="dot Q">?</div>
+        </div>`;
+    }
+
     const dots = str.split("").map(c => {
         const cls = ["W","D","L"].includes(c) ? c : "Q";
         return `<div class="dot ${cls}">${c}</div>`;
     }).join("");
-    return `<div class="form-row" style="justify-content:${align === "right" ? "flex-end" : "flex-start"}">${dots}</div>`;
+
+    return `${labelHtml}<div class="form-row" style="${justifyStyle}">${dots}</div>`;
 }
 
-// ── Fetch fixtures ──
+// Fetch fixtures
 async function getFixtures() {
     const d   = document.getElementById("date").value;
     const sel = document.getElementById("matches");
@@ -373,7 +462,6 @@ async function getFixtures() {
         const res  = await fetch(`${API}/fixtures?date=${d}`);
         const data = await res.json();
 
-        // Handle backend status signals
         if (data.status === "loading") {
             sel.innerHTML = "<option value=''>Still syncing...</option>";
             out.innerHTML = `<div class="card">
@@ -409,16 +497,13 @@ async function getFixtures() {
     }
 }
 
-// ── Quarter-Kelly stake calculator ──
-// Formula: f* = (b·p - q) / b  where b = decimal_odds - 1, p = fair_prob, q = 1 - p
-// Quarter Kelly: stake = 0.25 × f* × bankroll
-// Only triggers when edge > 5%
+// Quarter-Kelly calculator — live bankroll, euros
 function calcKelly(inputEl, fairOdds, targetId) {
-    const target = document.getElementById(targetId);
-    const row    = inputEl.closest(".market-row-tr");
-    const val    = parseFloat(inputEl.value);
+    const target   = document.getElementById(targetId);
+    const row      = inputEl.closest(".market-row-tr");
+    const val      = parseFloat(inputEl.value);
+    const bankroll = getBankroll();
 
-    // Reset state
     row.classList.remove("value");
 
     if (!val || isNaN(val) || val <= 1.0 || !fairOdds || fairOdds <= 1) {
@@ -426,16 +511,14 @@ function calcKelly(inputEl, fairOdds, targetId) {
         return;
     }
 
-    const p = 1 / fairOdds;   // implied probability from fair price
-    const q = 1 - p;
-    const b = val - 1;        // profit per unit staked at bookie odds
-
-    const f_star = (b * p - q) / b;     // full Kelly fraction
-    const edge   = (val / fairOdds) - 1; // edge = how much bookie odds beat fair
+    const p      = 1 / fairOdds;
+    const q      = 1 - p;
+    const b      = val - 1;
+    const f_star = (b * p - q) / b;
+    const edge   = (val / fairOdds) - 1;
 
     if (edge <= 0.05) {
-        // Edge exists but below 5% threshold — show but don't highlight
-        target.innerHTML = edge > 0 
+        target.innerHTML = edge > 0
             ? `<span class="thin-edge">Thin</span>`
             : `<span class="no-value">No edge</span>`;
         return;
@@ -446,16 +529,12 @@ function calcKelly(inputEl, fairOdds, targetId) {
         return;
     }
 
-    // Prime value detected
-    const quarter_kelly = 0.25 * f_star;
-    const stake         = (quarter_kelly * BANKROLL).toFixed(2);
-    const edge_pct      = (edge * 100).toFixed(1);
-
+    const stake = (0.25 * f_star * bankroll).toFixed(2);
     row.classList.add("value");
-    target.innerHTML = `<span class="prime">★ $${stake}</span>`;
+    target.innerHTML = `<span class="prime">★ €${stake}</span>`;
 }
 
-// ── Fetch prediction ──
+// Fetch prediction
 async function predict() {
     const idx = document.getElementById("matches").value;
     const out = document.getElementById("output");
@@ -483,10 +562,11 @@ async function predict() {
             return;
         }
 
-        const m      = fixturesData[idx];
-        const market = d.market || {};
+        const m        = fixturesData[idx];
+        const market   = d.market || {};
+        const bankroll = getBankroll();
 
-        // Build market row HTML helper
+        // Market row builder
         const mkRow = (label, fairKey, kellyId) => `
             <tr class="market-row-tr" id="row-${kellyId}">
                 <td>${label}</td>
@@ -498,6 +578,7 @@ async function predict() {
                         placeholder="Odds"
                         step="0.01"
                         min="1.01"
+                        inputmode="decimal"
                         oninput="calcKelly(this, ${market[fairKey] || 0}, '${kellyId}')"
                     >
                 </td>
@@ -507,11 +588,11 @@ async function predict() {
             </tr>`;
 
         // Gaffer narrative
-        const h_w = d.probs.home > d.probs.away;
-        const fav  = h_w ? m.home : m.away;
-        const conf = Math.max(d.probs.home, d.probs.away);
-        const btts_pct = d.market?.btts ? Math.round((1/d.market.btts)*100) : "?";
-        const o25_pct  = d.market?.over25 ? Math.round((1/d.market.over25)*100) : "?";
+        const h_w      = d.probs.home > d.probs.away;
+        const fav      = h_w ? m.home : m.away;
+        const conf     = Math.max(d.probs.home, d.probs.away);
+        const btts_pct = market.btts   ? Math.round((1 / market.btts)   * 100) : "?";
+        const o25_pct  = market.over25 ? Math.round((1 / market.over25) * 100) : "?";
 
         const verdict = `
             Projected scoreline: <b>${d.score}</b>.
@@ -524,17 +605,17 @@ async function predict() {
         out.innerHTML = `
         <div class="card">
 
-            <!-- Teams + Form -->
+            <!-- Teams + Form — labelled by venue -->
             <div class="teams-row">
                 <div class="team-block">
                     <b>${m.home}</b>
                     <small>Rank #${d.h_rank}</small>
-                    ${renderForm(d.h_form, "left")}
+                    ${renderForm(d.h_form, "left", "Last 5 Home")}
                 </div>
                 <div class="team-block right">
                     <b>${m.away}</b>
                     <small>Rank #${d.a_rank}</small>
-                    ${renderForm(d.a_form, "right")}
+                    ${renderForm(d.a_form, "right", "Last 5 Away")}
                 </div>
             </div>
 
@@ -545,7 +626,7 @@ async function predict() {
                 <span>λ AWAY ${d.a_lam}</span>
             </div>
 
-            <!-- Probability Bar -->
+            <!-- Probability Bar (min-width fix applied via CSS) -->
             <div class="prob-bar">
                 <div class="p-h" style="width:${d.probs.home}%">${d.probs.home}%</div>
                 <div class="p-d" style="width:${d.probs.draw}%">${d.probs.draw}%</div>
@@ -553,7 +634,23 @@ async function predict() {
             </div>
 
             <!-- Market Comparison + Kelly Staker -->
-            <div class="section-label">Market Comparison · ¼ Kelly Staker (£${BANKROLL} Bank)</div>
+            <div class="section-label">Market Comparison · ¼ Kelly Staker</div>
+
+            <!-- Bankroll adjuster lives here so it's per-verdict -->
+            <div class="bankroll-row">
+                <label>Bankroll</label>
+                <span class="bankroll-symbol">€</span>
+                <input
+                    type="number"
+                    id="bankroll-input"
+                    value="1000"
+                    min="1"
+                    step="1"
+                    inputmode="decimal"
+                    placeholder="1000"
+                    oninput="refreshKellyStakes()"
+                >
+            </div>
             <table class="market-table">
                 <thead>
                     <tr>
@@ -568,7 +665,9 @@ async function predict() {
                     ${mkRow("Draw",      "draw",   "k-d")}
                     ${mkRow("Away Win",  "away",   "k-a")}
                     ${mkRow("BTTS",      "btts",   "k-btts")}
+                    ${mkRow("Over 1.5",  "over15", "k-o15")}
                     ${mkRow("Over 2.5",  "over25", "k-o25")}
+                    ${mkRow("Over 3.5",  "over35", "k-o35")}
                 </tbody>
             </table>
 

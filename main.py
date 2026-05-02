@@ -5,7 +5,8 @@ import json
 import random
 import requests
 import threading
-import netrc  # prevent import deadlock in some environments
+import netrc
+from datetime import date as _date, timedelta
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
@@ -522,8 +523,6 @@ def scan():
         if not fixtures_store:
             return jsonify({"status": "loading", "message": "Data syncing, try again shortly."})
 
-        # Collect all fixtures in range
-        from datetime import date as _date, timedelta
         try:
             d_from = _date.fromisoformat(date_from)
             d_to   = _date.fromisoformat(date_to)
@@ -564,8 +563,15 @@ def scan():
                     h_venue = home_stats.get(str(h_id))  or total_stats.get(str(h_id), fallback_h)
                     a_venue = away_stats.get(str(a_id))  or total_stats.get(str(a_id), fallback_a)
 
-                    h_atk, h_def, _ = get_detailed_form(h_id, league_avg, venue="HOME")
-                    a_atk, a_def, _ = get_detailed_form(a_id, league_avg, venue="AWAY")
+                    # Use cached form only — do NOT make live API calls per team
+                    # during a scan (would hit rate limits across 50+ teams).
+                    # Fall back to neutral 1.0 multipliers if not cached yet.
+                    h_cache = form_cache.get((h_id, "HOME"))
+                    a_cache = form_cache.get((a_id, "AWAY"))
+                    h_atk = h_cache["atk"] if h_cache else 1.0
+                    h_def = h_cache["def"] if h_cache else 1.0
+                    a_atk = a_cache["atk"] if a_cache else 1.0
+                    a_def = a_cache["def"] if a_cache else 1.0
 
                     residual_adv = math.sqrt(home_adv)
                     h_lam = max(min(h_venue["gf"] * (a_venue["ga"] / league_avg) * h_atk * (1.0 / a_def) * residual_adv, 3.2), 0.35)

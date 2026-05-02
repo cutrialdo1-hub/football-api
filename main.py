@@ -662,26 +662,27 @@ def acca():
         n_sims = 10000
         wins   = 0
 
+        # Define Poisson draw once outside the loop — not 10,000 times
+        def pois_draw(lam):
+            lam   = max(min(lam, 3.2), 0.35)
+            u     = random.random()
+            p_cum = 0.0
+            k     = 0
+            while k < 10:
+                p_cum += (math.pow(lam, k) * math.exp(-lam)) / math.factorial(k)
+                if u < p_cum:
+                    return k
+                k += 1
+            return k
+
         for _ in range(n_sims):
             acca_won = True
             for leg in legs:
                 h_lam = float(leg["h_lam"])
                 a_lam = float(leg["a_lam"])
-                pick  = leg["pick"]   # "H", "D", or "A"
+                pick  = leg["pick"]
 
                 # Draw random scoreline from each team's Poisson distribution
-                hg = int(random.random() < 1 - math.exp(-h_lam))  # fast single-goal draw
-                # Full Poisson draw using CDF inversion
-                def pois_draw(lam):
-                    lam  = max(min(lam, 3.2), 0.35)
-                    u, p_cum, k = random.random(), 0.0, 0
-                    while k < 10:
-                        p_cum += (math.pow(lam, k) * math.exp(-lam)) / math.factorial(k)
-                        if u < p_cum:
-                            return k
-                        k += 1
-                    return k
-
                 h_goals = pois_draw(h_lam)
                 a_goals = pois_draw(a_lam)
 

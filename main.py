@@ -39,6 +39,22 @@ LEAGUE_AVG_GOALS = {
 }
 DEFAULT_LEAGUE_AVG = 1.30
 
+# Per-league home advantage multiplier (calibrated from historical data)
+# 1.10 = 10% more goals scored at home vs away, on average
+LEAGUE_HOME_ADV = {
+    "BL1": 1.08,  # Bundesliga — home advantage weakened post-COVID
+    "PL":  1.07,  # Premier League — lowest home advantage in top 5
+    "PD":  1.10,  # La Liga
+    "SA":  1.10,  # Serie A
+    "FL1": 1.09,  # Ligue 1
+    "CL":  1.08,  # Champions League — neutral-ish, elite away teams
+    "ELC": 1.12,  # Championship — strong home crowd effect
+    "DED": 1.10,  # Eredivisie
+    "PPL": 1.10,  # Primeira Liga
+    "BSA": 1.13,  # Brasileirao — strong home advantage
+}
+DEFAULT_HOME_ADV = 1.10
+
 # =========================================================
 # 🔒 LOCKS & CACHE
 # =========================================================
@@ -198,17 +214,20 @@ def get_detailed_form(team_id: int, league_avg: float = DEFAULT_LEAGUE_AVG):
         if w_total == 0 or not history:
             return 1.0, 1.0, "???"
 
-        avg_gf = w_gf / w_total   # weighted goals scored per game
-        avg_ga = w_ga / w_total   # weighted goals conceded per game
+        avg_gf = w_gf / w_total          # weighted goals scored per game
+        avg_ga = max(w_ga / w_total, 0.1) # floor at 0.1 — prevents div explosion on clean-sheet runs
 
-        # Attack multiplier: how does this team score vs league average?
-        atk = avg_gf / league_avg if league_avg > 0 else 1.0
-        # Defence multiplier: inverted — conceding less → multiplier > 1
+        # Form multipliers represent RECENT deviation from league average.
+        # They are applied as a ±10% recency adjustment on top of the standings
+        # base rate in the lambda formula — NOT as a second independent attack measure.
+        # A value of 1.0 means recent form matches league average exactly.
+        atk  = avg_gf / league_avg if league_avg > 0 else 1.0
+        # Defence: inverted — conceding less than average → multiplier > 1
         def_ = league_avg / avg_ga if avg_ga > 0 else 1.0
 
-        # Clamp both to prevent extreme λ tunnelling
-        atk  = max(min(atk,  1.18), 0.82)
-        def_ = max(min(def_, 1.18), 0.82)
+        # Clamp to ±10% max recency adjustment to prevent form dominating standings
+        atk  = max(min(atk,  1.10), 0.90)
+        def_ = max(min(def_, 1.10), 0.90)
 
         form_str = "".join(history)
         form_cache[team_id] = {"t": now, "atk": atk, "def": def_, "s": form_str}
@@ -325,6 +344,7 @@ def predict():
         a_id  = req["away_id"]
 
         league_avg = LEAGUE_AVG_GOALS.get(comp, DEFAULT_LEAGUE_AVG)
+        home_adv   = LEAGUE_HOME_ADV.get(comp, DEFAULT_HOME_ADV)
 
         # --- Standings ---
         stats  = get_standings(comp)
@@ -336,10 +356,11 @@ def predict():
         a_atk, a_def, a_form = get_detailed_form(a_id, league_avg)
 
         # --- Lambda Calculation ---
-        # Home λ: team's attack rate × opponent's defensive weakness × home advantage
-        # Opponent defensive weakness = a_s["ga"] / league_avg (how much more/less they concede)
-        # Form multipliers applied independently for attack and defence
-        h_raw = h_s["gf"] * (a_s["ga"] / league_avg) * h_atk * (1.0 / a_def) * 1.10
+        # Base rate from standings (long-run ability).
+        # Form multipliers apply a ±10% recency adjustment only — they do not
+        # re-measure attack strength, they adjust the standings base for momentum.
+        # Home advantage is per-league, not a global flat multiplier.
+        h_raw = h_s["gf"] * (a_s["ga"] / league_avg) * h_atk * (1.0 / a_def) * home_adv
         a_raw = a_s["gf"] * (h_s["ga"] / league_avg) * a_atk * (1.0 / h_def)
 
         # Clamp λ to realistic range; log when extreme values hit the ceiling

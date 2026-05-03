@@ -178,12 +178,10 @@
         text-align: center;
     }
 
-    /* min-width prevents text clipping on small probability segments */
     .p-h { background: var(--neon); color: #000; min-width: 28px; }
     .p-d { background: var(--draw); color: #000; min-width: 28px; }
     .p-a { background: var(--away); color: #000; min-width: 28px; }
 
-    /* ── Form dots ── */
     .form-row { display: flex; gap: 3px; margin-top: 4px; flex-wrap: wrap; }
 
     .dot {
@@ -202,7 +200,6 @@
     .L { background: var(--away); }
     .Q { background: #2a2d3a; color: #556; border: 1px solid #333; }
 
-    /* ── Form venue label ── */
     .form-venue-label {
         font-size: 0.58rem;
         letter-spacing: 2px;
@@ -212,7 +209,6 @@
         margin-bottom: 2px;
     }
 
-    /* ── Teams header ── */
     .teams-row {
         display: flex;
         justify-content: space-between;
@@ -228,7 +224,6 @@
     .team-block .form-row.right { justify-content: flex-end; }
     .team-block.right .form-venue-label { text-align: right; }
 
-    /* ── Section label ── */
     .section-label {
         font-size: 0.6rem;
         letter-spacing: 3px;
@@ -239,7 +234,6 @@
         padding-top: 12px;
     }
 
-    /* ── Market comparison table ── */
     .market-table { width: 100%; border-collapse: collapse; }
 
     .market-table th {
@@ -295,7 +289,6 @@
         text-align: right;
     }
 
-    /* Value highlight state */
     .market-row-tr.value {
         background: rgba(0,255,157,0.05);
     }
@@ -319,7 +312,6 @@
     .no-value  { color: #3a3f50; }
     .thin-edge { color: var(--draw); font-size: 0.65rem; }
 
-    /* ── Gaffer verdict box ── */
     .gaffer-box {
         background: rgba(0,255,157,0.04);
         border-left: 3px solid var(--neon);
@@ -342,7 +334,6 @@
         border-top: 1px solid rgba(0,255,157,0.1);
     }
 
-    /* ── Loader ── */
     .loader {
         border: 3px solid #1a1d28;
         border-top: 3px solid var(--neon);
@@ -379,26 +370,12 @@
     <div class="card">
         <input type="date" id="date">
 
-        <!-- Adjustable bankroll in euros -->
-        <div class="bankroll-row">
-            <label>Bankroll</label>
-            <span class="bankroll-symbol">€</span>
-            <input
-                type="number"
-                id="bankroll-input"
-                value="1000"
-                min="1"
-                step="1"
-                inputmode="decimal"
-                placeholder="1000"
-            >
-        </div>
-
         <button onclick="getFixtures()">SCAN TACTICAL BOARD</button>
         <select id="matches" onchange="toggleBtn()">
             <option value="">Select Match...</option>
         </select>
         <button id="btn" onclick="predict()" disabled>GET VERDICT</button>
+        <button onclick="window.location.href='acca.html'" style="background:#000;color:var(--neon);border:1px solid var(--neon);margin-bottom:0;">⚡ ACCA BUILDER</button>
     </div>
 
     <div id="output"></div>
@@ -409,13 +386,25 @@
 const API = "https://football-api-9e4p.onrender.com";
 let fixturesData = [];
 
-// Bankroll is read live from the input field
+// Bankroll is read live from the input inside the verdict card.
 function getBankroll() {
-    const val = parseFloat(document.getElementById("bankroll-input").value);
+    const el = document.getElementById("bankroll-input");
+    const val = el ? parseFloat(el.value) : 1000;
     return (!val || isNaN(val) || val <= 0) ? 1000 : val;
 }
 
-// Set today's date as default
+// When user changes bankroll, re-trigger calcKelly on every visible bookie input
+function refreshKellyStakes() {
+    document.querySelectorAll(".bookie-input").forEach(input => {
+        if (input.value) {
+            const onInput = input.getAttribute("oninput");
+            if (onInput) {
+                try { eval(onInput.replace("this", "input")); } catch(e) {}
+            }
+        }
+    });
+}
+
 document.getElementById("date").value = new Date().toISOString().split("T")[0];
 
 const toggleBtn = () => {
@@ -423,7 +412,6 @@ const toggleBtn = () => {
         document.getElementById("matches").value === "";
 };
 
-// Render form dots with venue label above
 function renderForm(str, align = "left", venueLabel = "") {
     const isRight      = align === "right";
     const justifyStyle = `justify-content:${isRight ? "flex-end" : "flex-start"}`;
@@ -445,7 +433,6 @@ function renderForm(str, align = "left", venueLabel = "") {
     return `${labelHtml}<div class="form-row" style="${justifyStyle}">${dots}</div>`;
 }
 
-// Fetch fixtures
 async function getFixtures() {
     const d   = document.getElementById("date").value;
     const sel = document.getElementById("matches");
@@ -496,7 +483,6 @@ async function getFixtures() {
     }
 }
 
-// Quarter-Kelly calculator — live bankroll, euros
 function calcKelly(inputEl, fairOdds, targetId) {
     const target   = document.getElementById(targetId);
     const row      = inputEl.closest(".market-row-tr");
@@ -533,7 +519,6 @@ function calcKelly(inputEl, fairOdds, targetId) {
     target.innerHTML = `<span class="prime">★ €${stake}</span>`;
 }
 
-// Fetch prediction
 async function predict() {
     const idx = document.getElementById("matches").value;
     const out = document.getElementById("output");
@@ -563,9 +548,7 @@ async function predict() {
 
         const m        = fixturesData[idx];
         const market   = d.market || {};
-        const bankroll = getBankroll();
 
-        // Market row builder
         const mkRow = (label, fairKey, kellyId) => `
             <tr class="market-row-tr" id="row-${kellyId}">
                 <td>${label}</td>
@@ -586,7 +569,6 @@ async function predict() {
                 </td>
             </tr>`;
 
-        // Gaffer narrative
         const h_w      = d.probs.home > d.probs.away;
         const fav      = h_w ? m.home : m.away;
         const conf     = Math.max(d.probs.home, d.probs.away);
@@ -603,8 +585,6 @@ async function predict() {
 
         out.innerHTML = `
         <div class="card">
-
-            <!-- Teams + Form — labelled by venue -->
             <div class="teams-row">
                 <div class="team-block">
                     <b>${m.home}</b>
@@ -618,22 +598,35 @@ async function predict() {
                 </div>
             </div>
 
-            <!-- Predicted Score -->
             <div class="score">${d.score}</div>
             <div class="lambda-row">
                 <span>λ HOME ${d.h_lam}</span>
                 <span>λ AWAY ${d.a_lam}</span>
             </div>
 
-            <!-- Probability Bar (min-width fix applied via CSS) -->
             <div class="prob-bar">
                 <div class="p-h" style="width:${d.probs.home}%">${d.probs.home}%</div>
                 <div class="p-d" style="width:${d.probs.draw}%">${d.probs.draw}%</div>
                 <div class="p-a" style="width:${d.probs.away}%">${d.probs.away}%</div>
             </div>
 
-            <!-- Market Comparison + Kelly Staker -->
-            <div class="section-label">Market Comparison · ¼ Kelly Staker (€${bankroll.toLocaleString()} Bank)</div>
+            <div class="section-label">Market Comparison · ¼ Kelly Staker</div>
+            
+            <div class="bankroll-row">
+                <label>Bankroll</label>
+                <span class="bankroll-symbol">€</span>
+                <input
+                    type="number"
+                    id="bankroll-input"
+                    value="1000"
+                    min="1"
+                    step="1"
+                    inputmode="decimal"
+                    placeholder="1000"
+                    oninput="refreshKellyStakes()"
+                >
+            </div>
+
             <table class="market-table">
                 <thead>
                     <tr>
@@ -654,12 +647,10 @@ async function predict() {
                 </tbody>
             </table>
 
-            <!-- Gaffer Verdict -->
             <div class="gaffer-box">
                 ${verdict}
                 <div class="signature">— THE GAFFER</div>
             </div>
-
         </div>`;
 
     } catch (e) {

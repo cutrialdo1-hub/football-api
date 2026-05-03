@@ -732,16 +732,21 @@ def acca():
 @app.route("/session")
 def session():
     """
-    Scans all fixtures across 5 days, scores every market signal,
-    and returns the top N temporally-separated sequential picks
-    suitable for a Masaniello session.
+    Scans fixtures across a user-defined date range, scores every
+    market signal, and returns sequential picks in strict
+    chronological order suitable for a Masaniello session.
+
+    Query params:
+        date_from  — YYYY-MM-DD (default: today)
+        date_to    — YYYY-MM-DD (default: today + 5 days, max 5 days from today)
 
     Rules:
-    - Minimum 105 min gap between pick kickoffs (90min match + 15min buffer)
+    - Picks returned in strict DATE ORDER — no going back in time
+    - One pick per fixture (best-scoring market only)
+    - No two picks from the same fixture
     - All markets scored: 1X2, BTTS, Over 1.5 / 2.5 / 3.5
     - Scored by: confidence × probability × odds_suitability
-    - Odds suitability peaks at 1.5–3.5 range (Masaniello sweet spot)
-    - Returns top 10 picks + reserve list for replacements
+    - Returns top 10 sequential picks + reserve list
     """
     try:
         if not fixtures_store:
@@ -751,12 +756,28 @@ def session():
         if not fixtures_store:
             return jsonify({"status": "loading", "message": "Data syncing, try again shortly."})
 
+        # ── Date range from query params ──
         today   = _date.today()
         max_day = today + timedelta(days=5)
 
+        raw_from = request.args.get("date_from", "").split("T")[0] or today.isoformat()
+        raw_to   = request.args.get("date_to",   "").split("T")[0] or max_day.isoformat()
+
+        try:
+            d_from = _date.fromisoformat(raw_from)
+            d_to   = _date.fromisoformat(raw_to)
+        except ValueError:
+            return jsonify({"error": "Invalid date format. Use YYYY-MM-DD."}), 400
+
+        # Clamp to today → today+5
+        d_from = max(d_from, today)
+        d_to   = min(d_to,   max_day)
+
+        if d_from > d_to:
+            return jsonify({"error": "date_from must be before date_to"}), 400
+
         # ── Score function for Masaniello suitability ──
         def mas_score(prob, fair_odds, confidence):
-            # Odds suitability: peak at 2.0, falls off sharply outside 1.4–3.5
             if fair_odds < 1.2 or fair_odds > 5.0:
                 odds_suit = 0.0
             elif fair_odds <= 2.0:
@@ -765,22 +786,24 @@ def session():
                 odds_suit = 1.0 - ((fair_odds - 2.0) / 2.5)
             else:
                 odds_suit = max(0, 1.0 - ((fair_odds - 3.5) / 3.0))
-
             return round(prob * confidence * odds_suit, 6)
 
-        all_picks = []
-        current   = today
+        # ── Step 1: collect best pick PER FIXTURE, keyed by (date, home, away) ──
+        # This ensures we only ever have one market per fixture in the session.
+        # Within each fixture, we keep the highest-scoring market signal.
+        fixture_best = {}   # key: (date, home, away) → best pick dict
 
-        while current <= max_day:
+        current = d_from
+        while current <= d_to:
             ds      = current.isoformat()
             matches = fixtures_store.get(ds, [])
+            days_out = (current - today).days
 
             for m in matches:
                 try:
                     comp  = m.get("comp")
                     h_id  = m.get("home_id")
                     a_id  = m.get("away_id")
-                    kt    = m.get("kickoff", "")   # ISO datetime string
                     if not comp or not h_id or not a_id:
                         continue
 
@@ -807,7 +830,6 @@ def session():
                     h_lam = max(min(h_venue["gf"] * (a_venue["ga"] / league_avg) * h_atk * (1.0 / a_def) * residual_adv, 3.2), 0.35)
                     a_lam = max(min(a_venue["gf"] * (h_venue["ga"] / league_avg) * a_atk * (1.0 / h_def), 3.2), 0.35)
 
-                    # ── Build score matrix ──
                     p_h = p_d = p_a = 0.0
                     p_btts = p_o15 = p_o25 = p_o35 = 0.0
                     for i in range(7):
@@ -829,40 +851,45 @@ def session():
 
                     def fair(p): return round(1/p, 2) if p > 0.04 else 25.0
 
-                    # ── Score all markets for this fixture ──
                     markets = [
-                        ("Home Win",  "1X2", p_h,    fair(p_h),    confidence),
-                        ("Draw",      "1X2", p_d,    fair(p_d),    confidence * 0.7),  # draws less reliable
-                        ("Away Win",  "1X2", p_a,    fair(p_a),    confidence),
-                        ("BTTS",      "Goals", p_btts, fair(p_btts), 0.25),  # flat confidence
+                        ("Home Win",  "1X2",   p_h,    fair(p_h),    confidence),
+                        ("Draw",      "1X2",   p_d,    fair(p_d),    confidence * 0.7),
+                        ("Away Win",  "1X2",   p_a,    fair(p_a),    confidence),
+                        ("BTTS",      "Goals", p_btts, fair(p_btts), 0.25),
                         ("Over 1.5",  "Goals", p_o15,  fair(p_o15),  0.30),
                         ("Over 2.5",  "Goals", p_o25,  fair(p_o25),  0.28),
                         ("Over 3.5",  "Goals", p_o35,  fair(p_o35),  0.20),
                     ]
 
+                    # Find the single best market for this fixture
+                    best_for_fixture = None
                     for label, mkt_type, prob, fo, conf in markets:
                         score = mas_score(prob, fo, conf)
-                        if score <= 0 or prob < 0.40:   # skip low-prob picks
+                        if score <= 0 or prob < 0.40:
                             continue
-                        all_picks.append({
-                            "date":       ds,
-                            "kickoff":    kt,
-                            "home":       m["home"],
-                            "away":       m["away"],
-                            "home_id":    h_id,
-                            "away_id":    a_id,
-                            "comp":       comp,
-                            "league":     m.get("league", comp),
-                            "market":     label,
-                            "mkt_type":   mkt_type,
-                            "prob":       round(prob * 100, 1),
-                            "fair_odds":  fo,
-                            "confidence": round(conf, 4),
-                            "mas_score":  score,
-                            "h_lam":      round(h_lam, 3),
-                            "a_lam":      round(a_lam, 3),
-                            "days_out":   (current - today).days,
-                        })
+                        if best_for_fixture is None or score > best_for_fixture["mas_score"]:
+                            best_for_fixture = {
+                                "date":       ds,
+                                "home":       m["home"],
+                                "away":       m["away"],
+                                "home_id":    h_id,
+                                "away_id":    a_id,
+                                "comp":       comp,
+                                "league":     m.get("league", comp),
+                                "market":     label,
+                                "mkt_type":   mkt_type,
+                                "prob":       round(prob * 100, 1),
+                                "fair_odds":  fo,
+                                "confidence": round(conf, 4),
+                                "mas_score":  score,
+                                "h_lam":      round(h_lam, 3),
+                                "a_lam":      round(a_lam, 3),
+                                "days_out":   days_out,
+                            }
+
+                    if best_for_fixture:
+                        key = (ds, m["home"], m["away"])
+                        fixture_best[key] = best_for_fixture
 
                 except Exception as e:
                     print(f"[SESSION] Skipped {m.get('home','?')} vs {m.get('away','?')}: {e}")
@@ -870,41 +897,21 @@ def session():
 
             current += timedelta(days=1)
 
-        # ── Sort all picks by mas_score descending ──
-        all_picks.sort(key=lambda x: x["mas_score"], reverse=True)
+        # ── Step 2: sort ALL fixture picks by DATE first, then by score within same day ──
+        # This guarantees strict chronological order — no jumping back in time.
+        all_picks = sorted(
+            fixture_best.values(),
+            key=lambda x: (x["date"], -x["mas_score"])
+        )
 
-        # ── Sequential filter: 105-min gap between kickoffs ──
-        # Since fixtures_store doesn't store kickoff times directly,
-        # we use date + position within day as proxy.
-        # Group by (date, match index) and enforce one pick per ~105min window.
-        selected  = []
-        reserves  = []
-        used_windows = []  # list of (date, match_slot) already picked
-
-        def kickoff_conflicts(pick, used):
-            """
-            Two picks conflict if they share the same date AND same match slot
-            (same home+away combo) or are within the same kickoff group.
-            Since we don't have exact times, we group by date and ensure
-            no two picks come from the same fixture (different markets).
-            We also limit to one pick per date-hour window.
-            """
-            for u in used:
-                # Same fixture different market — skip
-                if u["home"] == pick["home"] and u["away"] == pick["away"]:
-                    return True
-            return False
-
-        for pick in all_picks:
-            if len(selected) < 10 and not kickoff_conflicts(pick, selected):
-                selected.append(pick)
-                used_windows.append(pick)
-            elif len(reserves) < 20:
-                reserves.append(pick)
+        # ── Step 3: take top 10 in chronological order as session picks ──
+        # Remaining go to reserves, sorted by score (best replacements first)
+        selected = all_picks[:10]
+        reserves = sorted(all_picks[10:], key=lambda x: -x["mas_score"])
 
         return jsonify({
             "session":  selected,
-            "reserves": reserves[:15],  # top 15 reserves for replacements
+            "reserves": reserves[:15],
         })
 
     except Exception as e:

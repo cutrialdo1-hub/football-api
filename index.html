@@ -379,12 +379,26 @@
     <div class="card">
         <input type="date" id="date">
 
+        <!-- Adjustable bankroll in euros -->
+        <div class="bankroll-row">
+            <label>Bankroll</label>
+            <span class="bankroll-symbol">€</span>
+            <input
+                type="number"
+                id="bankroll-input"
+                value="1000"
+                min="1"
+                step="1"
+                inputmode="decimal"
+                placeholder="1000"
+            >
+        </div>
+
         <button onclick="getFixtures()">SCAN TACTICAL BOARD</button>
         <select id="matches" onchange="toggleBtn()">
             <option value="">Select Match...</option>
         </select>
         <button id="btn" onclick="predict()" disabled>GET VERDICT</button>
-        <button onclick="window.location.href='acca.html'" style="background:#000;color:var(--neon);border:1px solid var(--neon);margin-bottom:0;">⚡ ACCA BUILDER</button>
     </div>
 
     <div id="output"></div>
@@ -395,26 +409,10 @@
 const API = "https://football-api-9e4p.onrender.com";
 let fixturesData = [];
 
-// Bankroll is read live from the input inside the verdict card.
-// Falls back to 1000 if the verdict card hasn't been rendered yet.
+// Bankroll is read live from the input field
 function getBankroll() {
-    const el  = document.getElementById("bankroll-input");
-    const val = el ? parseFloat(el.value) : 1000;
+    const val = parseFloat(document.getElementById("bankroll-input").value);
     return (!val || isNaN(val) || val <= 0) ? 1000 : val;
-}
-
-// When user changes bankroll, re-trigger calcKelly on every visible bookie input
-// so all stakes update instantly without a new API call.
-function refreshKellyStakes() {
-    document.querySelectorAll(".bookie-input").forEach(input => {
-        if (input.value) {
-            // Read the fairOdds from the oninput attribute to reuse same logic
-            const onInput = input.getAttribute("oninput");
-            if (onInput) {
-                try { eval(onInput.replace("this", "input")); } catch(e) {}
-            }
-        }
-    });
 }
 
 // Set today's date as default
@@ -635,23 +633,7 @@ async function predict() {
             </div>
 
             <!-- Market Comparison + Kelly Staker -->
-            <div class="section-label">Market Comparison · ¼ Kelly Staker</div>
-
-            <!-- Bankroll adjuster lives here so it's per-verdict -->
-            <div class="bankroll-row">
-                <label>Bankroll</label>
-                <span class="bankroll-symbol">€</span>
-                <input
-                    type="number"
-                    id="bankroll-input"
-                    value="1000"
-                    min="1"
-                    step="1"
-                    inputmode="decimal"
-                    placeholder="1000"
-                    oninput="refreshKellyStakes()"
-                >
-            </div>
+            <div class="section-label">Market Comparison · ¼ Kelly Staker (€${bankroll.toLocaleString()} Bank)</div>
             <table class="market-table">
                 <thead>
                     <tr>

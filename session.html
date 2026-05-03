@@ -242,6 +242,19 @@
     .final-pnl.pos { color: var(--neon); text-shadow: 0 0 20px rgba(0,255,157,0.4); }
     .final-pnl.neg { color: var(--away); }
 
+    /* ── Quick range buttons ── */
+    .quick-btn {
+        padding: 6px 12px; border-radius: 6px;
+        border: 1px solid var(--border); background: transparent;
+        color: var(--dim); font-family: Orbitron, sans-serif;
+        font-size: 0.6rem; letter-spacing: 1px; cursor: pointer;
+        transition: all 0.2s; width: auto; margin-bottom: 0;
+    }
+    .quick-btn:hover, .quick-btn.active {
+        border-color: var(--gold); color: var(--gold);
+        background: rgba(255,204,0,0.05); box-shadow: none;
+    }
+
     /* ── Loader ── */
     .loader { border: 3px solid #1a1d28; border-top: 3px solid var(--gold); border-radius: 50%; width: 32px; height: 32px; margin: 20px auto; animation: spin 0.9s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -259,6 +272,21 @@
 
     <!-- Session config -->
     <div class="card" id="config-card">
+        <div class="section-label">Date Range</div>
+
+        <div style="display:flex;gap:10px;margin-bottom:10px;">
+            <input type="date" id="cfg-from" style="flex:1;padding:10px 12px;border-radius:10px;background:#000;border:1px solid rgba(255,204,0,0.2);color:var(--gold);font-family:Inter,sans-serif;font-size:0.85rem;">
+            <input type="date" id="cfg-to"   style="flex:1;padding:10px 12px;border-radius:10px;background:#000;border:1px solid rgba(255,204,0,0.2);color:var(--gold);font-family:Inter,sans-serif;font-size:0.85rem;">
+        </div>
+
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;">
+            <button class="quick-btn active" onclick="setRange(0,0,this)">TODAY</button>
+            <button class="quick-btn" onclick="setRange(0,1,this)">+1 DAY</button>
+            <button class="quick-btn" onclick="setRange(0,2,this)">+2 DAYS</button>
+            <button class="quick-btn" onclick="setRange(0,3,this)">+3 DAYS</button>
+            <button class="quick-btn" onclick="setRange(0,5,this)">FULL 5 DAYS</button>
+        </div>
+
         <div class="section-label">Session Parameters</div>
 
         <div class="bankroll-row">
@@ -340,6 +368,26 @@ let reserves    = [];     // reserve picks for replacements
 let sessionCfg  = {};     // {bankroll, n, k, target}
 let removingIdx = null;   // index of pick being replaced
 
+// ── Date helpers ──
+function toISO(d) { return d.toISOString().split("T")[0]; }
+
+function setRange(fromOffset, toOffset, btn) {
+    const today = new Date();
+    const from  = new Date(today); from.setDate(today.getDate() + fromOffset);
+    const to    = new Date(today); to.setDate(today.getDate() + toOffset);
+    document.getElementById("cfg-from").value = toISO(from);
+    document.getElementById("cfg-to").value   = toISO(to);
+    document.querySelectorAll(".quick-btn").forEach(b => b.classList.remove("active"));
+    if (btn) btn.classList.add("active");
+}
+
+// Default: today only
+(function() {
+    const today = new Date();
+    document.getElementById("cfg-from").value = toISO(today);
+    document.getElementById("cfg-to").value   = toISO(today);
+})();
+
 // ── Conservative Masaniello stake calculation ──
 // After each result, recalculate remaining stakes using updated wins/losses.
 // Conservative mode: dampen recovery rate by 0.6× to protect bankroll.
@@ -364,7 +412,10 @@ async function buildSession() {
     const n        = parseInt(document.getElementById("cfg-n").value)           || 10;
     const k        = parseInt(document.getElementById("cfg-k").value)           || 6;
     const target   = parseFloat(document.getElementById("cfg-target").value)    || 200;
+    const dateFrom = document.getElementById("cfg-from").value;
+    const dateTo   = document.getElementById("cfg-to").value;
 
+    if (!dateFrom || !dateTo) { alert("Please select a date range."); return; }
     if (k > n) { alert("Wins needed cannot exceed total bets."); return; }
 
     sessionCfg = { bankroll, n, k, target };
@@ -375,7 +426,7 @@ async function buildSession() {
     document.getElementById("complete-card").classList.remove("visible");
 
     try {
-        const res  = await fetch(`${API}/session`);
+        const res  = await fetch(`${API}/session?date_from=${encodeURIComponent(dateFrom)}&date_to=${encodeURIComponent(dateTo)}`);
         const data = await res.json();
 
         document.getElementById("session-loader").style.display = "none";

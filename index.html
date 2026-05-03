@@ -387,14 +387,12 @@
 const API = "https://football-api-9e4p.onrender.com";
 let fixturesData = [];
 
-// Bankroll is read live from the input inside the verdict card.
 function getBankroll() {
     const el = document.getElementById("bankroll-input");
     const val = el ? parseFloat(el.value) : 1000;
     return (!val || isNaN(val) || val <= 0) ? 1000 : val;
 }
 
-// When user changes bankroll, re-trigger calcKelly on every visible bookie input
 function refreshKellyStakes() {
     document.querySelectorAll(".bookie-input").forEach(input => {
         if (input.value) {
@@ -547,8 +545,8 @@ async function predict() {
             return;
         }
 
-        const m        = fixturesData[idx];
-        const market   = d.market || {};
+        const m      = fixturesData[idx];
+        const market = d.market || {};
 
         const mkRow = (label, fairKey, kellyId) => `
             <tr class="market-row-tr" id="row-${kellyId}">
@@ -602,6 +600,7 @@ async function predict() {
             <div class="score">${d.score}</div>
             <div class="lambda-row">
                 <span>λ HOME ${d.h_lam}</span>
+                <span>${d.blended ? '🔵 BAYESIAN' : '⚪ POISSON'}</span>
                 <span>λ AWAY ${d.a_lam}</span>
             </div>
 
@@ -612,7 +611,7 @@ async function predict() {
             </div>
 
             <div class="section-label">Market Comparison · ¼ Kelly Staker</div>
-            
+
             <div class="bankroll-row">
                 <label>Bankroll</label>
                 <span class="bankroll-symbol">€</span>

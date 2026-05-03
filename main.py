@@ -322,6 +322,7 @@ def fetch_all_fixtures() -> bool:
                 "away_id": a_t["id"],
                 "comp":    comp_code,
                 "league":  comp.get("name", comp_code),
+                "kickoff": m.get("utcDate", ""),   # full ISO datetime e.g. "2026-05-03T14:00:00Z"
             })
 
         fixtures_store = temp   # atomic swap
@@ -769,9 +770,9 @@ def session():
         except ValueError:
             return jsonify({"error": "Invalid date format. Use YYYY-MM-DD."}), 400
 
-        # Clamp to today → today+5
+        # Clamp to today → today+5, but strictly respect user's d_from/d_to
         d_from = max(d_from, today)
-        d_to   = min(d_to,   max_day)
+        d_to   = min(d_to, max_day)
 
         if d_from > d_to:
             return jsonify({"error": "date_from must be before date_to"}), 400
@@ -870,6 +871,7 @@ def session():
                         if best_for_fixture is None or score > best_for_fixture["mas_score"]:
                             best_for_fixture = {
                                 "date":       ds,
+                                "kickoff":    m.get("kickoff", ""),   # full UTC datetime
                                 "home":       m["home"],
                                 "away":       m["away"],
                                 "home_id":    h_id,
@@ -897,11 +899,13 @@ def session():
 
             current += timedelta(days=1)
 
-        # ── Step 2: sort ALL fixture picks by DATE first, then by score within same day ──
-        # This guarantees strict chronological order — no jumping back in time.
+        # ── Step 2: sort ALL fixture picks by full kickoff datetime ──
+        # Using kickoff (full ISO string e.g. "2026-05-03T14:00:00Z") as sort key
+        # guarantees strict chronological order including time within the same day.
+        # Falls back to date string if kickoff is missing.
         all_picks = sorted(
             fixture_best.values(),
-            key=lambda x: (x["date"], -x["mas_score"])
+            key=lambda x: (x["kickoff"] or x["date"], -x["mas_score"])
         )
 
         # ── Step 3: take top 10 in chronological order as session picks ──

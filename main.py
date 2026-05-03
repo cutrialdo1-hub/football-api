@@ -58,8 +58,36 @@ LEAGUE_HOME_ADV = {
 DEFAULT_HOME_ADV = 1.10
 
 # =========================================================
-# 🔒 LOCKS & CACHE
+# 🎲 ODDS API (The Odds API — the-odds-api.com)
 # =========================================================
+ODDS_API_KEY  = os.getenv("ODDS_API_KEY")   # add to Render env vars
+ODDS_API_BASE = "https://api.the-odds-api.com/v4/sports"
+
+# Map football-data.org competition codes → The Odds API sport keys
+ODDS_SPORT_KEYS = {
+    "PL":  "soccer_england_league1",
+    "BL1": "soccer_germany_bundesliga",
+    "PD":  "soccer_spain_la_liga",
+    "SA":  "soccer_italy_serie_a",
+    "FL1": "soccer_france_ligue_one",
+    "CL":  "soccer_uefa_champions_league",
+    "ELC": "soccer_england_league2",
+    "DED": "soccer_netherlands_eredivisie",
+    "PPL": "soccer_portugal_primeira_liga",
+    "BSA": "soccer_brazil_campeonato",
+}
+
+# Bayesian blending weights
+# 40% Poisson (your model) + 60% Market (bookmaker consensus)
+# Market gets higher weight because it encodes team news and sharp money
+# your model cannot access.
+WEIGHT_POISSON = 0.40
+WEIGHT_MARKET  = 0.60
+
+# Odds cache: keyed by sport_key, stores list of events with odds
+# Refreshed every 3 hours to stay within free tier (500 req/month)
+odds_cache: dict = {}
+ODDS_EXPIRY = 10800  # 3 hours
 fetch_lock    = threading.Lock()
 standings_cache: dict = {}
 form_cache:     dict = {}
@@ -107,6 +135,158 @@ def get_cache_age() -> float:
             return time.time() - json.load(f).get("timestamp", 0)
     except:
         return float("inf")
+
+# =========================================================
+# 🎲 ODDS ENGINE (The Odds API — Bayesian prior source)
+# =========================================================
+def get_market_odds(comp: str) -> list:
+    """
+    Fetch pre-match 1X2 odds for a competition from The Odds API.
+    Returns a list of event dicts each containing:
+      home_team, away_team, home_odds, draw_odds, away_odds
+    Uses in-memory cache with 3-hour expiry to protect free tier quota.
+    Falls back to empty list if API key missing or request fails.
+    """
+    if not ODDS_API_KEY:
+        return []
+
+    sport_key = ODDS_SPORT_KEYS.get(comp)
+    if not sport_key:
+        return []
+
+    now    = time.time()
+    cached = odds_cache.get(comp)
+    if cached and now - cached["t"] < ODDS_EXPIRY:
+        return cached["d"]
+
+    try:
+        r = requests.get(
+            f"{ODDS_API_BASE}/{sport_key}/odds",
+            params={
+                "apiKey":     ODDS_API_KEY,
+                "regions":    "eu",          # European bookmakers
+                "markets":    "h2h",         # head-to-head = 1X2
+                "oddsFormat": "decimal",
+            },
+            timeout=10
+        )
+
+        if r.status_code == 401:
+            print("[ODDS API] Invalid API key")
+            return []
+        if r.status_code == 422:
+            print(f"[ODDS API] Sport key not supported: {sport_key}")
+            return []
+        if r.status_code != 200:
+            print(f"[ODDS API] {comp} returned {r.status_code}")
+            return []
+
+        events    = r.json()
+        remaining = r.headers.get("x-requests-remaining", "?")
+        print(f"[ODDS API] {comp} — {len(events)} events fetched. Quota remaining: {remaining}")
+
+        parsed = []
+        for ev in events:
+            try:
+                # Average odds across all bookmakers for a consensus market price
+                home_name = ev["home_team"]
+                away_name = ev["away_team"]
+
+                home_odds_list = []
+                draw_odds_list = []
+                away_odds_list = []
+
+                for bookie in ev.get("bookmakers", []):
+                    for market in bookie.get("markets", []):
+                        if market["key"] != "h2h":
+                            continue
+                        for outcome in market["outcomes"]:
+                            if outcome["name"] == home_name:
+                                home_odds_list.append(outcome["price"])
+                            elif outcome["name"] == away_name:
+                                away_odds_list.append(outcome["price"])
+                            else:
+                                draw_odds_list.append(outcome["price"])
+
+                if not home_odds_list or not away_odds_list or not draw_odds_list:
+                    continue
+
+                # Use median rather than mean — more robust to outlier bookmakers
+                def median(lst):
+                    s = sorted(lst)
+                    n = len(s)
+                    return s[n//2] if n % 2 else (s[n//2-1] + s[n//2]) / 2
+
+                parsed.append({
+                    "home_team":  home_name,
+                    "away_team":  away_name,
+                    "home_odds":  median(home_odds_list),
+                    "draw_odds":  median(draw_odds_list),
+                    "away_odds":  median(away_odds_list),
+                    "commence":   ev.get("commence_time", ""),
+                })
+            except Exception as e:
+                print(f"[ODDS API] Parse error for event: {e}")
+                continue
+
+        odds_cache[comp] = {"t": now, "d": parsed}
+        return parsed
+
+    except Exception as e:
+        print(f"[ODDS API ERROR] {comp}: {e}")
+        return []
+
+
+def find_match_odds(events: list, home: str, away: str) -> dict | None:
+    """
+    Find market odds for a specific fixture from the events list.
+    Uses fuzzy name matching since team names differ between APIs.
+    Returns dict with home_odds, draw_odds, away_odds or None if not found.
+    """
+    if not events:
+        return None
+
+    home_lower = home.lower().strip()
+    away_lower = away.lower().strip()
+
+    for ev in events:
+        ev_home = ev["home_team"].lower().strip()
+        ev_away = ev["away_team"].lower().strip()
+
+        # Exact match first
+        if ev_home == home_lower and ev_away == away_lower:
+            return ev
+
+        # Partial match — one team name contains the other
+        # handles "Man United" vs "Manchester United" etc.
+        if (home_lower in ev_home or ev_home in home_lower) and \
+           (away_lower in ev_away or ev_away in away_lower):
+            return ev
+
+    return None
+
+
+def bayesian_blend(p_poisson: float, market_odds: float) -> float:
+    """
+    Blend Poisson probability with market-implied probability.
+    Market probability is derived by removing the bookmaker margin (overround)
+    and then weighting 40% Poisson + 60% Market.
+
+    Args:
+        p_poisson:    Raw Poisson probability (0–1)
+        market_odds:  Decimal odds from bookmaker consensus
+
+    Returns:
+        Blended probability (0–1), normalised by caller
+    """
+    if not market_odds or market_odds <= 1.0:
+        return p_poisson
+
+    # Raw market implied probability (includes overround)
+    raw_market_p = 1.0 / market_odds
+
+    # We normalise across all three outcomes in the caller to remove overround
+    return (WEIGHT_POISSON * p_poisson) + (WEIGHT_MARKET * raw_market_p)
 
 # =========================================================
 # 📊 POISSON MATH
@@ -419,7 +599,6 @@ def predict():
         p_over15 = 0.0
         p_over25 = 0.0
         p_over35 = 0.0
-        # Store per-cell probabilities for scoreline selection after outcome is known
         matrix = {}
 
         for i in range(7):
@@ -434,27 +613,57 @@ def predict():
                 if i + j > 2:        p_over25  += p
                 if i + j > 3:        p_over35  += p
 
-        # --- Normalise 1X2 to 100% ---
+        # --- Normalise raw Poisson 1X2 ---
         tot   = p_h + p_d + p_a
+        p_h_raw = p_h / tot
+        p_d_raw = p_d / tot
+        p_a_raw = p_a / tot
+
+        # --- Bayesian Blend with Market Odds ---
+        # Fetch bookmaker consensus odds for this competition.
+        # If market data is available for this fixture, blend 40% Poisson + 60% Market.
+        # Goals markets (BTTS, O/U) are NOT blended — Poisson is more reliable there.
+        # If no market data found, fall back to pure Poisson.
+        market_events = get_market_odds(comp)
+        match_odds    = find_match_odds(market_events, req.get("home", ""), req.get("away", ""))
+
+        if match_odds:
+            # Blend each outcome
+            b_h = bayesian_blend(p_h_raw, match_odds["home_odds"])
+            b_d = bayesian_blend(p_d_raw, match_odds["draw_odds"])
+            b_a = bayesian_blend(p_a_raw, match_odds["away_odds"])
+
+            # Normalise blended probabilities to sum to 1.0
+            # (removes bookmaker overround embedded in market priors)
+            b_tot = b_h + b_d + b_a
+            p_h_final = b_h / b_tot
+            p_d_final = b_d / b_tot
+            p_a_final = b_a / b_tot
+
+            blended = True
+            print(f"[BAYES] {req.get('home')} vs {req.get('away')} — "
+                  f"Poisson: H{p_h_raw:.2f}/D{p_d_raw:.2f}/A{p_a_raw:.2f} → "
+                  f"Blended: H{p_h_final:.2f}/D{p_d_final:.2f}/A{p_a_final:.2f}")
+        else:
+            # No market data — use pure Poisson
+            p_h_final = p_h_raw
+            p_d_final = p_d_raw
+            p_a_final = p_a_raw
+            blended   = False
+            print(f"[BAYES] No market odds found for {req.get('home')} vs {req.get('away')} — using Poisson only")
 
         # --- Scoreline: outcome-consistent if model has clear conviction ---
-        # If the leading outcome is >5% ahead of the second-placed outcome,
-        # restrict the scoreline to cells within that outcome bracket.
-        # If the match is too close to call (<5% margin), use the full matrix —
-        # the raw most-probable cell is the most honest answer in that case.
-        sorted_probs = sorted([p_h, p_d, p_a], reverse=True)
+        sorted_probs = sorted([p_h_final, p_d_final, p_a_final], reverse=True)
         lead = sorted_probs[0] - sorted_probs[1]
 
         if lead >= 0.05:
-            # Clear favourite — filter scoreline to winning outcome bracket
-            if p_h >= p_d and p_h >= p_a:
-                valid = lambda i, j: i > j   # home win cells only
-            elif p_a >= p_h and p_a >= p_d:
-                valid = lambda i, j: j > i   # away win cells only
+            if p_h_final >= p_d_final and p_h_final >= p_a_final:
+                valid = lambda i, j: i > j
+            elif p_a_final >= p_h_final and p_a_final >= p_d_final:
+                valid = lambda i, j: j > i
             else:
-                valid = lambda i, j: i == j  # draw cells only
+                valid = lambda i, j: i == j
         else:
-            # Too close to call — use full matrix, no bracket filter
             valid = lambda i, j: True
 
         best  = "1-1"
@@ -462,11 +671,12 @@ def predict():
         for (i, j), p in matrix.items():
             if valid(i, j) and p > max_p:
                 max_p, best = p, f"{i}-{j}"
-        h_pct = round((p_h / tot) * 100)
-        d_pct = round((p_d / tot) * 100)
-        a_pct = 100 - h_pct - d_pct  # guarantees sum = 100
 
-        # --- Fair Decimal Odds ---
+        h_pct = round(p_h_final * 100)
+        d_pct = round(p_d_final * 100)
+        a_pct = 100 - h_pct - d_pct
+
+        # --- Fair Decimal Odds (from blended probabilities) ---
         def fair_odds(p: float) -> float:
             return round(1 / p, 2) if p > 0.04 else 25.0
 
@@ -474,9 +684,9 @@ def predict():
             "score":   best,
             "probs":   {"home": h_pct, "draw": d_pct, "away": a_pct},
             "market":  {
-                "home":    fair_odds(p_h / tot),
-                "draw":    fair_odds(p_d / tot),
-                "away":    fair_odds(p_a / tot),
+                "home":    fair_odds(p_h_final),
+                "draw":    fair_odds(p_d_final),
+                "away":    fair_odds(p_a_final),
                 "btts":    fair_odds(p_btts),
                 "over15":  fair_odds(p_over15),
                 "over25":  fair_odds(p_over25),
@@ -488,6 +698,7 @@ def predict():
             "a_form":  a_form,
             "h_lam":   round(h_lam, 3),
             "a_lam":   round(a_lam, 3),
+            "blended": blended,
         })
 
     except Exception as e:

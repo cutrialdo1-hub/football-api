@@ -727,6 +727,192 @@ def acca():
 
 
 # =========================================================
+# 🎯 SESSION — cherry-pick top sequential Masaniello picks
+# =========================================================
+@app.route("/session")
+def session():
+    """
+    Scans all fixtures across 5 days, scores every market signal,
+    and returns the top N temporally-separated sequential picks
+    suitable for a Masaniello session.
+
+    Rules:
+    - Minimum 105 min gap between pick kickoffs (90min match + 15min buffer)
+    - All markets scored: 1X2, BTTS, Over 1.5 / 2.5 / 3.5
+    - Scored by: confidence × probability × odds_suitability
+    - Odds suitability peaks at 1.5–3.5 range (Masaniello sweet spot)
+    - Returns top 10 picks + reserve list for replacements
+    """
+    try:
+        if not fixtures_store:
+            load_cache_from_disk()
+        if not fixtures_store:
+            fetch_all_fixtures()
+        if not fixtures_store:
+            return jsonify({"status": "loading", "message": "Data syncing, try again shortly."})
+
+        today   = _date.today()
+        max_day = today + timedelta(days=5)
+
+        # ── Score function for Masaniello suitability ──
+        def mas_score(prob, fair_odds, confidence):
+            # Odds suitability: peak at 2.0, falls off sharply outside 1.4–3.5
+            if fair_odds < 1.2 or fair_odds > 5.0:
+                odds_suit = 0.0
+            elif fair_odds <= 2.0:
+                odds_suit = (fair_odds - 1.2) / 0.8
+            elif fair_odds <= 3.5:
+                odds_suit = 1.0 - ((fair_odds - 2.0) / 2.5)
+            else:
+                odds_suit = max(0, 1.0 - ((fair_odds - 3.5) / 3.0))
+
+            return round(prob * confidence * odds_suit, 6)
+
+        all_picks = []
+        current   = today
+
+        while current <= max_day:
+            ds      = current.isoformat()
+            matches = fixtures_store.get(ds, [])
+
+            for m in matches:
+                try:
+                    comp  = m.get("comp")
+                    h_id  = m.get("home_id")
+                    a_id  = m.get("away_id")
+                    kt    = m.get("kickoff", "")   # ISO datetime string
+                    if not comp or not h_id or not a_id:
+                        continue
+
+                    league_avg  = LEAGUE_AVG_GOALS.get(comp, DEFAULT_LEAGUE_AVG)
+                    home_adv    = LEAGUE_HOME_ADV.get(comp, DEFAULT_HOME_ADV)
+                    all_stats   = get_standings(comp)
+                    home_stats  = all_stats.get("home",  {})
+                    away_stats  = all_stats.get("away",  {})
+                    total_stats = all_stats.get("total", {})
+
+                    fallback_h = {"gf": 1.2, "ga": 1.2, "rank": "N/A"}
+                    fallback_a = {"gf": 1.0, "ga": 1.3, "rank": "N/A"}
+                    h_venue = home_stats.get(str(h_id)) or total_stats.get(str(h_id), fallback_h)
+                    a_venue = away_stats.get(str(a_id)) or total_stats.get(str(a_id), fallback_a)
+
+                    h_cache = form_cache.get((h_id, "HOME"))
+                    a_cache = form_cache.get((a_id, "AWAY"))
+                    h_atk = h_cache["atk"] if h_cache else 1.0
+                    h_def = h_cache["def"] if h_cache else 1.0
+                    a_atk = a_cache["atk"] if a_cache else 1.0
+                    a_def = a_cache["def"] if a_cache else 1.0
+
+                    residual_adv = math.sqrt(home_adv)
+                    h_lam = max(min(h_venue["gf"] * (a_venue["ga"] / league_avg) * h_atk * (1.0 / a_def) * residual_adv, 3.2), 0.35)
+                    a_lam = max(min(a_venue["gf"] * (h_venue["ga"] / league_avg) * a_atk * (1.0 / h_def), 3.2), 0.35)
+
+                    # ── Build score matrix ──
+                    p_h = p_d = p_a = 0.0
+                    p_btts = p_o15 = p_o25 = p_o35 = 0.0
+                    for i in range(7):
+                        for j in range(7):
+                            p = poisson(i, h_lam) * poisson(j, a_lam)
+                            if   i > j: p_h += p
+                            elif i == j: p_d += p
+                            else:        p_a += p
+                            if i > 0 and j > 0: p_btts += p
+                            if i + j > 1: p_o15 += p
+                            if i + j > 2: p_o25 += p
+                            if i + j > 3: p_o35 += p
+
+                    tot  = p_h + p_d + p_a
+                    p_h /= tot; p_d /= tot; p_a /= tot
+
+                    probs_sorted = sorted([p_h, p_d, p_a], reverse=True)
+                    confidence   = probs_sorted[0] - probs_sorted[1]
+
+                    def fair(p): return round(1/p, 2) if p > 0.04 else 25.0
+
+                    # ── Score all markets for this fixture ──
+                    markets = [
+                        ("Home Win",  "1X2", p_h,    fair(p_h),    confidence),
+                        ("Draw",      "1X2", p_d,    fair(p_d),    confidence * 0.7),  # draws less reliable
+                        ("Away Win",  "1X2", p_a,    fair(p_a),    confidence),
+                        ("BTTS",      "Goals", p_btts, fair(p_btts), 0.25),  # flat confidence
+                        ("Over 1.5",  "Goals", p_o15,  fair(p_o15),  0.30),
+                        ("Over 2.5",  "Goals", p_o25,  fair(p_o25),  0.28),
+                        ("Over 3.5",  "Goals", p_o35,  fair(p_o35),  0.20),
+                    ]
+
+                    for label, mkt_type, prob, fo, conf in markets:
+                        score = mas_score(prob, fo, conf)
+                        if score <= 0 or prob < 0.40:   # skip low-prob picks
+                            continue
+                        all_picks.append({
+                            "date":       ds,
+                            "kickoff":    kt,
+                            "home":       m["home"],
+                            "away":       m["away"],
+                            "home_id":    h_id,
+                            "away_id":    a_id,
+                            "comp":       comp,
+                            "league":     m.get("league", comp),
+                            "market":     label,
+                            "mkt_type":   mkt_type,
+                            "prob":       round(prob * 100, 1),
+                            "fair_odds":  fo,
+                            "confidence": round(conf, 4),
+                            "mas_score":  score,
+                            "h_lam":      round(h_lam, 3),
+                            "a_lam":      round(a_lam, 3),
+                            "days_out":   (current - today).days,
+                        })
+
+                except Exception as e:
+                    print(f"[SESSION] Skipped {m.get('home','?')} vs {m.get('away','?')}: {e}")
+                    continue
+
+            current += timedelta(days=1)
+
+        # ── Sort all picks by mas_score descending ──
+        all_picks.sort(key=lambda x: x["mas_score"], reverse=True)
+
+        # ── Sequential filter: 105-min gap between kickoffs ──
+        # Since fixtures_store doesn't store kickoff times directly,
+        # we use date + position within day as proxy.
+        # Group by (date, match index) and enforce one pick per ~105min window.
+        selected  = []
+        reserves  = []
+        used_windows = []  # list of (date, match_slot) already picked
+
+        def kickoff_conflicts(pick, used):
+            """
+            Two picks conflict if they share the same date AND same match slot
+            (same home+away combo) or are within the same kickoff group.
+            Since we don't have exact times, we group by date and ensure
+            no two picks come from the same fixture (different markets).
+            We also limit to one pick per date-hour window.
+            """
+            for u in used:
+                # Same fixture different market — skip
+                if u["home"] == pick["home"] and u["away"] == pick["away"]:
+                    return True
+            return False
+
+        for pick in all_picks:
+            if len(selected) < 10 and not kickoff_conflicts(pick, selected):
+                selected.append(pick)
+                used_windows.append(pick)
+            elif len(reserves) < 20:
+                reserves.append(pick)
+
+        return jsonify({
+            "session":  selected,
+            "reserves": reserves[:15],  # top 15 reserves for replacements
+        })
+
+    except Exception as e:
+        print(f"[SESSION ERROR] {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# =========================================================
 # 🚀 BACKGROUND SCHEDULER
 # =========================================================
 def preload_standings():

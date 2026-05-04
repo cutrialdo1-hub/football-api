@@ -164,11 +164,8 @@ def get_market_odds(comp: str) -> list:
             f"{ODDS_API_BASE}/{sport_key}/odds",
             params={
                 "apiKey":     ODDS_API_KEY,
-                "regions":    "eu",
-                # Fetch all four market types in a single API call
-                # h2h = 1X2, totals = Over/Under, spreads = Asian Handicap,
-                # double_chance = 1X / X2 / 12
-                "markets":    "h2h,totals,spreads,double_chance",
+                "regions":    "eu",          # European bookmakers
+                "markets":    "h2h",         # head-to-head = 1X2
                 "oddsFormat": "decimal",
             },
             timeout=10
@@ -186,87 +183,48 @@ def get_market_odds(comp: str) -> list:
 
         events    = r.json()
         remaining = r.headers.get("x-requests-remaining", "?")
-        print(f"[ODDS API] {comp} — {len(events)} events. Markets: h2h+totals+spreads+dc. Quota left: {remaining}")
+        print(f"[ODDS API] {comp} — {len(events)} events fetched. Quota remaining: {remaining}")
 
         parsed = []
         for ev in events:
             try:
+                # Average odds across all bookmakers for a consensus market price
                 home_name = ev["home_team"]
                 away_name = ev["away_team"]
 
-                # Collect odds per market type across all bookmakers
-                h2h_h, h2h_d, h2h_a         = [], [], []
-                dc_1x, dc_x2, dc_12          = [], [], []
-                totals: dict                 = {}   # key: "over_X.X" / "under_X.X"
-                spreads_h: dict              = {}   # key: handicap value (float)
-                spreads_a: dict              = {}
-
-                def median(lst):
-                    if not lst: return None
-                    s = sorted(lst); n = len(s)
-                    return s[n//2] if n % 2 else (s[n//2-1] + s[n//2]) / 2
+                home_odds_list = []
+                draw_odds_list = []
+                away_odds_list = []
 
                 for bookie in ev.get("bookmakers", []):
-                    for mkt in bookie.get("markets", []):
-                        key = mkt["key"]
+                    for market in bookie.get("markets", []):
+                        if market["key"] != "h2h":
+                            continue
+                        for outcome in market["outcomes"]:
+                            if outcome["name"] == home_name:
+                                home_odds_list.append(outcome["price"])
+                            elif outcome["name"] == away_name:
+                                away_odds_list.append(outcome["price"])
+                            else:
+                                draw_odds_list.append(outcome["price"])
 
-                        if key == "h2h":
-                            for o in mkt["outcomes"]:
-                                if o["name"] == home_name:   h2h_h.append(o["price"])
-                                elif o["name"] == away_name: h2h_a.append(o["price"])
-                                else:                        h2h_d.append(o["price"])
+                if not home_odds_list or not away_odds_list or not draw_odds_list:
+                    continue
 
-                        elif key == "double_chance":
-                            for o in mkt["outcomes"]:
-                                n = o["name"]
-                                if n in (home_name + "/" + "Draw", "1X"):
-                                    dc_1x.append(o["price"])
-                                elif n in ("Draw/" + away_name, "X2"):
-                                    dc_x2.append(o["price"])
-                                elif n in (home_name + "/" + away_name, "12"):
-                                    dc_12.append(o["price"])
-                                # Fallback: check partial
-                                elif home_name[:4] in n and "Draw" in n:
-                                    dc_1x.append(o["price"])
-                                elif away_name[:4] in n and "Draw" in n:
-                                    dc_x2.append(o["price"])
+                # Use median rather than mean — more robust to outlier bookmakers
+                def median(lst):
+                    s = sorted(lst)
+                    n = len(s)
+                    return s[n//2] if n % 2 else (s[n//2-1] + s[n//2]) / 2
 
-                        elif key == "totals":
-                            for o in mkt["outcomes"]:
-                                pt = o.get("point", "")
-                                mk = f"{o['name'].lower()}_{pt}"
-                                totals.setdefault(mk, []).append(o["price"])
-
-                        elif key == "spreads":
-                            for o in mkt["outcomes"]:
-                                pt = o.get("point", 0)
-                                if o["name"] == home_name:
-                                    spreads_h.setdefault(pt, []).append(o["price"])
-                                else:
-                                    spreads_a.setdefault(pt, []).append(o["price"])
-
-                entry = {
+                parsed.append({
                     "home_team":  home_name,
                     "away_team":  away_name,
+                    "home_odds":  median(home_odds_list),
+                    "draw_odds":  median(draw_odds_list),
+                    "away_odds":  median(away_odds_list),
                     "commence":   ev.get("commence_time", ""),
-                    # 1X2
-                    "home_odds":  median(h2h_h),
-                    "draw_odds":  median(h2h_d),
-                    "away_odds":  median(h2h_a),
-                    # Double Chance
-                    "dc_1x_odds": median(dc_1x),
-                    "dc_x2_odds": median(dc_x2),
-                    "dc_12_odds": median(dc_12),
-                    # Totals — keep all lines as dict
-                    "totals":     {k: median(v) for k, v in totals.items()},
-                    # Spreads — keep all lines as dict
-                    "spreads_h":  {str(k): median(v) for k, v in spreads_h.items()},
-                    "spreads_a":  {str(k): median(v) for k, v in spreads_a.items()},
-                }
-
-                if entry["home_odds"]:
-                    parsed.append(entry)
-
+                })
             except Exception as e:
                 print(f"[ODDS API] Parse error for event: {e}")
                 continue
@@ -308,15 +266,7 @@ def find_match_odds(events: list, home: str, away: str) -> dict | None:
     return None
 
 
-def calc_edge(fair_odds: float, api_odds: float) -> float:
-    """
-    Calculate value edge: how much the bookie price exceeds the fair price.
-    Edge > 0 = value exists. Edge > 0.05 = meaningful value (5% threshold).
-    Returns 0.0 if no api_odds available.
-    """
-    if not api_odds or api_odds <= 1.0 or not fair_odds or fair_odds <= 1.0:
-        return 0.0
-    return round((api_odds / fair_odds) - 1, 4)
+def bayesian_blend(p_poisson: float, market_odds: float) -> float:
     """
     Blend Poisson probability with market-implied probability.
     Market probability is derived by removing the bookmaker margin (overround)
@@ -935,107 +885,27 @@ def predict():
                 "under_odds": ah_fair_odds(pu, pp),
             }
 
-        # --- Pull real bookie odds from Odds API ---
-        mo        = match_odds or {}
-        totals    = mo.get("totals",    {})
-        spreads_h = mo.get("spreads_h", {})
-
-        api_home    = mo.get("home_odds")
-        api_draw    = mo.get("draw_odds")
-        api_away    = mo.get("away_odds")
-        api_dc_1x   = mo.get("dc_1x_odds")
-        api_dc_x2   = mo.get("dc_x2_odds")
-        api_dc_12   = mo.get("dc_12_odds")
-        api_o15     = totals.get("over_1.5")
-        api_o25     = totals.get("over_2.5")
-        api_o35     = totals.get("over_3.5")
-        api_u25     = totals.get("under_2.5")
-        api_ah_hm05 = spreads_h.get("-0.5")
-        api_ah_hp05 = spreads_h.get("0.5")
-        api_ah_hm15 = spreads_h.get("-1.5")
-        api_ah_hp15 = spreads_h.get("1.5")
-
-        # --- Edge per market ---
-        fo_home  = fair_odds(p_h_final)
-        fo_draw  = fair_odds(p_d_final)
-        fo_away  = fair_odds(p_a_final)
-        fo_dc_1x = fair_odds(p_1x)
-        fo_dc_x2 = fair_odds(p_x2)
-        fo_dc_12 = fair_odds(p_12)
-        fo_o15   = fair_odds(p_over15)
-        fo_o25   = fair_odds(p_over25)
-        fo_o35   = fair_odds(p_over35)
-        fo_ah_hm05 = ah_results.get("ahm050", {}).get("home_odds", 2.0)
-        fo_ah_hp05 = ah_results.get("ahp050", {}).get("home_odds", 2.0)
-        fo_ah_hm15 = ah_results.get("ahm150", {}).get("home_odds", 2.0)
-        fo_ah_hp15 = ah_results.get("ahp150", {}).get("home_odds", 2.0)
-
-        edges = {
-            "home":    calc_edge(fo_home,    api_home),
-            "draw":    calc_edge(fo_draw,    api_draw),
-            "away":    calc_edge(fo_away,    api_away),
-            "dc_1x":   calc_edge(fo_dc_1x,  api_dc_1x),
-            "dc_x2":   calc_edge(fo_dc_x2,  api_dc_x2),
-            "dc_12":   calc_edge(fo_dc_12,  api_dc_12),
-            "over15":  calc_edge(fo_o15,    api_o15),
-            "over25":  calc_edge(fo_o25,    api_o25),
-            "over35":  calc_edge(fo_o35,    api_o35),
-            "ah_hm05": calc_edge(fo_ah_hm05, api_ah_hm05),
-            "ah_hp05": calc_edge(fo_ah_hp05, api_ah_hp05),
-            "ah_hm15": calc_edge(fo_ah_hm15, api_ah_hm15),
-            "ah_hp15": calc_edge(fo_ah_hp15, api_ah_hp15),
-        }
-
-        # --- Top Recommended Market ---
-        # Edge > 0.05 candidates ranked by edge desc
-        # Confidence fallback = highest blended 1X2 probability
-        candidates = [
-            {"label": f"{req.get('home','Home')} Win", "code": "H",       "fair": fo_home,    "api": api_home,    "edge": edges["home"],    "type": "1X2"},
-            {"label": "Draw",                          "code": "D",       "fair": fo_draw,    "api": api_draw,    "edge": edges["draw"],    "type": "1X2"},
-            {"label": f"{req.get('away','Away')} Win", "code": "A",       "fair": fo_away,    "api": api_away,    "edge": edges["away"],    "type": "1X2"},
-            {"label": "1X (Home or Draw)",             "code": "1X",      "fair": fo_dc_1x,   "api": api_dc_1x,   "edge": edges["dc_1x"],   "type": "DC"},
-            {"label": "X2 (Draw or Away)",             "code": "X2",      "fair": fo_dc_x2,   "api": api_dc_x2,   "edge": edges["dc_x2"],   "type": "DC"},
-            {"label": "12 (Home or Away)",             "code": "12",      "fair": fo_dc_12,   "api": api_dc_12,   "edge": edges["dc_12"],   "type": "DC"},
-            {"label": "Over 1.5",                      "code": "O15",     "fair": fo_o15,     "api": api_o15,     "edge": edges["over15"],  "type": "Goals"},
-            {"label": "Over 2.5",                      "code": "O25",     "fair": fo_o25,     "api": api_o25,     "edge": edges["over25"],  "type": "Goals"},
-            {"label": "Over 3.5",                      "code": "O35",     "fair": fo_o35,     "api": api_o35,     "edge": edges["over35"],  "type": "Goals"},
-            {"label": "AH Home -0.5",                  "code": "AH_HM05", "fair": fo_ah_hm05, "api": api_ah_hm05, "edge": edges["ah_hm05"], "type": "AH"},
-            {"label": "AH Home +0.5",                  "code": "AH_HP05", "fair": fo_ah_hp05, "api": api_ah_hp05, "edge": edges["ah_hp05"], "type": "AH"},
-            {"label": "AH Home -1.5",                  "code": "AH_HM15", "fair": fo_ah_hm15, "api": api_ah_hm15, "edge": edges["ah_hm15"], "type": "AH"},
-            {"label": "AH Home +1.5",                  "code": "AH_HP15", "fair": fo_ah_hp15, "api": api_ah_hp15, "edge": edges["ah_hp15"], "type": "AH"},
-        ]
-
-        has_edge = sorted([c for c in candidates if c["edge"] > 0.05], key=lambda x: -x["edge"])
-        conf_fallback = max(
-            [c for c in candidates if c["type"] == "1X2"],
-            key=lambda x: (1/x["fair"]) if x["fair"] > 1 else 0,
-            default=candidates[0]
-        )
-        top_pick = has_edge[0] if has_edge else conf_fallback
-
         return jsonify({
             "score":   best,
             "probs":   {"home": h_pct, "draw": d_pct, "away": a_pct},
             "market":  {
-                "home":    fo_home,  "draw":   fo_draw,  "away":   fo_away,
-                "dc_1x":  fo_dc_1x, "dc_x2":  fo_dc_x2, "dc_12":  fo_dc_12,
-                "btts":   fair_odds(p_btts),
-                "over15": fo_o15,   "over25": fo_o25,   "over35": fo_o35,
+                "home":    fair_odds(p_h_final),
+                "draw":    fair_odds(p_d_final),
+                "away":    fair_odds(p_a_final),
+                "dc_1x":   fair_odds(p_1x),
+                "dc_x2":   fair_odds(p_x2),
+                "dc_12":   fair_odds(p_12),
+                "btts":    fair_odds(p_btts),
+                "over15":  fair_odds(p_over15),
+                "over25":  fair_odds(p_over25),
+                "over35":  fair_odds(p_over35),
             },
-            "api_odds": {
-                "home":    api_home,   "draw":   api_draw,   "away":   api_away,
-                "dc_1x":   api_dc_1x,  "dc_x2":  api_dc_x2,  "dc_12":  api_dc_12,
-                "over15":  api_o15,    "over25": api_o25,    "over35": api_o35,
-                "ah_hm05": api_ah_hm05,"ah_hp05":api_ah_hp05,
-                "ah_hm15": api_ah_hm15,"ah_hp15":api_ah_hp15,
-            },
-            "edges":       edges,
-            "top_pick":    top_pick,
-            "all_markets": candidates,
-            "ah":          ah_results,
-            "at":          at_results,
-            "h_rank":  h_rank,  "a_rank": a_rank,
-            "h_form":  h_form,  "a_form": a_form,
+            "ah":      ah_results,   # Asian Handicap lines
+            "at":      at_results,   # Asian Total lines
+            "h_rank":  h_rank,
+            "a_rank":  a_rank,
+            "h_form":  h_form,
+            "a_form":  a_form,
             "h_lam":   round(h_lam, 3),
             "a_lam":   round(a_lam, 3),
             "blended": blended,

@@ -14,6 +14,7 @@
         --away:   #ff3366;
         --draw:   #8892b0;
         --dim:    #4a5060;
+        --gold:   #ffcc00;
     }
 
     * { box-sizing: border-box; }
@@ -178,12 +179,10 @@
         text-align: center;
     }
 
-    /* min-width prevents text clipping on small probability segments */
     .p-h { background: var(--neon); color: #000; min-width: 28px; }
     .p-d { background: var(--draw); color: #000; min-width: 28px; }
     .p-a { background: var(--away); color: #000; min-width: 28px; }
 
-    /* ── Form dots ── */
     .form-row { display: flex; gap: 3px; margin-top: 4px; flex-wrap: wrap; }
 
     .dot {
@@ -202,7 +201,6 @@
     .L { background: var(--away); }
     .Q { background: #2a2d3a; color: #556; border: 1px solid #333; }
 
-    /* ── Form venue label ── */
     .form-venue-label {
         font-size: 0.58rem;
         letter-spacing: 2px;
@@ -212,7 +210,6 @@
         margin-bottom: 2px;
     }
 
-    /* ── Teams header ── */
     .teams-row {
         display: flex;
         justify-content: space-between;
@@ -228,7 +225,6 @@
     .team-block .form-row.right { justify-content: flex-end; }
     .team-block.right .form-venue-label { text-align: right; }
 
-    /* ── Section label ── */
     .section-label {
         font-size: 0.6rem;
         letter-spacing: 3px;
@@ -239,7 +235,6 @@
         padding-top: 12px;
     }
 
-    /* ── Market comparison table ── */
     .market-table { width: 100%; border-collapse: collapse; }
 
     .market-table th {
@@ -295,7 +290,6 @@
         text-align: right;
     }
 
-    /* Value highlight state */
     .market-row-tr.value {
         background: rgba(0,255,157,0.05);
     }
@@ -319,7 +313,38 @@
     .no-value  { color: #3a3f50; }
     .thin-edge { color: var(--draw); font-size: 0.65rem; }
 
-    /* ── Gaffer verdict box ── */
+    /* ── Market type badges ── */
+    .mkt-badge {
+        display: inline-block;
+        font-family: Orbitron, sans-serif;
+        font-size: 0.55rem;
+        font-weight: 700;
+        letter-spacing: 1px;
+        padding: 2px 7px;
+        border-radius: 4px;
+        margin-left: 6px;
+        vertical-align: middle;
+    }
+    .mkt-1X2   { background: rgba(0,255,157,0.12);  color: var(--neon); border: 1px solid rgba(0,255,157,0.25); }
+    .mkt-DC    { background: rgba(79,195,247,0.12); color: #4fc3f7;     border: 1px solid rgba(79,195,247,0.25); }
+    .mkt-AH    { background: rgba(255,152,0,0.12);  color: #ff9800;     border: 1px solid rgba(255,152,0,0.25); }
+    .mkt-Goals { background: rgba(255,204,0,0.12);  color: var(--gold); border: 1px solid rgba(255,204,0,0.25); }
+
+    /* ── Top pick banner ── */
+    .top-pick-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: rgba(0,255,157,0.06);
+        border: 1px solid rgba(0,255,157,0.2);
+        border-radius: 10px;
+        padding: 10px 14px;
+        margin-bottom: 12px;
+    }
+    .top-pick-label { font-size: 0.6rem; letter-spacing: 2px; color: var(--dim); text-transform: uppercase; }
+    .top-pick-value { font-family: Orbitron, sans-serif; font-size: 0.8rem; color: var(--neon); font-weight: 700; }
+    .top-pick-edge  { font-family: Orbitron, sans-serif; font-size: 0.7rem; color: var(--neon); animation: pulse-text 2s ease-in-out infinite; }
+
     .gaffer-box {
         background: rgba(0,255,157,0.04);
         border-left: 3px solid var(--neon);
@@ -342,7 +367,6 @@
         border-top: 1px solid rgba(0,255,157,0.1);
     }
 
-    /* ── Loader ── */
     .loader {
         border: 3px solid #1a1d28;
         border-top: 3px solid var(--neon);
@@ -379,26 +403,13 @@
     <div class="card">
         <input type="date" id="date">
 
-        <!-- Adjustable bankroll in euros -->
-        <div class="bankroll-row">
-            <label>Bankroll</label>
-            <span class="bankroll-symbol">€</span>
-            <input
-                type="number"
-                id="bankroll-input"
-                value="1000"
-                min="1"
-                step="1"
-                inputmode="decimal"
-                placeholder="1000"
-            >
-        </div>
-
         <button onclick="getFixtures()">SCAN TACTICAL BOARD</button>
         <select id="matches" onchange="toggleBtn()">
             <option value="">Select Match...</option>
         </select>
         <button id="btn" onclick="predict()" disabled>GET VERDICT</button>
+        <button onclick="window.location.href='acca.html'" style="background:#000;color:var(--neon);border:1px solid var(--neon);margin-bottom:0;">⚡ ACCA BUILDER</button>
+        <button onclick="window.location.href='session.html'" style="background:#000;color:#ffcc00;border:1px solid #ffcc00;margin-top:12px;margin-bottom:0;">🎯 MASANIELLO</button>
     </div>
 
     <div id="output"></div>
@@ -409,13 +420,23 @@
 const API = "https://football-api-9e4p.onrender.com";
 let fixturesData = [];
 
-// Bankroll is read live from the input field
 function getBankroll() {
-    const val = parseFloat(document.getElementById("bankroll-input").value);
+    const el = document.getElementById("bankroll-input");
+    const val = el ? parseFloat(el.value) : 1000;
     return (!val || isNaN(val) || val <= 0) ? 1000 : val;
 }
 
-// Set today's date as default
+function refreshKellyStakes() {
+    document.querySelectorAll(".bookie-input").forEach(input => {
+        if (input.value) {
+            const onInput = input.getAttribute("oninput");
+            if (onInput) {
+                try { eval(onInput.replace("this", "input")); } catch(e) {}
+            }
+        }
+    });
+}
+
 document.getElementById("date").value = new Date().toISOString().split("T")[0];
 
 const toggleBtn = () => {
@@ -423,7 +444,6 @@ const toggleBtn = () => {
         document.getElementById("matches").value === "";
 };
 
-// Render form dots with venue label above
 function renderForm(str, align = "left", venueLabel = "") {
     const isRight      = align === "right";
     const justifyStyle = `justify-content:${isRight ? "flex-end" : "flex-start"}`;
@@ -445,7 +465,6 @@ function renderForm(str, align = "left", venueLabel = "") {
     return `${labelHtml}<div class="form-row" style="${justifyStyle}">${dots}</div>`;
 }
 
-// Fetch fixtures
 async function getFixtures() {
     const d   = document.getElementById("date").value;
     const sel = document.getElementById("matches");
@@ -496,7 +515,6 @@ async function getFixtures() {
     }
 }
 
-// Quarter-Kelly calculator — live bankroll, euros
 function calcKelly(inputEl, fairOdds, targetId) {
     const target   = document.getElementById(targetId);
     const row      = inputEl.closest(".market-row-tr");
@@ -533,7 +551,6 @@ function calcKelly(inputEl, fairOdds, targetId) {
     target.innerHTML = `<span class="prime">★ €${stake}</span>`;
 }
 
-// Fetch prediction
 async function predict() {
     const idx = document.getElementById("matches").value;
     const out = document.getElementById("output");
@@ -562,31 +579,49 @@ async function predict() {
         }
 
         const m        = fixturesData[idx];
-        const market   = d.market || {};
-        const bankroll = getBankroll();
+        const market   = d.market   || {};
+        const apiOdds  = d.api_odds || {};
+        const edges    = d.edges    || {};
+        const topPick  = d.top_pick || {};
 
-        // Market row builder
-        const mkRow = (label, fairKey, kellyId) => `
-            <tr class="market-row-tr" id="row-${kellyId}">
-                <td>${label}</td>
-                <td class="fair-price">${market[fairKey] || "--"}</td>
+        // Market row — shows api_odds (real bookie price) when available
+        const mkRow = (label, fairKey, kellyId, mktType) => {
+            const fairVal  = market[fairKey];
+            const apiVal   = apiOdds[fairKey];
+            const edgeVal  = edges[fairKey] || 0;
+            const dispOdds = apiVal || fairVal || "--";
+            const edgeBadge = edgeVal > 0.05
+                ? `<span style="font-size:0.58rem;color:var(--neon);margin-left:4px;">+${(edgeVal*100).toFixed(0)}%</span>`
+                : edgeVal > 0 ? `<span style="font-size:0.58rem;color:var(--draw);margin-left:4px;">thin</span>` : "";
+            return `
+            <tr class="market-row-tr ${edgeVal > 0.05 ? 'value' : ''}" id="row-${kellyId}">
+                <td>${label}${edgeBadge}</td>
+                <td class="fair-price" title="Fair: ${fairVal || '--'}">${dispOdds}</td>
                 <td>
-                    <input
-                        type="number"
-                        class="bookie-input"
-                        placeholder="Odds"
-                        step="0.01"
-                        min="1.01"
-                        inputmode="decimal"
-                        oninput="calcKelly(this, ${market[fairKey] || 0}, '${kellyId}')"
-                    >
+                    <input type="number" class="bookie-input" placeholder="Odds"
+                        step="0.01" min="1.01" inputmode="decimal"
+                        oninput="calcKelly(this, ${fairVal || 0}, '${kellyId}')">
                 </td>
-                <td class="kelly-result" id="${kellyId}">
-                    <span class="no-value">--</span>
-                </td>
+                <td class="kelly-result" id="${kellyId}"><span class="no-value">--</span></td>
             </tr>`;
+        };
 
-        // Gaffer narrative
+        // Top pick banner
+        const typeBadge = topPick.type
+            ? `<span class="mkt-badge mkt-${topPick.type}">${topPick.type}</span>` : "";
+        const edgeStr = topPick.edge > 0.05
+            ? `★ +${(topPick.edge*100).toFixed(1)}% EDGE` : "Model Confidence";
+        const topPickHtml = topPick.label ? `
+        <div class="top-pick-banner">
+            <div>
+                <div class="top-pick-label">Top Recommended Market</div>
+                <div class="top-pick-value">${topPick.label}${typeBadge}</div>
+                ${topPick.api ? `<div style="font-size:0.65rem;color:var(--dim);margin-top:2px;">Bookie: ${topPick.api} · Fair: ${topPick.fair}</div>`
+                              : `<div style="font-size:0.65rem;color:var(--dim);margin-top:2px;">Fair: ${topPick.fair}</div>`}
+            </div>
+            <div class="top-pick-edge">${edgeStr}</div>
+        </div>` : "";
+
         const h_w      = d.probs.home > d.probs.away;
         const fav      = h_w ? m.home : m.away;
         const conf     = Math.max(d.probs.home, d.probs.away);
@@ -603,8 +638,6 @@ async function predict() {
 
         out.innerHTML = `
         <div class="card">
-
-            <!-- Teams + Form — labelled by venue -->
             <div class="teams-row">
                 <div class="team-block">
                     <b>${m.home}</b>
@@ -618,48 +651,62 @@ async function predict() {
                 </div>
             </div>
 
-            <!-- Predicted Score -->
             <div class="score">${d.score}</div>
             <div class="lambda-row">
                 <span>λ HOME ${d.h_lam}</span>
+                <span>${d.blended ? '🔵 BAYESIAN' : '⚪ POISSON'}</span>
                 <span>λ AWAY ${d.a_lam}</span>
             </div>
 
-            <!-- Probability Bar (min-width fix applied via CSS) -->
             <div class="prob-bar">
                 <div class="p-h" style="width:${d.probs.home}%">${d.probs.home}%</div>
                 <div class="p-d" style="width:${d.probs.draw}%">${d.probs.draw}%</div>
                 <div class="p-a" style="width:${d.probs.away}%">${d.probs.away}%</div>
             </div>
 
-            <!-- Market Comparison + Kelly Staker -->
-            <div class="section-label">Market Comparison · ¼ Kelly Staker (€${bankroll.toLocaleString()} Bank)</div>
+            ${topPickHtml}
+
+            <div class="section-label">Market Comparison · ¼ Kelly Staker</div>
+
+            <div class="bankroll-row">
+                <label>Bankroll</label>
+                <span class="bankroll-symbol">€</span>
+                <input type="number" id="bankroll-input" value="1000" min="1"
+                    step="1" inputmode="decimal" placeholder="1000"
+                    oninput="refreshKellyStakes()">
+            </div>
+
             <table class="market-table">
                 <thead>
                     <tr>
                         <th>Market</th>
-                        <th>Fair Odds</th>
-                        <th>Bookie Odds</th>
+                        <th>Odds</th>
+                        <th>Enter Bookie</th>
                         <th>Stake</th>
                     </tr>
                 </thead>
                 <tbody>
-                    ${mkRow("Home Win",  "home",   "k-h")}
-                    ${mkRow("Draw",      "draw",   "k-d")}
-                    ${mkRow("Away Win",  "away",   "k-a")}
-                    ${mkRow("BTTS",      "btts",   "k-btts")}
-                    ${mkRow("Over 1.5",  "over15", "k-o15")}
-                    ${mkRow("Over 2.5",  "over25", "k-o25")}
-                    ${mkRow("Over 3.5",  "over35", "k-o35")}
+                    ${mkRow("Home Win",       "home",   "k-h",    "1X2")}
+                    ${mkRow("Draw",           "draw",   "k-d",    "1X2")}
+                    ${mkRow("Away Win",       "away",   "k-a",    "1X2")}
+                    ${mkRow("1X Home/Draw",   "dc_1x",  "k-dc1x", "DC")}
+                    ${mkRow("X2 Draw/Away",   "dc_x2",  "k-dcx2", "DC")}
+                    ${mkRow("12 Home/Away",   "dc_12",  "k-dc12", "DC")}
+                    ${mkRow("BTTS",           "btts",   "k-btts", "Goals")}
+                    ${mkRow("Over 1.5",       "over15", "k-o15",  "Goals")}
+                    ${mkRow("Over 2.5",       "over25", "k-o25",  "Goals")}
+                    ${mkRow("Over 3.5",       "over35", "k-o35",  "Goals")}
+                    ${mkRow("AH Home -0.5",   "ah_hm05","k-ahm05","AH")}
+                    ${mkRow("AH Home +0.5",   "ah_hp05","k-ahp05","AH")}
+                    ${mkRow("AH Home -1.5",   "ah_hm15","k-ahm15","AH")}
+                    ${mkRow("AH Home +1.5",   "ah_hp15","k-ahp15","AH")}
                 </tbody>
             </table>
 
-            <!-- Gaffer Verdict -->
             <div class="gaffer-box">
                 ${verdict}
                 <div class="signature">— THE GAFFER</div>
             </div>
-
         </div>`;
 
     } catch (e) {

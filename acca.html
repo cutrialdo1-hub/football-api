@@ -640,7 +640,9 @@ function fmtDate(ds, daysOut) {
     return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 }
 
-// ── Render fixture list ──
+// Track selected market per leg (default = auto-picked by model)
+let legMarkets = {};  // idx → { pick, pick_label, fair_odds, pick_type }
+
 function renderLegs() {
     const list = document.getElementById("fixture-list");
 
@@ -654,7 +656,6 @@ function renderLegs() {
         ? allLegs
         : allLegs.filter(l => l.tier === tierFilter);
 
-    // Tier filter tabs
     const counts = { HIGH: 0, MED: 0, LOW: 0 };
     allLegs.forEach(l => counts[l.tier]++);
 
@@ -669,27 +670,90 @@ function renderLegs() {
         </div>`;
 
     filtered.forEach((leg, fi) => {
-        const idx       = allLegs.indexOf(leg);
+        const idx        = allLegs.indexOf(leg);
         const isSelected = selectedLegs.has(idx);
         const staleWarn  = leg.days_out > 3
             ? `<div class="stale-warning">⚠ ${leg.days_out} days away — verify team news before placing</div>`
             : "";
 
+        // Current market selection for this leg
+        const mkt = legMarkets[idx] || { pick_label: leg.pick_label, fair_odds: leg.fair_odds };
+
+        // Build market options from leg data
+        const mkOption = (label, pick, fo, type) =>
+            `<option value="${pick}|${label}|${fo}|${type}" ${mkt.pick_label === label ? 'selected' : ''}>
+                ${label} · ${fo}
+            </option>`;
+
+        const marketOptions = `
+            <optgroup label="── 1X2 ──">
+                ${mkOption(leg.home + ' Win', 'H', leg.probs?.home_odds || leg.fair_odds, '1x2')}
+                ${mkOption('Draw', 'D', leg.probs?.draw_odds || '—', '1x2')}
+                ${mkOption(leg.away + ' Win', 'A', leg.probs?.away_odds || '—', '1x2')}
+            </optgroup>
+            <optgroup label="── Double Chance ──">
+                ${mkOption('1X (Home or Draw)', '1X', '—', 'dc')}
+                ${mkOption('X2 (Draw or Away)', 'X2', '—', 'dc')}
+                ${mkOption('12 (Home or Away)', '12', '—', 'dc')}
+            </optgroup>
+            <optgroup label="── Goals ──">
+                ${mkOption('BTTS Yes', 'BTTS', '—', 'goals')}
+                ${mkOption('Over 1.5', 'O15', '—', 'goals')}
+                ${mkOption('Over 2.5', 'O25', '—', 'goals')}
+                ${mkOption('Over 3.5', 'O35', '—', 'goals')}
+                ${mkOption('Under 2.5', 'U25', '—', 'goals')}
+            </optgroup>
+            <optgroup label="── Asian Handicap (Home) ──">
+                ${mkOption('AH Home -1.5', 'AH_HM15', '—', 'ah')}
+                ${mkOption('AH Home -1.0', 'AH_HM10', '—', 'ah')}
+                ${mkOption('AH Home -0.75', 'AH_HM075', '—', 'ah')}
+                ${mkOption('AH Home -0.5', 'AH_HM05', '—', 'ah')}
+                ${mkOption('AH Home -0.25', 'AH_HM025', '—', 'ah')}
+                ${mkOption('AH Level Ball', 'AH_H0', '—', 'ah')}
+                ${mkOption('AH Home +0.25', 'AH_HP025', '—', 'ah')}
+                ${mkOption('AH Home +0.5', 'AH_HP05', '—', 'ah')}
+                ${mkOption('AH Home +0.75', 'AH_HP075', '—', 'ah')}
+                ${mkOption('AH Home +1.0', 'AH_HP10', '—', 'ah')}
+                ${mkOption('AH Home +1.5', 'AH_HP15', '—', 'ah')}
+            </optgroup>
+            <optgroup label="── Asian Totals ──">
+                ${mkOption('AT Over 1.25', 'AT_O125', '—', 'at')}
+                ${mkOption('AT Over 1.5', 'AT_O15', '—', 'at')}
+                ${mkOption('AT Over 1.75', 'AT_O175', '—', 'at')}
+                ${mkOption('AT Over 2.0', 'AT_O20', '—', 'at')}
+                ${mkOption('AT Over 2.25', 'AT_O225', '—', 'at')}
+                ${mkOption('AT Over 2.5', 'AT_O25', '—', 'at')}
+                ${mkOption('AT Over 2.75', 'AT_O275', '—', 'at')}
+                ${mkOption('AT Over 3.0', 'AT_O30', '—', 'at')}
+                ${mkOption('AT Over 3.25', 'AT_O325', '—', 'at')}
+                ${mkOption('AT Over 3.5', 'AT_O35', '—', 'at')}
+                ${mkOption('AT Under 2.5', 'AT_U25', '—', 'at')}
+                ${mkOption('AT Under 3.5', 'AT_U35', '—', 'at')}
+            </optgroup>`;
+
         html += `
-        <div class="leg-card tier-${leg.tier} ${isSelected ? 'selected' : ''}" onclick="toggleLeg(${idx})">
-            <div class="leg-checkbox"></div>
-            <div class="leg-header">
+        <div class="leg-card tier-${leg.tier} ${isSelected ? 'selected' : ''}" id="leg-card-${idx}">
+            <div class="leg-checkbox" onclick="toggleLeg(${idx})"></div>
+            <div class="leg-header" onclick="toggleLeg(${idx})">
                 <div>
                     <div class="leg-teams">${leg.home} vs ${leg.away}</div>
                     <div class="leg-date">${fmtDate(leg.date, leg.days_out)} · ${leg.league}</div>
                 </div>
-                <div class="pick-badge pick-${leg.pick}">${leg.pick_label}</div>
+                <span class="conf-label conf-${leg.tier}">${leg.tier}</span>
             </div>
-            <div class="conf-row">
+            <div style="margin-top:8px;">
+                <div style="font-size:0.58rem;letter-spacing:2px;color:var(--dim);text-transform:uppercase;margin-bottom:4px;">Select Market</div>
+                <select
+                    style="width:100%;padding:8px 10px;border-radius:8px;background:#000;border:1px solid var(--border);color:#fff;font-size:0.75rem;font-family:Inter,sans-serif;"
+                    onchange="setLegMarket(${idx}, this)"
+                    onclick="event.stopPropagation()">
+                    ${marketOptions}
+                </select>
+            </div>
+            <div class="conf-row" style="margin-top:8px;">
                 <div class="conf-bar-wrap">
                     <div class="conf-bar-fill fill-${leg.tier}" style="width:${confWidth(leg.confidence)}%"></div>
                 </div>
-                <span class="conf-label conf-${leg.tier}">${leg.tier}</span>
                 <span class="leg-prob">${leg.pick_prob}%</span>
             </div>
             ${staleWarn}
@@ -699,11 +763,18 @@ function renderLegs() {
     html += `</div>`;
     list.innerHTML = html;
 
-    // Show/hide selection bar
     document.getElementById("selection-bar").style.display =
         selectedLegs.size > 0 ? "block" : "none";
     document.getElementById("sel-count").textContent = selectedLegs.size;
     document.getElementById("run-btn").disabled = selectedLegs.size < 2;
+}
+
+function setLegMarket(idx, selectEl) {
+    const [pick, label, fo, type] = selectEl.value.split("|");
+    legMarkets[idx] = { pick, pick_label: label, fair_odds: fo, type };
+    // Clear result when market changes
+    document.getElementById("result").innerHTML = "";
+    simResult = null;
 }
 
 function setTier(t, btn) {
@@ -720,9 +791,17 @@ function toggleLeg(idx) {
             return;
         }
         selectedLegs.add(idx);
+        // Initialise with model's auto-picked market if not already set
+        if (!legMarkets[idx]) {
+            legMarkets[idx] = {
+                pick:       allLegs[idx].pick,
+                pick_label: allLegs[idx].pick_label,
+                fair_odds:  allLegs[idx].fair_odds,
+                type:       "1x2"
+            };
+        }
     }
     renderLegs();
-    // Clear old result when selection changes
     document.getElementById("result").innerHTML = "";
     simResult = null;
 }
@@ -787,15 +866,18 @@ async function runMonteCarlo() {
     out.innerHTML = `<div class="card"><div class="loader"></div><div class="status-msg">Running 10,000 simulations...</div></div>`;
     document.getElementById("run-btn").disabled = true;
 
-    const legs = [...selectedLegs].map(idx => ({
-        h_lam: allLegs[idx].h_lam,
-        a_lam: allLegs[idx].a_lam,
-        pick:  allLegs[idx].pick,
-        label: allLegs[idx].pick_label,
-        home:  allLegs[idx].home,
-        away:  allLegs[idx].away,
-        date:  allLegs[idx].date,
-    }));
+    const legs = [...selectedLegs].map(idx => {
+        const mkt = legMarkets[idx] || { pick: allLegs[idx].pick, pick_label: allLegs[idx].pick_label };
+        return {
+            h_lam:      allLegs[idx].h_lam,
+            a_lam:      allLegs[idx].a_lam,
+            pick:       mkt.pick,
+            label:      mkt.pick_label,
+            home:       allLegs[idx].home,
+            away:       allLegs[idx].away,
+            date:       allLegs[idx].date,
+        };
+    });
 
     try {
         const res  = await fetch(`${API}/acca`, {
@@ -870,7 +952,29 @@ function renderResult(legs, data) {
         </div>
 
         <!-- Bookie odds input -->
-        <div class="section-label" style="margin-top:4px;">¼ Kelly Staker</div>
+        <div class="section-label" style="margin-top:4px;">Individual Leg Markets</div>
+        <div style="font-size:0.65rem;color:var(--dim);margin-bottom:10px;line-height:1.5;">
+            Each leg's fair odds across all markets. Enter bookie odds to check for value.
+        </div>
+
+        ${legs.map((l, i) => `
+        <div style="background:#0d0f16;border:1px solid #1a1d28;border-radius:10px;padding:12px;margin-bottom:10px;">
+            <div style="font-size:0.75rem;font-weight:600;color:#dde;margin-bottom:8px;">
+                ${l.home} vs ${l.away}
+                <span class="pick-badge pick-${l.pick}" style="font-size:0.58rem;margin-left:6px;">${l.label}</span>
+            </div>
+            <div style="font-size:0.62rem;color:var(--dim);margin-bottom:6px;letter-spacing:1px;">FAIR ODDS · ENTER BOOKIE TO CHECK VALUE</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                ${l.markets ? l.markets.map(mk => `
+                <div style="background:#000;border:1px solid #2a2d3a;border-radius:6px;padding:5px 8px;font-size:0.65rem;">
+                    <div style="color:var(--dim);font-size:0.55rem;letter-spacing:1px;">${mk.label}</div>
+                    <div style="font-family:Orbitron,sans-serif;color:var(--neon);font-size:0.7rem;">${mk.fair}</div>
+                </div>`).join("") : ""}
+            </div>
+        </div>`).join("")}
+
+        <!-- Acca Kelly staker -->
+        <div class="section-label" style="margin-top:4px;">¼ Kelly Staker · Full Acca</div>
 
         <div class="kelly-row">
             <label>Bankroll</label>

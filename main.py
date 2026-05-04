@@ -601,17 +601,97 @@ def predict():
         p_over35 = 0.0
         matrix = {}
 
+        # Asian Handicap accumulators
+        # Half-ball lines: pure win/lose (no push)
+        # Full-ball lines: push on exact margin
+        # Quarter lines: stake split between two adjacent lines
+        ah = {
+            "hm15": 0.0,  # Home -1.5 (win by 2+)
+            "hm1":  0.0,  # Home -1   (win by 2+ = win, win by 1 = push, else lose)
+            "hm05": 0.0,  # Home -0.5 (win by 1+ = win, else lose)
+            "h0":   0.0,  # Home 0    (win = win, draw = push, lose = lose)
+            "hp05": 0.0,  # Home +0.5 (win or draw = win, lose = lose)
+            "hp1":  0.0,  # Home +1   (win or draw = win, lose by 1 = push, lose by 2+ = lose)
+            "hp15": 0.0,  # Home +1.5 (win, draw, or lose by 1 = win)
+        }
+
+        # Asian Total accumulators
+        at = {
+            "o05":  0.0,  # Over 0.5
+            "o15":  0.0,  # Over 1.5
+            "o25":  0.0,  # Over 2.5
+            "o35":  0.0,  # Over 3.5
+            "o45":  0.0,  # Over 4.5
+            "u05":  0.0,  # Under 0.5
+            "u15":  0.0,  # Under 1.5
+            "u25":  0.0,  # Under 2.5
+            "u35":  0.0,  # Under 3.5
+        }
+
         for i in range(7):
             for j in range(7):
                 p = poisson(i, h_lam) * poisson(j, a_lam)
                 matrix[(i, j)] = p
+                diff  = i - j
+                total = i + j
+
+                # 1X2
                 if   i > j: p_h += p
                 elif i == j: p_d += p
                 else:        p_a += p
-                if i > 0 and j > 0:  p_btts   += p
-                if i + j > 1:        p_over15  += p
-                if i + j > 2:        p_over25  += p
-                if i + j > 3:        p_over35  += p
+
+                # Goals markets
+                if i > 0 and j > 0: p_btts  += p
+                if total > 1: p_over15 += p
+                if total > 2: p_over25 += p
+                if total > 3: p_over35 += p
+
+                # Asian Handicap (home perspective)
+                # -1.5: home wins by 2+ goals
+                if diff >= 2:  ah["hm15"] += p
+                # -1: home wins by 2+ = full win; by 1 = push (×0.5); else = lose
+                if diff >= 2:  ah["hm1"]  += p
+                elif diff == 1: ah["hm1"] += p * 0.5   # push = half stake back
+                # -0.5: home wins by 1+ = full win
+                if diff >= 1:  ah["hm05"] += p
+                # 0 (level ball): home wins = win; draw = push; away wins = lose
+                if diff > 0:   ah["h0"]   += p
+                elif diff == 0: ah["h0"]  += p * 0.5   # push
+                # +0.5: home wins or draws = win
+                if diff >= 0:  ah["hp05"] += p
+                # +1: home wins or draws = win; loses by 1 = push; loses by 2+ = lose
+                if diff >= 0:  ah["hp1"]  += p
+                elif diff == -1: ah["hp1"] += p * 0.5  # push
+                # +1.5: home wins, draws, or loses by 1 = win
+                if diff >= -1: ah["hp15"] += p
+
+                # Asian Totals
+                if total > 0:  at["o05"]  += p
+                if total > 1:  at["o15"]  += p
+                if total > 2:  at["o25"]  += p
+                if total > 3:  at["o35"]  += p
+                if total > 4:  at["o45"]  += p
+                if total < 1:  at["u05"]  += p
+                if total < 2:  at["u15"]  += p
+                if total < 3:  at["u25"]  += p
+                if total < 4:  at["u35"]  += p
+
+        # Quarter-ball Asian lines (stake split between two adjacent lines)
+        # e.g. -0.75 = 50% on -0.5 and 50% on -1
+        ah["hm075"] = (ah["hm05"] + ah["hm1"])  / 2
+        ah["hm025"] = (ah["hm05"] + ah["h0"])   / 2
+        ah["hp025"] = (ah["h0"]   + ah["hp05"]) / 2
+        ah["hp075"] = (ah["hp05"] + ah["hp1"])  / 2
+        ah["hp125"] = (ah["hp1"]  + ah["hp15"]) / 2
+
+        # Asian Total quarter lines
+        at["o175"] = (at["o15"] + at["o25"]) / 2
+        at["o225"] = (at["o15"] + at["o25"]) / 2   # same split, shown as O2.25
+        at["o275"] = (at["o25"] + at["o35"]) / 2
+        at["o325"] = (at["o25"] + at["o35"]) / 2   # same split, shown as O3.25
+
+        # Double Chance (pure maths — no Bayesian blend needed, derived from blended 1X2)
+        # Computed after Bayesian blend below so they use final probabilities
 
         # --- Normalise raw Poisson 1X2 ---
         tot   = p_h + p_d + p_a
@@ -676,9 +756,134 @@ def predict():
         d_pct = round(p_d_final * 100)
         a_pct = 100 - h_pct - d_pct
 
-        # --- Fair Decimal Odds (from blended probabilities) ---
+        # --- Fair Decimal Odds helper ---
         def fair_odds(p: float) -> float:
             return round(1 / p, 2) if p > 0.04 else 25.0
+
+        # --- Double Chance ---
+        # 1X = home win or draw, X2 = draw or away win, 12 = home or away (no draw)
+        p_1x = p_h_final + p_d_final
+        p_x2 = p_d_final + p_a_final
+        p_12 = p_h_final + p_a_final
+
+        # --- Asian Handicap (from raw Poisson matrix, not blended) ---
+        # AH uses the score matrix directly since it deals with goal margins.
+        # Lines: home perspective. Positive = home giving goals, negative = receiving.
+        # For each line we compute P(home covers), P(push), P(away covers).
+        # Quarter lines split stake: e.g. -0.75 = half on -0.5, half on -1.
+
+        def ah_prob(handicap: float) -> tuple:
+            """
+            Returns (p_home_cover, p_push, p_away_cover) for a given AH line.
+            handicap > 0 means home team receives goals (e.g. +0.5 = home gets 0.5 start).
+            handicap < 0 means home team gives goals (e.g. -1 = home must win by 2+).
+            Quarter lines handled by splitting across two adjacent whole/half lines.
+            """
+            # Quarter lines: split into two adjacent lines
+            frac = handicap % 0.5
+            if abs(frac) == 0.25:
+                # e.g. -0.75 = average of -0.5 and -1.0
+                low  = handicap - 0.25
+                high = handicap + 0.25
+                ph_l, pp_l, pa_l = ah_prob(low)
+                ph_h, pp_h, pa_h = ah_prob(high)
+                return (
+                    (ph_l + ph_h) / 2,
+                    (pp_l + pp_h) / 2,
+                    (pa_l + pa_h) / 2,
+                )
+
+            p_home_cover = 0.0
+            p_push       = 0.0
+            p_away_cover = 0.0
+
+            for (i, j), p in matrix.items():
+                margin = i - j  # positive = home winning by margin goals
+                adjusted = margin + handicap  # home's effective margin with handicap applied
+
+                if handicap % 1 == 0:
+                    # Whole-number line: push is possible
+                    if adjusted > 0:   p_home_cover += p
+                    elif adjusted == 0: p_push       += p
+                    else:              p_away_cover += p
+                else:
+                    # Half-line: no push possible
+                    if adjusted > 0:   p_home_cover += p
+                    else:              p_away_cover += p
+
+            return p_home_cover, p_push, p_away_cover
+
+        def ah_fair_odds(p_cover: float, p_push: float) -> float:
+            """
+            Fair odds for AH accounting for push (stake returned on push).
+            Effective probability = p_cover / (1 - p_push)
+            """
+            effective_p = p_cover / (1 - p_push) if p_push < 1 else 0
+            return fair_odds(effective_p)
+
+        # Compute standard AH lines (home perspective)
+        ah_lines = [-1.5, -1.0, -0.75, -0.5, -0.25, 0.0,
+                     0.25,  0.5,  0.75,  1.0,  1.25, 1.5]
+        ah_results = {}
+        for line in ah_lines:
+            ph_c, pp, pa_c = ah_prob(line)
+            key = f"ah_{line:+.2f}".replace(".00", "").replace("+", "p").replace("-", "m").replace(".", "")
+            ah_results[key] = {
+                "line":        line,
+                "home_cover":  round(ph_c * 100, 1),
+                "push":        round(pp * 100, 1),
+                "away_cover":  round(pa_c * 100, 1),
+                "home_odds":   ah_fair_odds(ph_c, pp),
+                "away_odds":   ah_fair_odds(pa_c, pp),
+            }
+
+        # --- Asian Totals (quarter lines) ---
+        def at_prob(line: float) -> tuple:
+            """
+            Returns (p_over, p_push, p_under) for Asian Total line.
+            Quarter lines split stake across two adjacent lines.
+            """
+            frac = line % 0.5
+            if abs(frac) == 0.25:
+                low  = line - 0.25
+                high = line + 0.25
+                po_l, pp_l, pu_l = at_prob(low)
+                po_h, pp_h, pu_h = at_prob(high)
+                return (
+                    (po_l + po_h) / 2,
+                    (pp_l + pp_h) / 2,
+                    (pu_l + pu_h) / 2,
+                )
+
+            p_over = p_push = p_under = 0.0
+            for (i, j), p in matrix.items():
+                goals = i + j
+                if line % 1 == 0:
+                    # Whole line — push possible
+                    if goals > line:   p_over  += p
+                    elif goals == line: p_push  += p
+                    else:              p_under += p
+                else:
+                    # Half line — no push
+                    if goals > line:   p_over  += p
+                    else:              p_under += p
+
+            return p_over, p_push, p_under
+
+        at_lines = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0,
+                    2.25, 2.5, 2.75, 3.0, 3.25, 3.5]
+        at_results = {}
+        for line in at_lines:
+            po, pp, pu = at_prob(line)
+            key = f"at_{line:.2f}".replace(".", "")
+            at_results[key] = {
+                "line":       line,
+                "over_pct":  round(po * 100, 1),
+                "push_pct":  round(pp * 100, 1),
+                "under_pct": round(pu * 100, 1),
+                "over_odds":  ah_fair_odds(po, pp),
+                "under_odds": ah_fair_odds(pu, pp),
+            }
 
         return jsonify({
             "score":   best,
@@ -687,11 +892,16 @@ def predict():
                 "home":    fair_odds(p_h_final),
                 "draw":    fair_odds(p_d_final),
                 "away":    fair_odds(p_a_final),
+                "dc_1x":   fair_odds(p_1x),
+                "dc_x2":   fair_odds(p_x2),
+                "dc_12":   fair_odds(p_12),
                 "btts":    fair_odds(p_btts),
                 "over15":  fair_odds(p_over15),
                 "over25":  fair_odds(p_over25),
                 "over35":  fair_odds(p_over35),
             },
+            "ah":      ah_results,   # Asian Handicap lines
+            "at":      at_results,   # Asian Total lines
             "h_rank":  h_rank,
             "a_rank":  a_rank,
             "h_form":  h_form,
@@ -900,15 +1110,54 @@ def acca():
                 a_lam = float(leg["a_lam"])
                 pick  = leg["pick"]
 
-                # Draw random scoreline from each team's Poisson distribution
                 h_goals = pois_draw(h_lam)
                 a_goals = pois_draw(a_lam)
+                diff    = h_goals - a_goals
+                total   = h_goals + a_goals
 
-                if   h_goals > a_goals: result = "H"
-                elif h_goals < a_goals: result = "A"
-                else:                   result = "D"
+                # Evaluate pick against simulated scoreline
+                won = False
+                if   pick == "H":      won = diff > 0
+                elif pick == "D":      won = diff == 0
+                elif pick == "A":      won = diff < 0
+                elif pick == "1X":     won = diff >= 0
+                elif pick == "X2":     won = diff <= 0
+                elif pick == "12":     won = diff != 0
+                elif pick == "BTTS":   won = h_goals > 0 and a_goals > 0
+                elif pick == "O15":    won = total > 1
+                elif pick == "O25":    won = total > 2
+                elif pick == "O35":    won = total > 3
+                elif pick == "U25":    won = total < 3
+                elif pick == "U35":    won = total < 4
+                # Asian Handicap — quarter lines use half-win logic
+                elif pick == "AH_HM15":  won = diff >= 2
+                elif pick == "AH_HM10":  won = diff >= 2 or (diff == 1 and random.random() < 0.5)  # push = coin flip for simulation
+                elif pick == "AH_HM075": won = diff >= 2 or (diff == 1 and random.random() < 0.25)
+                elif pick == "AH_HM05":  won = diff >= 1
+                elif pick == "AH_HM025": won = diff >= 1 or (diff == 0 and random.random() < 0.5)
+                elif pick == "AH_H0":    won = diff > 0 or (diff == 0 and random.random() < 0.5)
+                elif pick == "AH_HP025": won = diff >= 0 or (diff == -1 and random.random() < 0.5)
+                elif pick == "AH_HP05":  won = diff >= 0
+                elif pick == "AH_HP075": won = diff >= 0 or (diff == -1 and random.random() < 0.25)
+                elif pick == "AH_HP10":  won = diff >= 0 or (diff == -1 and random.random() < 0.5)
+                elif pick == "AH_HP15":  won = diff >= -1
+                # Asian Totals
+                elif pick == "AT_O125": won = total > 1 or (total == 1 and random.random() < 0.5)
+                elif pick == "AT_O15":  won = total > 1
+                elif pick == "AT_O175": won = total > 2 or (total == 2 and random.random() < 0.5)
+                elif pick == "AT_O20":  won = total > 2 or (total == 2 and random.random() < 0.5)
+                elif pick == "AT_O225": won = total > 2 or (total == 2 and random.random() < 0.5)
+                elif pick == "AT_O25":  won = total > 2
+                elif pick == "AT_O275": won = total > 3 or (total == 3 and random.random() < 0.5)
+                elif pick == "AT_O30":  won = total > 3 or (total == 3 and random.random() < 0.5)
+                elif pick == "AT_O325": won = total > 3 or (total == 3 and random.random() < 0.5)
+                elif pick == "AT_O35":  won = total > 3
+                elif pick == "AT_U25":  won = total < 3 or (total == 3 and random.random() < 0.5)
+                elif pick == "AT_U35":  won = total < 4 or (total == 4 and random.random() < 0.5)
+                else:
+                    won = diff > 0  # default to home win if unknown pick
 
-                if result != pick:
+                if not won:
                     acca_won = False
                     break
 

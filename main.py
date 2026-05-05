@@ -1037,30 +1037,43 @@ def predict():
         }
 
         # --- Top Recommended Market ---
-        # Edge > 0.05 candidates ranked by edge desc
-        # Confidence fallback = highest blended 1X2 probability
+        # Priority 1: real edge > 5% from Odds API (ranked by edge desc)
+        # Priority 2: highest model confidence across ALL markets (not just 1X2)
+        # This ensures Goals, DC, and AH markets surface when they are stronger signals.
+        #
+        # Confidence score per market = probability × odds_suitability
+        # Confidence score = implied probability only (1/fair_odds)
+        # No odds suitability weighting here — that biased against goals markets
+        # (Over 1.5 at 80% was scoring lower than Home Win at 55% due to short odds penalty)
+        # The top pick should reflect the strongest mathematical signal across ALL markets.
+        def mkt_confidence(prob, fair):
+            """Score a market purely by its implied probability strength."""
+            if fair <= 1.0:
+                return 0.0
+            return round(1 / fair, 4)  # higher probability = higher score, no odds bias
+
         candidates = [
-            {"label": f"{req.get('home','Home')} Win", "code": "H",       "fair": fo_home,    "api": api_home,    "edge": edges["home"],    "type": "1X2"},
-            {"label": "Draw",                          "code": "D",       "fair": fo_draw,    "api": api_draw,    "edge": edges["draw"],    "type": "1X2"},
-            {"label": f"{req.get('away','Away')} Win", "code": "A",       "fair": fo_away,    "api": api_away,    "edge": edges["away"],    "type": "1X2"},
-            {"label": "1X (Home or Draw)",             "code": "1X",      "fair": fo_dc_1x,   "api": api_dc_1x,   "edge": edges["dc_1x"],   "type": "DC"},
-            {"label": "X2 (Draw or Away)",             "code": "X2",      "fair": fo_dc_x2,   "api": api_dc_x2,   "edge": edges["dc_x2"],   "type": "DC"},
-            {"label": "12 (Home or Away)",             "code": "12",      "fair": fo_dc_12,   "api": api_dc_12,   "edge": edges["dc_12"],   "type": "DC"},
-            {"label": "Over 1.5",                      "code": "O15",     "fair": fo_o15,     "api": api_o15,     "edge": edges["over15"],  "type": "Goals"},
-            {"label": "Over 2.5",                      "code": "O25",     "fair": fo_o25,     "api": api_o25,     "edge": edges["over25"],  "type": "Goals"},
-            {"label": "Over 3.5",                      "code": "O35",     "fair": fo_o35,     "api": api_o35,     "edge": edges["over35"],  "type": "Goals"},
-            {"label": "AH Home -0.5",                  "code": "AH_HM05", "fair": fo_ah_hm05, "api": api_ah_hm05, "edge": edges["ah_hm05"], "type": "AH"},
-            {"label": "AH Home +0.5",                  "code": "AH_HP05", "fair": fo_ah_hp05, "api": api_ah_hp05, "edge": edges["ah_hp05"], "type": "AH"},
-            {"label": "AH Home -1.5",                  "code": "AH_HM15", "fair": fo_ah_hm15, "api": api_ah_hm15, "edge": edges["ah_hm15"], "type": "AH"},
-            {"label": "AH Home +1.5",                  "code": "AH_HP15", "fair": fo_ah_hp15, "api": api_ah_hp15, "edge": edges["ah_hp15"], "type": "AH"},
+            {"label": f"{req.get('home','Home')} Win", "code": "H",       "fair": fo_home,    "api": api_home,    "edge": edges["home"],    "type": "1X2",   "conf": mkt_confidence(p_h_final, fo_home)},
+            {"label": "Draw",                          "code": "D",       "fair": fo_draw,    "api": api_draw,    "edge": edges["draw"],    "type": "1X2",   "conf": mkt_confidence(p_d_final, fo_draw)},
+            {"label": f"{req.get('away','Away')} Win", "code": "A",       "fair": fo_away,    "api": api_away,    "edge": edges["away"],    "type": "1X2",   "conf": mkt_confidence(p_a_final, fo_away)},
+            {"label": "1X (Home or Draw)",             "code": "1X",      "fair": fo_dc_1x,   "api": api_dc_1x,   "edge": edges["dc_1x"],   "type": "DC",    "conf": mkt_confidence(p_1x, fo_dc_1x)},
+            {"label": "X2 (Draw or Away)",             "code": "X2",      "fair": fo_dc_x2,   "api": api_dc_x2,   "edge": edges["dc_x2"],   "type": "DC",    "conf": mkt_confidence(p_x2, fo_dc_x2)},
+            {"label": "12 (Home or Away)",             "code": "12",      "fair": fo_dc_12,   "api": api_dc_12,   "edge": edges["dc_12"],   "type": "DC",    "conf": mkt_confidence(p_12, fo_dc_12)},
+            {"label": "Over 1.5",                      "code": "O15",     "fair": fo_o15,     "api": api_o15,     "edge": edges["over15"],  "type": "Goals", "conf": mkt_confidence(p_over15, fo_o15)},
+            {"label": "Over 2.5",                      "code": "O25",     "fair": fo_o25,     "api": api_o25,     "edge": edges["over25"],  "type": "Goals", "conf": mkt_confidence(p_over25, fo_o25)},
+            {"label": "Over 3.5",                      "code": "O35",     "fair": fo_o35,     "api": api_o35,     "edge": edges["over35"],  "type": "Goals", "conf": mkt_confidence(p_over35, fo_o35)},
+            {"label": "AH Home -0.5",                  "code": "AH_HM05", "fair": fo_ah_hm05, "api": api_ah_hm05, "edge": edges["ah_hm05"], "type": "AH",    "conf": mkt_confidence(ah["hm05"], fo_ah_hm05)},
+            {"label": "AH Home +0.5",                  "code": "AH_HP05", "fair": fo_ah_hp05, "api": api_ah_hp05, "edge": edges["ah_hp05"], "type": "AH",    "conf": mkt_confidence(ah["hp05"], fo_ah_hp05)},
+            {"label": "AH Home -1.5",                  "code": "AH_HM15", "fair": fo_ah_hm15, "api": api_ah_hm15, "edge": edges["ah_hm15"], "type": "AH",    "conf": mkt_confidence(ah["hm15"], fo_ah_hm15)},
+            {"label": "AH Home +1.5",                  "code": "AH_HP15", "fair": fo_ah_hp15, "api": api_ah_hp15, "edge": edges["ah_hp15"], "type": "AH",    "conf": mkt_confidence(ah["hp15"], fo_ah_hp15)},
         ]
 
+        # Priority 1: real edge > 5% ranked by edge
         has_edge = sorted([c for c in candidates if c["edge"] > 0.05], key=lambda x: -x["edge"])
-        conf_fallback = max(
-            [c for c in candidates if c["type"] == "1X2"],
-            key=lambda x: (1/x["fair"]) if x["fair"] > 1 else 0,
-            default=candidates[0]
-        )
+
+        # Priority 2: highest confidence score across ALL market types
+        conf_fallback = max(candidates, key=lambda x: x["conf"], default=candidates[0])
+
         top_pick = has_edge[0] if has_edge else conf_fallback
 
         return jsonify({

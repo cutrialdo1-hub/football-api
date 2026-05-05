@@ -90,14 +90,27 @@ WEIGHT_MARKET  = 0.60
 odds_cache: dict = {}
 ODDS_EXPIRY = 10800  # 3 hours
 fetch_lock    = threading.Lock()
+football_api_lock = threading.Lock()
+football_api_last_call = 0.0
 standings_cache: dict = {}
 form_cache:     dict = {}
 fixtures_store: dict = {}
 
+FOOTBALL_API_MIN_INTERVAL = 6.5  # football-data.org free tier: 10 calls/min
 CACHE_FILE        = "cache.json"
 CACHE_MAX_AGE     = 3600   # 1 hour for fixtures
 STANDINGS_EXPIRY  = 86400  # 24 hours
 FORM_EXPIRY       = 3600   # 1 hour
+
+def football_data_get(url: str, **kwargs):
+    global football_api_last_call
+    with football_api_lock:
+        elapsed = time.monotonic() - football_api_last_call
+        if elapsed < FOOTBALL_API_MIN_INTERVAL:
+            time.sleep(FOOTBALL_API_MIN_INTERVAL - elapsed)
+        r = requests.get(url, **kwargs)
+        football_api_last_call = time.monotonic()
+        return r
 
 # =========================================================
 # 💾 DISK CACHE
@@ -408,7 +421,7 @@ def get_standings(code: str) -> dict:
         return cached["d"]
 
     try:
-        r = requests.get(
+        r = football_data_get(
             f"{BASE_URL}/competitions/{code}/standings",
             headers=HEADERS, timeout=10
         )
@@ -507,7 +520,7 @@ def get_detailed_form(team_id: int, league_avg: float = DEFAULT_LEAGUE_AVG, venu
         url += f"&venue={venue}"
 
     try:
-        r = requests.get(url, headers=HEADERS, timeout=10)
+        r = football_data_get(url, headers=HEADERS, timeout=10)
 
         if r.status_code == 429:
             print(f"[RATE LIMIT] form team {team_id} {venue} — using stale cache")
@@ -585,7 +598,7 @@ def fetch_all_fixtures() -> bool:
         start_date = time.strftime("%Y-%m-%d", time.gmtime(now - 86400))
         end_date   = time.strftime("%Y-%m-%d", time.gmtime(now + 5 * 86400))
 
-        r = requests.get(
+        r = football_data_get(
             f"{BASE_URL}/matches",
             headers=HEADERS,
             params={"dateFrom": start_date, "dateTo": end_date},
@@ -1541,7 +1554,7 @@ def run_calibration_check():
     yest    = time.strftime("%Y-%m-%d", time.gmtime(now_t - 86400))
 
     try:
-        r = requests.get(
+        r = football_data_get(
             f"{BASE_URL}/matches",
             headers=HEADERS,
             params={"dateFrom": yest, "dateTo": yest, "status": "FINISHED"},

@@ -521,7 +521,7 @@ function renderSession() {
         const isWon      = pick.status === "won";
         const isLost     = pick.status === "lost";
 
-        // Format kickoff time from UTC ISO string → local time display
+        // Format kickoff time
         let kickoffStr = "";
         if (pick.kickoff && pick.kickoff.length > 10) {
             try {
@@ -529,12 +529,23 @@ function renderSession() {
                 const time = ko.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
                 const day  = ko.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
                 kickoffStr = `${time} · ${day}`;
-            } catch(e) {
-                kickoffStr = pick.date;
-            }
+            } catch(e) { kickoffStr = pick.date; }
         } else {
-            // kickoff not yet in cache — show date only, prompt refresh
-            kickoffStr = `${pick.date} · (redeploy to see times)`;
+            kickoffStr = pick.date;
+        }
+
+        // Gap indicator — compare kickoff times for overlap detection
+        let gapHtml = "";
+        if (i > 0) {
+            const prev = session.filter(p => p.status !== "removed")[session.filter(p => p.status !== "removed").indexOf(pick) - 1];
+            if (prev) {
+                const prevEnd  = prev.kickoff  ? new Date(new Date(prev.kickoff).getTime()  + 105*60000) : null;
+                const thisKick = pick.kickoff  ? new Date(pick.kickoff) : null;
+                const overlap  = prevEnd && thisKick && thisKick < prevEnd;
+                gapHtml = `<div class="gap-indicator ${overlap ? 'gap-warn' : 'gap-ok'}">
+                    ${overlap ? '⚠ OVERLAPPING TIMES — results may not be known' : '✓ SEQUENTIAL · SAFE TO PROCEED'}
+                </div>`;
+            }
         }
 
         const resultTag = isWon
@@ -542,6 +553,21 @@ function renderSession() {
             : isLost
             ? `<div class="result-tag tag-lost">✗ LOST · -€${pick.stake.toFixed(2)}</div>`
             : "";
+
+        // Bookie odds input — pending pick only
+        // When user enters bookie odds, stake recalculates using actual payout
+        const bookieOddsInput = isPending ? `
+            <div style="margin-top:8px;padding-top:8px;border-top:1px solid #1a1d28;">
+                <div style="font-size:0.58rem;letter-spacing:2px;color:var(--dim);text-transform:uppercase;margin-bottom:6px;">Your Bookie Odds (optional)</div>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <input type="number" id="bookie-odds-${i}"
+                        placeholder="e.g. 1.85" step="0.01" min="1.01" inputmode="decimal"
+                        style="flex:1;padding:8px 10px;border-radius:8px;background:#000;border:1px solid rgba(255,204,0,0.3);color:var(--gold);font-family:Orbitron,sans-serif;font-size:0.78rem;outline:none;"
+                        oninput="applyBookieOdds(${i}, this.value)">
+                    <span id="kelly-badge-${i}" style="font-family:Orbitron,sans-serif;font-size:0.65rem;color:var(--dim);min-width:60px;text-align:right;"></span>
+                </div>
+                <div id="stake-adj-${i}" style="font-size:0.65rem;color:var(--dim);margin-top:4px;"></div>
+            </div>` : "";
 
         const actionBtns = isPending ? `
             <div class="result-btns">
@@ -555,12 +581,13 @@ function renderSession() {
             : "";
 
         html += `
+        ${gapHtml}
         <div class="pick-card ${pick.status}" id="pick-${i}">
             <div class="pick-num">${i + 1}</div>
             <div class="pick-body">
                 <div class="pick-match">${pick.home} vs ${pick.away}</div>
                 <div class="pick-meta">🕐 ${kickoffStr} · ${pick.league}</div>
-                <span class="pick-market-badge mkt-${pick.mkt_type}">${pick.market}</span>
+                <span class="pick-market-badge mkt-${pick.mkt_type || '1X2'}">${pick.market}</span>
                 <span class="pick-prob">${pick.prob}% · Fair: ${pick.fair_odds}</span>
                 ${staleWarn}
                 ${resultTag}
@@ -569,6 +596,7 @@ function renderSession() {
                     <span class="stake-label">${isPending ? "STAKE NOW" : "EST. STAKE"}</span>
                     <span class="stake-val" id="stake-${i}">€${pick.stake.toFixed(2)}</span>
                 </div>` : ""}
+                ${bookieOddsInput}
                 ${actionBtns}
             </div>
         </div>`;
@@ -625,7 +653,63 @@ function recordResult(idx, result) {
     renderSession();
 }
 
-// ── Request replacement ──
+// ── Apply bookie odds — recalc stake using actual payout ──
+function applyBookieOdds(idx, oddsStr) {
+    const pick     = session[idx];
+    if (!pick || pick.status !== "pending") return;
+
+    const odds     = parseFloat(oddsStr);
+    const badgeEl  = document.getElementById(`kelly-badge-${idx}`);
+    const adjEl    = document.getElementById(`stake-adj-${idx}`);
+    const stakeEl  = document.getElementById(`stake-${idx}`);
+
+    if (!odds || isNaN(odds) || odds <= 1.0) {
+        // Revert to fair odds stake
+        pick.stake = parseFloat(calcMasStake(
+            sessionCfg.bankroll, sessionCfg.target, sessionCfg.n, sessionCfg.k,
+            session.filter(p => p.status === "upcoming" || p.status === "pending").length,
+            Math.max(sessionCfg.k - session.filter(p => p.status === "won").length, 0),
+            pick.fair_odds
+        ).toFixed(2));
+        if (stakeEl) stakeEl.textContent = `€${pick.stake.toFixed(2)}`;
+        if (badgeEl) badgeEl.textContent = "";
+        if (adjEl)   adjEl.textContent   = "";
+        return;
+    }
+
+    // Recalculate Masaniello stake using bookie odds instead of fair odds
+    const wins_so_far    = session.filter(p => p.status === "won").length;
+    const remaining_bets = session.filter(p => p.status === "upcoming" || p.status === "pending").length;
+    const k_remaining    = Math.max(sessionCfg.k - wins_so_far, 0);
+
+    const newStake = parseFloat(calcMasStake(
+        sessionCfg.bankroll, sessionCfg.target, sessionCfg.n, sessionCfg.k,
+        remaining_bets, k_remaining, odds
+    ).toFixed(2));
+
+    pick.stake = newStake;
+    if (stakeEl) stakeEl.textContent = `€${newStake.toFixed(2)}`;
+
+    // Kelly edge check
+    const fairOdds = pick.fair_odds;
+    const p        = 1 / fairOdds;
+    const q        = 1 - p;
+    const b        = odds - 1;
+    const f_star   = (b * p - q) / b;
+    const edge     = (odds / fairOdds) - 1;
+
+    if (edge > 0.05 && f_star > 0) {
+        const kellyStake = (0.25 * f_star * sessionCfg.bankroll).toFixed(2);
+        if (badgeEl) { badgeEl.style.color = "var(--neon)"; badgeEl.textContent = `★ VALUE`; }
+        if (adjEl)   adjEl.innerHTML = `<span style="color:var(--neon);">+${(edge*100).toFixed(1)}% edge · ¼ Kelly: €${kellyStake}</span>`;
+    } else if (edge > 0) {
+        if (badgeEl) { badgeEl.style.color = "var(--draw)"; badgeEl.textContent = "Thin"; }
+        if (adjEl)   adjEl.innerHTML = `<span style="color:var(--draw);">Thin edge — proceed with caution</span>`;
+    } else {
+        if (badgeEl) { badgeEl.style.color = "var(--dim)"; badgeEl.textContent = "No edge"; }
+        if (adjEl)   adjEl.innerHTML = `<span style="color:var(--dim);">Bookie odds below fair price</span>`;
+    }
+}
 function requestReplacement(idx) {
     removingIdx = idx;
 
@@ -685,15 +769,45 @@ function confirmReplacement() {
     const repl  = panel._selected;
     if (!repl || removingIdx === null) return;
 
-    // Replace pick in session
     const oldPick = session[removingIdx];
-    session[removingIdx] = {
+
+    // Build the replacement pick object
+    const newPick = {
         ...repl,
         idx:    removingIdx,
         status: "pending",
-        stake:  oldPick.stake,   // inherit same stake
+        stake:  oldPick.stake,
         pnl:    0,
     };
+
+    // Find the correct chronological insertion point among upcoming picks.
+    // The replacement should slot in wherever its kickoff time fits — not
+    // blindly into the removed pick's index position.
+    const activeUpcoming = session
+        .map((p, i) => ({ p, i }))
+        .filter(({ p }) => p.status === "upcoming");
+
+    // Remove the old pick from the session array
+    session.splice(removingIdx, 1);
+
+    // Find where to insert based on kickoff time
+    const replKickoff = repl.kickoff || repl.date;
+    let insertAt = session.length; // default: append at end
+    for (let i = 0; i < session.length; i++) {
+        const s = session[i];
+        if (s.status === "upcoming" || s.status === "pending") {
+            const sKickoff = s.kickoff || s.date;
+            if (replKickoff <= sKickoff) {
+                insertAt = i;
+                break;
+            }
+        }
+    }
+
+    session.splice(insertAt, 0, newPick);
+
+    // Re-index all picks
+    session.forEach((p, i) => { p.idx = i; });
 
     // Remove from reserves
     reserves = reserves.filter(r => !(r.home === repl.home && r.away === repl.away));

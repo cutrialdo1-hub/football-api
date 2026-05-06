@@ -31,513 +31,148 @@
 
     .container { width: 100%; max-width: 520px; }
 
-    /* ── Header ── */
     .back-btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        font-family: Orbitron, sans-serif;
-        font-size: 0.65rem;
-        letter-spacing: 2px;
-        color: var(--dim);
-        cursor: pointer;
-        border: none;
-        background: none;
-        padding: 0;
-        margin-bottom: 16px;
-        transition: color 0.2s;
-        width: auto;
+        display: inline-flex; align-items: center; gap: 6px;
+        font-family: Orbitron, sans-serif; font-size: 0.65rem;
+        letter-spacing: 2px; color: var(--dim); cursor: pointer;
+        border: none; background: none; padding: 0; margin-bottom: 16px;
+        transition: color 0.2s; width: auto;
     }
     .back-btn:hover { color: var(--neon); box-shadow: none; }
 
-    h1 {
-        font-family: Orbitron, sans-serif;
-        color: var(--neon);
-        text-align: center;
-        letter-spacing: 5px;
-        font-size: 1.2rem;
-        margin-bottom: 4px;
-    }
+    h1 { font-family: Orbitron, sans-serif; color: var(--neon); text-align: center; letter-spacing: 5px; font-size: 1.2rem; margin-bottom: 4px; }
+    .tagline { text-align: center; font-size: 0.65rem; color: var(--dim); letter-spacing: 3px; text-transform: uppercase; margin-bottom: 24px; }
 
-    .tagline {
-        text-align: center;
-        font-size: 0.65rem;
-        color: var(--dim);
-        letter-spacing: 3px;
-        text-transform: uppercase;
-        margin-bottom: 24px;
-    }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; margin-bottom: 16px; }
 
-    /* ── Cards ── */
-    .card {
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: 16px;
-        padding: 20px;
-        margin-bottom: 16px;
-    }
+    .section-label { font-size: 0.6rem; letter-spacing: 3px; color: var(--dim); text-transform: uppercase; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #1a1d28; }
 
-    /* ── Section label ── */
-    .section-label {
-        font-size: 0.6rem;
-        letter-spacing: 3px;
-        color: var(--dim);
-        text-transform: uppercase;
-        margin-bottom: 12px;
-        padding-bottom: 8px;
-        border-bottom: 1px solid #1a1d28;
-    }
-
-    /* ── Date range controls ── */
-    .date-row {
-        display: flex;
-        gap: 10px;
-        margin-bottom: 12px;
-    }
-
-    .date-row input[type="date"] {
-        flex: 1;
-        padding: 10px 12px;
-        border-radius: 10px;
-        background: #000;
-        border: 1px solid var(--border);
-        color: #fff;
-        font-family: Inter, sans-serif;
-        font-size: 0.8rem;
-    }
-
+    .date-row { display: flex; gap: 10px; margin-bottom: 12px; }
+    .date-row input[type="date"] { flex: 1; padding: 10px 12px; border-radius: 10px; background: #000; border: 1px solid var(--border); color: #fff; font-family: Inter, sans-serif; font-size: 0.8rem; }
     .date-row input:focus { outline: 1px solid var(--neon); }
 
-    /* ── Quick select buttons ── */
-    .quick-row {
-        display: flex;
-        gap: 6px;
-        flex-wrap: wrap;
-        margin-bottom: 14px;
-    }
+    .quick-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
 
     .quick-btn {
-        padding: 6px 12px;
-        border-radius: 6px;
-        border: 1px solid var(--border);
-        background: transparent;
-        color: var(--dim);
-        font-family: Orbitron, sans-serif;
-        font-size: 0.6rem;
-        letter-spacing: 1px;
-        cursor: pointer;
-        transition: all 0.2s;
-        width: auto;
-        margin-bottom: 0;
+        padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border);
+        background: transparent; color: var(--dim); font-family: Orbitron, sans-serif;
+        font-size: 0.6rem; letter-spacing: 1px; cursor: pointer; transition: all 0.2s;
+        width: auto; margin-bottom: 0;
     }
+    .quick-btn:hover, .quick-btn.active { border-color: var(--neon); color: var(--neon); background: rgba(0,255,157,0.05); box-shadow: none; }
 
-    .quick-btn:hover, .quick-btn.active {
-        border-color: var(--neon);
-        color: var(--neon);
-        background: rgba(0,255,157,0.05);
-        box-shadow: none;
-    }
-
-    /* ── Main action button ── */
     button.primary {
-        width: 100%;
-        padding: 14px;
-        border-radius: 10px;
-        background: var(--neon);
-        color: #000;
-        font-weight: 800;
-        font-family: Orbitron, sans-serif;
-        font-size: 0.75rem;
-        letter-spacing: 2px;
-        cursor: pointer;
-        border: none;
-        transition: box-shadow 0.2s;
-        margin-bottom: 0;
+        width: 100%; padding: 14px; border-radius: 10px; background: var(--neon);
+        color: #000; font-weight: 800; font-family: Orbitron, sans-serif; font-size: 0.75rem;
+        letter-spacing: 2px; cursor: pointer; border: none; transition: box-shadow 0.2s; margin-bottom: 0;
     }
-
     button.primary:hover { box-shadow: 0 0 18px rgba(0,255,157,0.35); }
     button.primary:disabled { background: #1a1a1a; color: #444; cursor: not-allowed; box-shadow: none; }
 
-    /* ── Fixture leg cards ── */
     .leg-card {
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 14px;
-        margin-bottom: 10px;
-        cursor: pointer;
-        transition: border-color 0.2s, background 0.2s;
-        position: relative;
-        user-select: none;
+        border: 1px solid var(--border); border-radius: 12px; padding: 14px;
+        margin-bottom: 10px; cursor: pointer; transition: border-color 0.2s, background 0.2s;
+        position: relative; user-select: none;
     }
-
     .leg-card:hover { border-color: #3a3f50; }
-
-    .leg-card.selected {
-        border-color: var(--neon);
-        background: rgba(0,255,157,0.04);
-    }
-
+    .leg-card.selected { border-color: var(--neon); background: rgba(0,255,157,0.04); }
     .leg-card.selected .leg-checkbox { background: var(--neon); border-color: var(--neon); }
     .leg-card.selected .leg-checkbox::after { opacity: 1; }
-
     .leg-card.tier-LOW { opacity: 0.6; }
 
-    /* Checkbox */
     .leg-checkbox {
-        width: 18px; height: 18px;
-        border-radius: 4px;
-        border: 1px solid var(--border);
-        background: transparent;
-        position: absolute;
-        top: 14px; right: 14px;
-        transition: all 0.15s;
-        flex-shrink: 0;
+        width: 18px; height: 18px; border-radius: 4px; border: 1px solid var(--border);
+        background: transparent; position: absolute; top: 14px; right: 14px;
+        transition: all 0.15s; flex-shrink: 0;
     }
-
     .leg-checkbox::after {
-        content: "✓";
-        position: absolute;
-        top: 50%; left: 50%;
-        transform: translate(-50%, -50%);
-        font-size: 11px;
-        color: #000;
-        font-weight: 900;
-        opacity: 0;
-        transition: opacity 0.15s;
+        content: "✓"; position: absolute; top: 50%; left: 50%;
+        transform: translate(-50%, -50%); font-size: 11px; color: #000;
+        font-weight: 900; opacity: 0; transition: opacity 0.15s;
     }
 
-    /* Leg header */
-    .leg-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        padding-right: 28px;
-        margin-bottom: 8px;
-    }
+    .leg-header { display: flex; justify-content: space-between; align-items: flex-start; padding-right: 28px; margin-bottom: 8px; }
+    .leg-teams { font-size: 0.82rem; font-weight: 600; color: #dde; line-height: 1.3; }
+    .leg-date { font-size: 0.65rem; color: var(--dim); margin-top: 2px; }
 
-    .leg-teams {
-        font-size: 0.82rem;
-        font-weight: 600;
-        color: #dde;
-        line-height: 1.3;
-    }
-
-    .leg-date {
-        font-size: 0.65rem;
-        color: var(--dim);
-        margin-top: 2px;
-    }
-
-    /* Pick badge */
-    .pick-badge {
-        font-family: Orbitron, sans-serif;
-        font-size: 0.62rem;
-        font-weight: 700;
-        letter-spacing: 1px;
-        padding: 3px 8px;
-        border-radius: 4px;
-        flex-shrink: 0;
-    }
-
+    /* ── Pick badges (1X2 result colours) ── */
+    .pick-badge { font-family: Orbitron, sans-serif; font-size: 0.62rem; font-weight: 700; letter-spacing: 1px; padding: 3px 8px; border-radius: 4px; flex-shrink: 0; }
     .pick-H { background: rgba(0,255,157,0.15);  color: var(--neon); border: 1px solid rgba(0,255,157,0.3); }
     .pick-D { background: rgba(136,146,176,0.15); color: var(--draw); border: 1px solid rgba(136,146,176,0.3); }
     .pick-A { background: rgba(255,51,102,0.15);  color: var(--away); border: 1px solid rgba(255,51,102,0.3); }
 
-    /* Confidence bar */
-    .conf-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-top: 6px;
-    }
+    /* ── Market type badges — DC and AH additions ── */
+    .mkt-1X2   { background: rgba(0,255,157,0.12);  color: var(--neon); border: 1px solid rgba(0,255,157,0.25); }
+    .mkt-DC    { background: rgba(79,195,247,0.12); color: #4fc3f7;     border: 1px solid rgba(79,195,247,0.25); }
+    .mkt-AH    { background: rgba(255,152,0,0.12);  color: #ff9800;     border: 1px solid rgba(255,152,0,0.25); }
+    .mkt-Goals { background: rgba(255,204,0,0.12);  color: var(--gold); border: 1px solid rgba(255,204,0,0.25); }
 
-    .conf-bar-wrap {
-        flex: 1;
-        height: 4px;
-        background: #1a1d28;
-        border-radius: 2px;
-        overflow: hidden;
-    }
-
-    .conf-bar-fill {
-        height: 100%;
-        border-radius: 2px;
-        transition: width 0.4s;
-    }
-
+    .conf-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+    .conf-bar-wrap { flex: 1; height: 4px; background: #1a1d28; border-radius: 2px; overflow: hidden; }
+    .conf-bar-fill { height: 100%; border-radius: 2px; transition: width 0.4s; }
     .fill-HIGH { background: var(--neon); }
     .fill-MED  { background: var(--gold); }
     .fill-LOW  { background: var(--away); }
 
-    .conf-label {
-        font-family: Orbitron, sans-serif;
-        font-size: 0.58rem;
-        letter-spacing: 1px;
-        min-width: 32px;
-    }
-
+    .conf-label { font-family: Orbitron, sans-serif; font-size: 0.58rem; letter-spacing: 1px; min-width: 32px; }
     .conf-HIGH { color: var(--neon); }
     .conf-MED  { color: var(--gold); }
     .conf-LOW  { color: var(--away); }
 
-    .leg-prob {
-        font-family: Orbitron, sans-serif;
-        font-size: 0.72rem;
-        color: var(--neon);
-        min-width: 38px;
-        text-align: right;
-    }
+    .leg-prob { font-family: Orbitron, sans-serif; font-size: 0.72rem; color: var(--neon); min-width: 38px; text-align: right; }
 
-    .stale-warning {
-        font-size: 0.62rem;
-        color: var(--gold);
-        margin-top: 5px;
-        display: flex;
-        align-items: center;
-        gap: 4px;
-    }
+    .stale-warning { font-size: 0.62rem; color: var(--gold); margin-top: 5px; display: flex; align-items: center; gap: 4px; }
 
-    /* ── Selection summary bar ── */
     .selection-bar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        background: rgba(0,255,157,0.05);
-        border: 1px solid rgba(0,255,157,0.15);
-        border-radius: 10px;
-        padding: 12px 16px;
-        margin-bottom: 16px;
+        display: flex; align-items: center; justify-content: space-between;
+        background: rgba(0,255,157,0.05); border: 1px solid rgba(0,255,157,0.15);
+        border-radius: 10px; padding: 12px 16px; margin-bottom: 16px;
     }
+    .selection-count { font-family: Orbitron, sans-serif; font-size: 0.75rem; color: var(--neon); }
+    .selection-count span { font-size: 1.4rem; font-weight: 900; margin-right: 6px; }
 
-    .selection-count {
-        font-family: Orbitron, sans-serif;
-        font-size: 0.75rem;
-        color: var(--neon);
-    }
+    .result-card { background: var(--card); border: 1px solid rgba(0,255,157,0.2); border-radius: 16px; padding: 20px; margin-bottom: 16px; }
 
-    .selection-count span {
-        font-size: 1.4rem;
-        font-weight: 900;
-        margin-right: 6px;
-    }
+    .big-prob { font-family: Orbitron, sans-serif; font-size: 3.5rem; font-weight: 900; text-align: center; color: var(--neon); text-shadow: 0 0 24px rgba(0,255,157,0.4); margin: 8px 0 4px; }
+    .big-prob-label { text-align: center; font-size: 0.65rem; color: var(--dim); letter-spacing: 3px; text-transform: uppercase; margin-bottom: 16px; }
 
-    /* ── Monte Carlo result card ── */
-    .result-card {
-        background: var(--card);
-        border: 1px solid rgba(0,255,157,0.2);
-        border-radius: 16px;
-        padding: 20px;
-        margin-bottom: 16px;
-    }
+    .result-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+    .result-stat { background: #0d0f16; border: 1px solid var(--border); border-radius: 10px; padding: 12px; text-align: center; }
+    .result-stat .val { font-family: Orbitron, sans-serif; font-size: 1.1rem; font-weight: 700; color: #fff; margin-bottom: 4px; }
+    .result-stat .lbl { font-size: 0.6rem; letter-spacing: 2px; color: var(--dim); text-transform: uppercase; }
 
-    .big-prob {
-        font-family: Orbitron, sans-serif;
-        font-size: 3.5rem;
-        font-weight: 900;
-        text-align: center;
-        color: var(--neon);
-        text-shadow: 0 0 24px rgba(0,255,157,0.4);
-        margin: 8px 0 4px;
-    }
+    .sim-bar-wrap { height: 6px; background: #1a1d28; border-radius: 3px; overflow: hidden; margin-bottom: 16px; }
+    .sim-bar-fill { height: 100%; background: var(--neon); border-radius: 3px; transition: width 0.3s; box-shadow: 0 0 8px rgba(0,255,157,0.5); }
 
-    .big-prob-label {
-        text-align: center;
-        font-size: 0.65rem;
-        color: var(--dim);
-        letter-spacing: 3px;
-        text-transform: uppercase;
-        margin-bottom: 16px;
-    }
+    .kelly-row { display: flex; align-items: center; gap: 10px; background: #000; border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; margin-bottom: 10px; }
+    .kelly-row label { font-size: 0.65rem; letter-spacing: 2px; color: var(--dim); text-transform: uppercase; white-space: nowrap; flex-shrink: 0; }
+    .kelly-row input { flex: 1; background: transparent; border: none; color: var(--neon); font-family: Orbitron, sans-serif; font-size: 0.85rem; outline: none; min-width: 0; }
+    .kelly-row input::-webkit-inner-spin-button, .kelly-row input::-webkit-outer-spin-button { -webkit-appearance: none; }
+    .kelly-row .sym { font-family: Orbitron, sans-serif; font-size: 0.85rem; color: var(--neon); flex-shrink: 0; }
 
-    .result-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-        margin-bottom: 16px;
-    }
+    .kelly-stake-display { text-align: center; font-family: Orbitron, sans-serif; font-size: 1.1rem; color: var(--neon); min-height: 28px; margin-bottom: 8px; animation: pulse-text 2s ease-in-out infinite; }
+    @keyframes pulse-text { 0%,100%{opacity:1;} 50%{opacity:0.65;} }
 
-    .result-stat {
-        background: #0d0f16;
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 12px;
-        text-align: center;
-    }
-
-    .result-stat .val {
-        font-family: Orbitron, sans-serif;
-        font-size: 1.1rem;
-        font-weight: 700;
-        color: #fff;
-        margin-bottom: 4px;
-    }
-
-    .result-stat .lbl {
-        font-size: 0.6rem;
-        letter-spacing: 2px;
-        color: var(--dim);
-        text-transform: uppercase;
-    }
-
-    /* Sim progress bar */
-    .sim-bar-wrap {
-        height: 6px;
-        background: #1a1d28;
-        border-radius: 3px;
-        overflow: hidden;
-        margin-bottom: 16px;
-    }
-
-    .sim-bar-fill {
-        height: 100%;
-        background: var(--neon);
-        border-radius: 3px;
-        transition: width 0.3s;
-        box-shadow: 0 0 8px rgba(0,255,157,0.5);
-    }
-
-    /* Bookie odds input in result */
-    .kelly-row {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        background: #000;
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 10px 14px;
-        margin-bottom: 10px;
-    }
-
-    .kelly-row label {
-        font-size: 0.65rem;
-        letter-spacing: 2px;
-        color: var(--dim);
-        text-transform: uppercase;
-        white-space: nowrap;
-        flex-shrink: 0;
-    }
-
-    .kelly-row input {
-        flex: 1;
-        background: transparent;
-        border: none;
-        color: var(--neon);
-        font-family: Orbitron, sans-serif;
-        font-size: 0.85rem;
-        outline: none;
-        min-width: 0;
-    }
-
-    .kelly-row input::-webkit-inner-spin-button,
-    .kelly-row input::-webkit-outer-spin-button { -webkit-appearance: none; }
-
-    .kelly-row .sym {
-        font-family: Orbitron, sans-serif;
-        font-size: 0.85rem;
-        color: var(--neon);
-        flex-shrink: 0;
-    }
-
-    .kelly-stake-display {
-        text-align: center;
-        font-family: Orbitron, sans-serif;
-        font-size: 1.1rem;
-        color: var(--neon);
-        min-height: 28px;
-        margin-bottom: 8px;
-        animation: pulse-text 2s ease-in-out infinite;
-    }
-
-    @keyframes pulse-text {
-        0%, 100% { opacity: 1; }
-        50%       { opacity: 0.65; }
-    }
-
-    .ev-display {
-        text-align: center;
-        font-size: 0.72rem;
-        color: var(--dim);
-        min-height: 20px;
-        margin-bottom: 12px;
-    }
-
+    .ev-display { text-align: center; font-size: 0.72rem; color: var(--dim); min-height: 20px; margin-bottom: 12px; }
     .ev-pos { color: var(--neon); }
     .ev-neg { color: var(--away); }
 
-    /* Variance warning */
-    .variance-box {
-        background: rgba(255,204,0,0.05);
-        border-left: 3px solid var(--gold);
-        border-radius: 0 8px 8px 0;
-        padding: 12px 14px;
-        font-size: 0.78rem;
-        line-height: 1.6;
-        color: #b0a070;
-        margin-top: 4px;
-    }
+    .variance-box { background: rgba(255,204,0,0.05); border-left: 3px solid var(--gold); border-radius: 0 8px 8px 0; padding: 12px 14px; font-size: 0.78rem; line-height: 1.6; color: #b0a070; margin-top: 4px; }
 
-    /* ── Tier filter tabs ── */
-    .tier-row {
-        display: flex;
-        gap: 6px;
-        margin-bottom: 14px;
-        flex-wrap: wrap;
-    }
-
-    .tier-btn {
-        padding: 5px 12px;
-        border-radius: 6px;
-        border: 1px solid var(--border);
-        background: transparent;
-        color: var(--dim);
-        font-family: Orbitron, sans-serif;
-        font-size: 0.58rem;
-        letter-spacing: 1px;
-        cursor: pointer;
-        transition: all 0.2s;
-        width: auto;
-        margin-bottom: 0;
-    }
-
+    .tier-row { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+    .tier-btn { padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--dim); font-family: Orbitron, sans-serif; font-size: 0.58rem; letter-spacing: 1px; cursor: pointer; transition: all 0.2s; width: auto; margin-bottom: 0; }
     .tier-btn:hover { box-shadow: none; }
-    .tier-btn.active-all  { border-color: #fff;         color: #fff; }
-    .tier-btn.active-HIGH { border-color: var(--neon);  color: var(--neon);  background: rgba(0,255,157,0.05); }
-    .tier-btn.active-MED  { border-color: var(--gold);  color: var(--gold);  background: rgba(255,204,0,0.05); }
-    .tier-btn.active-LOW  { border-color: var(--away);  color: var(--away);  background: rgba(255,51,102,0.05); }
+    .tier-btn.active-all  { border-color: #fff;        color: #fff; }
+    .tier-btn.active-HIGH { border-color: var(--neon); color: var(--neon); background: rgba(0,255,157,0.05); }
+    .tier-btn.active-MED  { border-color: var(--gold); color: var(--gold); background: rgba(255,204,0,0.05); }
+    .tier-btn.active-LOW  { border-color: var(--away); color: var(--away); background: rgba(255,51,102,0.05); }
 
-    /* ── Loader ── */
-    .loader {
-        border: 3px solid #1a1d28;
-        border-top: 3px solid var(--neon);
-        border-radius: 50%;
-        width: 32px; height: 32px;
-        margin: 20px auto;
-        animation: spin 0.9s linear infinite;
-    }
-
+    .loader { border: 3px solid #1a1d28; border-top: 3px solid var(--neon); border-radius: 50%; width: 32px; height: 32px; margin: 20px auto; animation: spin 0.9s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    .status-msg {
-        text-align: center;
-        font-size: 0.75rem;
-        color: var(--dim);
-        padding: 8px 0;
-    }
-
-    .error-msg {
-        text-align: center;
-        font-size: 0.78rem;
-        color: var(--away);
-        padding: 10px 0;
-    }
-
-    .empty-msg {
-        text-align: center;
-        font-size: 0.75rem;
-        color: var(--dim);
-        padding: 20px 0;
-        line-height: 1.7;
-    }
+    .status-msg { text-align: center; font-size: 0.75rem; color: var(--dim); padding: 8px 0; }
+    .error-msg  { text-align: center; font-size: 0.78rem; color: var(--away); padding: 10px 0; }
+    .empty-msg  { text-align: center; font-size: 0.75rem; color: var(--dim); padding: 20px 0; line-height: 1.7; }
 </style>
 </head>
 <body>
@@ -548,7 +183,6 @@
     <h1>ACCA BUILDER</h1>
     <p class="tagline">Monte Carlo · Multi-Leg Simulator</p>
 
-    <!-- Date range controls -->
     <div class="card">
         <div class="section-label">Date Range</div>
         <div class="date-row">
@@ -566,10 +200,8 @@
         <button class="primary" onclick="scanFixtures()">⚡ SCAN &amp; RANK FIXTURES</button>
     </div>
 
-    <!-- Fixture list -->
     <div id="fixture-list"></div>
 
-    <!-- Selection summary + run button -->
     <div id="selection-bar" style="display:none;">
         <div class="selection-bar">
             <div class="selection-count"><span id="sel-count">0</span> legs selected</div>
@@ -580,7 +212,6 @@
         </button>
     </div>
 
-    <!-- Result -->
     <div id="result"></div>
 
 </div>
@@ -588,12 +219,11 @@
 <script>
 const API = "https://football-api-9e4p.onrender.com";
 
-let allLegs      = [];   // all ranked fixtures from /scan
-let selectedLegs = new Set(); // indices of selected legs
-let simResult    = null; // last MC result
+let allLegs      = [];
+let selectedLegs = new Set();
+let simResult    = null;
 let tierFilter   = "ALL";
 
-// ── Date helpers ──
 function toISO(d) { return d.toISOString().split("T")[0]; }
 
 function setRange(fromOffset, toOffset, btn) {
@@ -608,7 +238,7 @@ function setRange(fromOffset, toOffset, btn) {
 
 function setWeekend(btn) {
     const today   = new Date();
-    const day     = today.getDay(); // 0=Sun
+    const day     = today.getDay();
     const diffSat = (6 - day + 7) % 7 || 7;
     const sat     = new Date(today); sat.setDate(today.getDate() + diffSat);
     const sun     = new Date(sat);   sun.setDate(sat.getDate() + 1);
@@ -618,7 +248,6 @@ function setWeekend(btn) {
     btn.classList.add("active");
 }
 
-// Set default: full 5 days
 (function() {
     const today = new Date();
     const to    = new Date(today); to.setDate(today.getDate() + 5);
@@ -626,13 +255,10 @@ function setWeekend(btn) {
     document.getElementById("date-to").value   = toISO(to);
 })();
 
-// ── Confidence bar width ──
 function confWidth(confidence) {
-    // confidence is 0–1, map 0.15–0.50 → 30%–100%
     return Math.min(100, Math.max(15, (confidence / 0.50) * 100)).toFixed(0);
 }
 
-// ── Format date display ──
 function fmtDate(ds, daysOut) {
     const labels = ["Today", "Tomorrow"];
     if (daysOut >= 0 && daysOut < labels.length) return labels[daysOut];
@@ -640,7 +266,22 @@ function fmtDate(ds, daysOut) {
     return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 }
 
-// ── Render fixture list ──
+// Track user-selected market per leg (defaults to model's top pick)
+let legMarketSel = {};
+
+// Determine badge class
+function pickBadgeClass(pick, mktType) {
+    if (["H","D","A"].includes(pick)) return "pick-" + pick;
+    return "mkt-" + (mktType || "1X2");
+}
+
+function selectLegMarket(idx, mktJson) {
+    legMarketSel[idx] = mktJson;
+    document.getElementById("result").innerHTML = "";
+    simResult = null;
+    renderLegs();
+}
+
 function renderLegs() {
     const list = document.getElementById("fixture-list");
 
@@ -650,12 +291,8 @@ function renderLegs() {
         return;
     }
 
-    const filtered = tierFilter === "ALL"
-        ? allLegs
-        : allLegs.filter(l => l.tier === tierFilter);
-
-    // Tier filter tabs
-    const counts = { HIGH: 0, MED: 0, LOW: 0 };
+    const filtered = tierFilter === "ALL" ? allLegs : allLegs.filter(l => l.tier === tierFilter);
+    const counts   = { HIGH: 0, MED: 0, LOW: 0 };
     allLegs.forEach(l => counts[l.tier]++);
 
     let html = `
@@ -668,12 +305,49 @@ function renderLegs() {
             <button class="tier-btn ${tierFilter==='LOW'  ? 'active-LOW'  : ''}" onclick="setTier('LOW',  this)">LOW (${counts.LOW})</button>
         </div>`;
 
-    filtered.forEach((leg, fi) => {
-        const idx       = allLegs.indexOf(leg);
+    filtered.forEach((leg) => {
+        const idx        = allLegs.indexOf(leg);
         const isSelected = selectedLegs.has(idx);
         const staleWarn  = leg.days_out > 3
-            ? `<div class="stale-warning">⚠ ${leg.days_out} days away — verify team news before placing</div>`
-            : "";
+            ? `<div class="stale-warning">⚠ ${leg.days_out} days away — verify team news before placing</div>` : "";
+
+        // Current market selection — default to model's top pick
+        const sel = legMarketSel[idx] || { code: leg.pick, label: leg.pick_label, type: leg.mkt_type || "1X2", prob: leg.pick_prob, fair: leg.fair_odds };
+        const badgeClass = pickBadgeClass(sel.code, sel.type);
+
+        // Market breakdown table
+        let marketTable = "";
+        if (leg.all_markets && leg.all_markets.length) {
+            const rows = leg.all_markets.map(mkt => {
+                const isActive = sel.code === mkt.code;
+                const bc = pickBadgeClass(mkt.code, mkt.type);
+                const safeJson = JSON.stringify(mkt).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                return `<tr style="cursor:pointer;${isActive ? 'background:rgba(0,255,157,0.06);' : ''}"
+                            onclick="event.stopPropagation();selectLegMarket(${idx}, JSON.parse(this.dataset.mkt))"
+                            data-mkt='${JSON.stringify(mkt).replace(/'/g,"\\'")}'>
+                    <td style="padding:6px 4px;font-size:0.75rem;">
+                        <span class="pick-badge ${bc}" style="font-size:0.55rem;padding:2px 6px;">${mkt.label}</span>
+                    </td>
+                    <td style="padding:6px 4px;font-family:Orbitron,sans-serif;font-size:0.72rem;color:var(--neon);text-align:right;">${mkt.prob}%</td>
+                    <td style="padding:6px 4px;font-size:0.68rem;color:var(--dim);text-align:right;">${mkt.fair}</td>
+                    <td style="padding:6px 4px;text-align:right;color:${isActive ? 'var(--neon)' : 'var(--dim)'};font-size:0.7rem;">${isActive ? '✓' : ''}</td>
+                </tr>`;
+            }).join("");
+
+            marketTable = `
+            <div style="margin-top:10px;border-top:1px solid #1a1d28;padding-top:8px;" onclick="event.stopPropagation()">
+                <div style="font-size:0.58rem;letter-spacing:2px;color:var(--dim);text-transform:uppercase;margin-bottom:6px;">Tap market to select for acca</div>
+                <table style="width:100%;border-collapse:collapse;">
+                    <thead><tr>
+                        <th style="font-size:0.55rem;letter-spacing:1px;color:var(--dim);padding:3px 4px;text-align:left;font-weight:400;">Market</th>
+                        <th style="font-size:0.55rem;color:var(--dim);padding:3px 4px;text-align:right;font-weight:400;">Prob</th>
+                        <th style="font-size:0.55rem;color:var(--dim);padding:3px 4px;text-align:right;font-weight:400;">Fair</th>
+                        <th style="width:16px;"></th>
+                    </tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>`;
+        }
 
         html += `
         <div class="leg-card tier-${leg.tier} ${isSelected ? 'selected' : ''}" onclick="toggleLeg(${idx})">
@@ -683,60 +357,53 @@ function renderLegs() {
                     <div class="leg-teams">${leg.home} vs ${leg.away}</div>
                     <div class="leg-date">${fmtDate(leg.date, leg.days_out)} · ${leg.league}</div>
                 </div>
-                <div class="pick-badge pick-${leg.pick}">${leg.pick_label}</div>
+                <div class="pick-badge ${badgeClass}">${sel.label}</div>
             </div>
             <div class="conf-row">
                 <div class="conf-bar-wrap">
                     <div class="conf-bar-fill fill-${leg.tier}" style="width:${confWidth(leg.confidence)}%"></div>
                 </div>
                 <span class="conf-label conf-${leg.tier}">${leg.tier}</span>
-                <span class="leg-prob">${leg.pick_prob}%</span>
+                <span class="leg-prob">${sel.prob}%</span>
             </div>
             ${staleWarn}
+            ${marketTable}
         </div>`;
     });
 
     html += `</div>`;
     list.innerHTML = html;
 
-    // Show/hide selection bar
-    document.getElementById("selection-bar").style.display =
-        selectedLegs.size > 0 ? "block" : "none";
+    document.getElementById("selection-bar").style.display = selectedLegs.size > 0 ? "block" : "none";
     document.getElementById("sel-count").textContent = selectedLegs.size;
     document.getElementById("run-btn").disabled = selectedLegs.size < 2;
 }
 
-function setTier(t, btn) {
-    tierFilter = t;
-    renderLegs();
-}
+function setTier(t, btn) { tierFilter = t; renderLegs(); }
 
 function toggleLeg(idx) {
     if (selectedLegs.has(idx)) {
         selectedLegs.delete(idx);
     } else {
-        if (selectedLegs.size >= 6) {
-            alert("Maximum 6 legs per acca.");
-            return;
-        }
+        if (selectedLegs.size >= 6) { alert("Maximum 6 legs per acca."); return; }
         selectedLegs.add(idx);
+        // Initialise with model's top pick if not already set
+        if (!legMarketSel[idx]) {
+            const leg = allLegs[idx];
+            legMarketSel[idx] = { code: leg.pick, label: leg.pick_label, type: leg.mkt_type || "1X2", prob: leg.pick_prob, fair: leg.fair_odds };
+        }
     }
     renderLegs();
-    // Clear old result when selection changes
     document.getElementById("result").innerHTML = "";
     simResult = null;
 }
 
-// ── Scan fixtures ──
 async function scanFixtures() {
     const from = document.getElementById("date-from").value;
     const to   = document.getElementById("date-to").value;
     const list = document.getElementById("fixture-list");
 
-    if (!from || !to) {
-        list.innerHTML = `<div class="error-msg">Please select a date range.</div>`;
-        return;
-    }
+    if (!from || !to) { list.innerHTML = `<div class="error-msg">Please select a date range.</div>`; return; }
 
     selectedLegs.clear();
     document.getElementById("result").innerHTML = "";
@@ -751,11 +418,7 @@ async function scanFixtures() {
             list.innerHTML = `<div class="card"><div class="loader"></div><div class="status-msg">${data.message}</div></div>`;
             return;
         }
-
-        if (data.error) {
-            list.innerHTML = `<div class="error-msg">⚡ ${data.error}</div>`;
-            return;
-        }
+        if (data.error) { list.innerHTML = `<div class="error-msg">⚡ ${data.error}</div>`; return; }
 
         allLegs = Array.isArray(data) ? data : [];
 
@@ -763,12 +426,8 @@ async function scanFixtures() {
         selectedLegs.clear();
         let autoCount = 0;
         for (let i = 0; i < allLegs.length && autoCount < 3; i++) {
-            if (allLegs[i].tier === "HIGH") {
-                selectedLegs.add(i);
-                autoCount++;
-            }
+            if (allLegs[i].tier === "HIGH") { selectedLegs.add(i); autoCount++; }
         }
-        // If fewer than 2 HIGH, fill with MED
         for (let i = 0; i < allLegs.length && selectedLegs.size < 2; i++) {
             if (allLegs[i].tier === "MED") selectedLegs.add(i);
         }
@@ -781,27 +440,29 @@ async function scanFixtures() {
     }
 }
 
-// ── Monte Carlo ──
 async function runMonteCarlo() {
     const out = document.getElementById("result");
     out.innerHTML = `<div class="card"><div class="loader"></div><div class="status-msg">Running 10,000 simulations...</div></div>`;
     document.getElementById("run-btn").disabled = true;
 
-    const legs = [...selectedLegs].map(idx => ({
-        h_lam: allLegs[idx].h_lam,
-        a_lam: allLegs[idx].a_lam,
-        pick:  allLegs[idx].pick,
-        label: allLegs[idx].pick_label,
-        home:  allLegs[idx].home,
-        away:  allLegs[idx].away,
-        date:  allLegs[idx].date,
-    }));
+    const legs = [...selectedLegs].map(idx => {
+        const leg = allLegs[idx];
+        const sel = legMarketSel[idx] || { code: leg.pick, label: leg.pick_label };
+        return {
+            h_lam: leg.h_lam,
+            a_lam: leg.a_lam,
+            pick:  sel.code,
+            label: sel.label,
+            home:  leg.home,
+            away:  leg.away,
+            date:  leg.date,
+        };
+    });
 
     try {
         const res  = await fetch(`${API}/acca`, {
-            method:  "POST",
-            headers: { "Content-Type": "application/json" },
-            body:    JSON.stringify({ legs })
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ legs })
         });
         const data = await res.json();
 
@@ -821,82 +482,55 @@ async function runMonteCarlo() {
     document.getElementById("run-btn").disabled = false;
 }
 
-// ── Render MC result ──
 function renderResult(legs, data) {
     const out       = document.getElementById("result");
     const prob      = data.probability;
     const fairOdds  = data.fair_odds;
     const wins      = data.wins;
-    const simBarPct = Math.min(100, prob * 2).toFixed(0); // scale 50%→100% bar
+    const simBarPct = Math.min(100, prob * 2).toFixed(0);
 
-    // Legs summary
-    const legRows = legs.map(l => `
+    const legRows = legs.map(l => {
+        const bc = pickBadgeClass(l.pick, l.mkt_type);
+        return `
         <div style="display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid #1a1d28;font-size:0.78rem;">
             <span style="color:#aab;">${l.home} vs ${l.away}</span>
-            <span class="pick-badge pick-${l.pick}" style="font-size:0.6rem;">${l.label}</span>
-        </div>`).join("");
+            <span class="pick-badge ${bc}" style="font-size:0.6rem;">${l.label}</span>
+        </div>`;
+    }).join("");
 
-    // Variance warning copy based on leg count
-    const legCount   = legs.length;
-    const failRate   = (100 - prob).toFixed(0);
-    const warnCopy   = `A ${legCount}-leg acca fails <b>${failRate}%</b> of the time even when all selections are correctly priced. ¼-Kelly staking limits your exposure. Always verify team news before placing.`;
+    const legCount = legs.length;
+    const failRate = (100 - prob).toFixed(0);
+    const warnCopy = `A ${legCount}-leg acca fails <b>${failRate}%</b> of the time even when all selections are correctly priced. ¼-Kelly staking limits your exposure. Always verify team news before placing.`;
 
     out.innerHTML = `
     <div class="result-card">
         <div class="section-label">Monte Carlo Result · ${data.simulations.toLocaleString()} Simulations</div>
-
-        <!-- Selected legs summary -->
         <div style="margin-bottom:14px;">${legRows}</div>
-
-        <!-- Big probability -->
         <div class="big-prob">${prob}%</div>
         <div class="big-prob-label">Combined Win Probability</div>
-
-        <!-- Sim bar -->
-        <div class="sim-bar-wrap">
-            <div class="sim-bar-fill" style="width:${simBarPct}%"></div>
-        </div>
-
-        <!-- Stats grid -->
+        <div class="sim-bar-wrap"><div class="sim-bar-fill" style="width:${simBarPct}%"></div></div>
         <div class="result-grid">
-            <div class="result-stat">
-                <div class="val">${fairOdds}</div>
-                <div class="lbl">Fair Acca Odds</div>
-            </div>
-            <div class="result-stat">
-                <div class="val">${wins.toLocaleString()}</div>
-                <div class="lbl">Winning Sims</div>
-            </div>
+            <div class="result-stat"><div class="val">${fairOdds}</div><div class="lbl">Fair Acca Odds</div></div>
+            <div class="result-stat"><div class="val">${wins.toLocaleString()}</div><div class="lbl">Winning Sims</div></div>
         </div>
-
-        <!-- Bookie odds input -->
         <div class="section-label" style="margin-top:4px;">¼ Kelly Staker</div>
-
         <div class="kelly-row">
-            <label>Bankroll</label>
-            <span class="sym">€</span>
-            <input type="number" id="acca-bankroll" value="1000" min="1" step="1"
-                inputmode="decimal" oninput="calcAccaKelly()">
+            <label>Bankroll</label><span class="sym">€</span>
+            <input type="number" id="acca-bankroll" value="1000" min="1" step="1" inputmode="decimal" oninput="calcAccaKelly()">
         </div>
-
         <div class="kelly-row">
             <label>Bookie Odds</label>
-            <input type="number" id="acca-odds" placeholder="e.g. 4.50" step="0.01" min="1.01"
-                inputmode="decimal" oninput="calcAccaKelly()">
+            <input type="number" id="acca-odds" placeholder="e.g. 4.50" step="0.01" min="1.01" inputmode="decimal" oninput="calcAccaKelly()">
         </div>
-
         <div class="kelly-stake-display" id="acca-stake">Enter bookie odds above</div>
         <div class="ev-display" id="acca-ev"></div>
-
-        <!-- Variance warning -->
         <div class="variance-box">⚠ ${warnCopy}</div>
     </div>`;
 }
 
-// ── Acca Kelly calculator ──
 function calcAccaKelly() {
-    const stakeEl  = document.getElementById("acca-stake");
-    const evEl     = document.getElementById("acca-ev");
+    const stakeEl = document.getElementById("acca-stake");
+    const evEl    = document.getElementById("acca-ev");
     if (!simResult || !stakeEl) return;
 
     const bankroll = parseFloat(document.getElementById("acca-bankroll").value) || 1000;
@@ -904,19 +538,13 @@ function calcAccaKelly() {
     const prob     = simResult.probability / 100;
 
     if (!odds || isNaN(odds) || odds <= 1) {
-        stakeEl.innerHTML = "Enter bookie odds above";
-        evEl.innerHTML    = "";
-        return;
+        stakeEl.innerHTML = "Enter bookie odds above"; evEl.innerHTML = ""; return;
     }
 
-    const p      = prob;
-    const q      = 1 - p;
-    const b      = odds - 1;
+    const p      = prob; const q = 1 - p; const b = odds - 1;
     const f_star = (b * p - q) / b;
     const edge   = (odds / simResult.fair_odds) - 1;
-
-    // EV per unit staked
-    const ev = (p * b) - q;
+    const ev     = (p * b) - q;
 
     if (edge <= 0.05 || f_star <= 0) {
         stakeEl.innerHTML = edge > 0
@@ -935,7 +563,6 @@ function calcAccaKelly() {
         : `<span class="ev-neg">EV: -€${(Math.abs(ev) * parseFloat(stake)).toFixed(2)}</span>`;
 }
 
-// Auto-scan on load
 window.addEventListener("load", scanFixtures);
 </script>
 </body>

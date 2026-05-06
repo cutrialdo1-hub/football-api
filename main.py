@@ -993,29 +993,52 @@ def scan():
                     h_lam = max(min(h_v["gf"]*(a_v["ga"]/lg_avg)*h_atk*(1.0/a_def)*radv, 3.2), 0.35)
                     a_lam = max(min(a_v["gf"]*(h_v["ga"]/lg_avg)*a_atk*(1.0/h_def),       3.2), 0.35)
 
-                    p_h,p_d,p_a,_,_,_,_ = compute_probs(h_lam, a_lam)
+                    p_h,p_d,p_a,p_btts,p_o15,p_o25,p_o35 = compute_probs(h_lam, a_lam)
                     t = p_h+p_d+p_a; p_h/=t; p_d/=t; p_a/=t
+
+                    # Double chance
+                    p_1x = p_h + p_d
+                    p_x2 = p_d + p_a
+                    p_12 = p_h + p_a
 
                     ps = sorted([p_h,p_d,p_a], reverse=True)
                     confidence = ps[0] - ps[1]
 
-                    if p_h>=p_d and p_h>=p_a: pick,pp,pl = "H",p_h,f"{m['home']} Win"
-                    elif p_a>=p_h and p_a>=p_d: pick,pp,pl = "A",p_a,f"{m['away']} Win"
-                    else: pick,pp,pl = "D",p_d,"Draw"
+                    if p_h>=p_d and p_h>=p_a: pick,pp,pl,pt = "H",p_h,f"{m['home']} Win","1X2"
+                    elif p_a>=p_h and p_a>=p_d: pick,pp,pl,pt = "A",p_a,f"{m['away']} Win","1X2"
+                    else: pick,pp,pl,pt = "D",p_d,"Draw","1X2"
 
                     tier = "HIGH" if confidence>=0.30 else ("MED" if confidence>=0.15 else "LOW")
 
+                    def fo(p): return round(1/p,2) if p>0.04 else 25.0
+
+                    # Full market breakdown for acca leg card display
+                    all_markets = [
+                        {"code":"H",    "label":f"{m['home']} Win", "type":"1X2",   "prob":round(p_h*100,1),    "fair":fo(p_h)},
+                        {"code":"D",    "label":"Draw",              "type":"1X2",   "prob":round(p_d*100,1),    "fair":fo(p_d)},
+                        {"code":"A",    "label":f"{m['away']} Win",  "type":"1X2",   "prob":round(p_a*100,1),    "fair":fo(p_a)},
+                        {"code":"1X",   "label":"1X Home/Draw",      "type":"DC",    "prob":round(p_1x*100,1),   "fair":fo(p_1x)},
+                        {"code":"X2",   "label":"X2 Draw/Away",      "type":"DC",    "prob":round(p_x2*100,1),   "fair":fo(p_x2)},
+                        {"code":"12",   "label":"12 Home/Away",      "type":"DC",    "prob":round(p_12*100,1),   "fair":fo(p_12)},
+                        {"code":"BTTS", "label":"BTTS",              "type":"Goals", "prob":round(p_btts*100,1), "fair":fo(p_btts)},
+                        {"code":"O15",  "label":"Over 1.5",          "type":"Goals", "prob":round(p_o15*100,1),  "fair":fo(p_o15)},
+                        {"code":"O25",  "label":"Over 2.5",          "type":"Goals", "prob":round(p_o25*100,1),  "fair":fo(p_o25)},
+                        {"code":"O35",  "label":"Over 3.5",          "type":"Goals", "prob":round(p_o35*100,1),  "fair":fo(p_o35)},
+                    ]
+
                     ranked.append({
                         "date": ds, "days_out": days_out,
+                        "kickoff": m.get("kickoff", ""),
                         "home": m["home"], "away": m["away"],
                         "home_id": h_id,   "away_id": a_id,
                         "comp": comp,      "league": m.get("league", comp),
-                        "pick": pick,      "pick_label": pl,
+                        "pick": pick,      "pick_label": pl, "mkt_type": pt,
                         "pick_prob": round(pp*100,1), "confidence": round(confidence,4),
                         "tier": tier,
                         "h_lam": round(h_lam,3), "a_lam": round(a_lam,3),
                         "probs": {"home":round(p_h*100,1),"draw":round(p_d*100,1),"away":round(p_a*100,1)},
-                        "fair_odds": round(1/pp,2) if pp>0.04 else 25.0,
+                        "fair_odds": fo(pp),
+                        "all_markets": all_markets,
                     })
                 except Exception as e:
                     print(f"[SCAN] Skipped {m.get('home','?')} vs {m.get('away','?')}: {e}")

@@ -1706,14 +1706,41 @@ def preload_standings():
         time.sleep(7)
     print("[BOOT] Standings preload complete")
 
+def preload_odds():
+    """
+    Warm the odds cache at boot for all competitions that have fixtures today.
+    Called after standings preload so the cache is ready before any /scan requests.
+    Uses a 12-second gap between competitions to stay well within Odds API rate limits.
+    Only runs if ODDS_API_KEY is set.
+    """
+    if not ODDS_API_KEY:
+        print("[BOOT] No ODDS_API_KEY — skipping odds preload")
+        return
+    print("[BOOT] Preloading odds cache...")
+    fetched = 0
+    for comp in COMPETITIONS:
+        try:
+            result = get_market_odds(comp)
+            if result:
+                fetched += 1
+                print(f"[BOOT] Odds loaded for {comp} ({len(result)} fixtures)")
+            time.sleep(12)   # Odds API free tier: ~500 req/month, 1 per comp = safe
+        except Exception as e:
+            print(f"[BOOT] Odds preload failed for {comp}: {e}")
+    print(f"[BOOT] Odds preload complete — {fetched}/{len(COMPETITIONS)} competitions loaded")
+
 def run_scheduler():
     fetch_all_fixtures()
     threading.Thread(target=preload_standings, daemon=True).start()
+    # Preload odds after standings settle (standings take ~70s, odds start after)
+    threading.Thread(target=preload_odds, daemon=True).start()
     while True:
         time.sleep(3600)
         print("[SCHEDULER] Hourly refresh...")
         fetch_all_fixtures()
         preload_standings()
+        # Refresh odds every hour in background — keeps edge detection current
+        threading.Thread(target=preload_odds, daemon=True).start()
         threading.Thread(target=run_calibration_check, daemon=True).start()
 
 _started = False

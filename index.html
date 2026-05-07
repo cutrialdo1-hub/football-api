@@ -396,48 +396,59 @@
         background: #000;
         border: 1px solid var(--border);
         border-radius: 10px;
-        padding: 10px 14px;
+        padding: 10px 12px;
         margin-bottom: 6px;
         cursor: pointer;
         transition: border-color 0.2s, background 0.2s;
         user-select: none;
+        min-width: 0;           /* critical: allows flex children to shrink */
+        overflow: hidden;
     }
     .fixture-card:hover     { border-color: #3a3f50; background: #080a10; }
     .fixture-card.selected  { border-color: var(--neon); background: rgba(0,255,157,0.04); }
     .fixture-card.has-value { border-color: rgba(0,255,157,0.4); }
     .fixture-card.no-value  { opacity: 0.6; }
 
+    .fx-left {
+        flex: 1;
+        min-width: 0;           /* allows text to truncate rather than overflow */
+        overflow: hidden;
+    }
     .fx-teams {
-        font-size: 0.8rem;
+        font-size: 0.78rem;
         font-weight: 600;
         color: #dde;
-        flex: 1;
-        min-width: 0;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
     }
     .fx-meta {
-        font-size: 0.6rem;
+        font-size: 0.58rem;
         color: var(--dim);
         margin-top: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
     .fx-right {
         display: flex;
         flex-direction: column;
         align-items: flex-end;
         gap: 4px;
-        flex-shrink: 0;
-        margin-left: 10px;
+        flex-shrink: 0;         /* badge column never shrinks */
+        margin-left: 8px;
     }
     .fx-value-badge {
         font-family: Orbitron, sans-serif;
-        font-size: 0.55rem;
+        font-size: 0.52rem;
         font-weight: 700;
-        letter-spacing: 1px;
-        padding: 2px 7px;
+        letter-spacing: 0.5px;
+        padding: 2px 6px;
         border-radius: 4px;
         white-space: nowrap;
+        max-width: 140px;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
     .badge-value   { background: rgba(0,255,157,0.15); color: var(--neon); border: 1px solid rgba(0,255,157,0.3); }
     .badge-novalue { background: rgba(136,146,176,0.1); color: var(--dim); border: 1px solid rgba(136,146,176,0.15); }
@@ -445,7 +456,7 @@
 
     .fx-time {
         font-family: Orbitron, sans-serif;
-        font-size: 0.6rem;
+        font-size: 0.58rem;
         color: var(--dim);
     }
 </style>
@@ -541,7 +552,7 @@ function renderFixtureList(fixtures) {
                         : m.value_status === "no_value" ? "no-value" : "";
 
         return `<div class="fixture-card ${cardClass}" data-idx="${idx}" onclick="selectFixture(${idx})">
-            <div>
+            <div class="fx-left">
                 <div class="fx-teams">${m.home} vs ${m.away}</div>
                 <div class="fx-meta">${m.league}</div>
             </div>

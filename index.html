@@ -386,11 +386,67 @@
         padding: 10px 0;
     }
 
-    .error-msg {
-        text-align: center;
-        font-size: 0.78rem;
-        color: var(--away);
-        padding: 12px 0;
+    /* ── Fixture list cards ── */
+    .fixture-list { margin-bottom: 12px; }
+
+    .fixture-card {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: #000;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 14px;
+        margin-bottom: 6px;
+        cursor: pointer;
+        transition: border-color 0.2s, background 0.2s;
+        user-select: none;
+    }
+    .fixture-card:hover     { border-color: #3a3f50; background: #080a10; }
+    .fixture-card.selected  { border-color: var(--neon); background: rgba(0,255,157,0.04); }
+    .fixture-card.has-value { border-color: rgba(0,255,157,0.4); }
+    .fixture-card.no-value  { opacity: 0.6; }
+
+    .fx-teams {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #dde;
+        flex: 1;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .fx-meta {
+        font-size: 0.6rem;
+        color: var(--dim);
+        margin-top: 2px;
+    }
+    .fx-right {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 4px;
+        flex-shrink: 0;
+        margin-left: 10px;
+    }
+    .fx-value-badge {
+        font-family: Orbitron, sans-serif;
+        font-size: 0.55rem;
+        font-weight: 700;
+        letter-spacing: 1px;
+        padding: 2px 7px;
+        border-radius: 4px;
+        white-space: nowrap;
+    }
+    .badge-value   { background: rgba(0,255,157,0.15); color: var(--neon); border: 1px solid rgba(0,255,157,0.3); }
+    .badge-novalue { background: rgba(136,146,176,0.1); color: var(--dim); border: 1px solid rgba(136,146,176,0.15); }
+    .badge-unknown { background: rgba(74,80,96,0.2);    color: var(--dim); border: 1px solid rgba(74,80,96,0.2); }
+
+    .fx-time {
+        font-family: Orbitron, sans-serif;
+        font-size: 0.6rem;
+        color: var(--dim);
     }
 </style>
 </head>
@@ -404,9 +460,7 @@
         <input type="date" id="date">
 
         <button onclick="getFixtures()">SCAN TACTICAL BOARD</button>
-        <select id="matches" onchange="toggleBtn()">
-            <option value="">Select Match...</option>
-        </select>
+        <div id="fixture-list" class="fixture-list"></div>
         <button id="btn" onclick="predict()" disabled>GET VERDICT</button>
         <button onclick="window.location.href='acca.html'" style="background:#000;color:var(--neon);border:1px solid var(--neon);margin-bottom:0;">⚡ ACCA BUILDER</button>
         <button onclick="window.location.href='session.html'" style="background:#000;color:#ffcc00;border:1px solid #ffcc00;margin-top:12px;margin-bottom:0;">🎯 MASANIELLO</button>
@@ -418,7 +472,8 @@
 
 <script>
 const API = "https://football-api-9e4p.onrender.com";
-let fixturesData = [];
+let fixturesData  = [];
+let selectedIndex = null;
 
 function getBankroll() {
     const el = document.getElementById("bankroll-input");
@@ -427,25 +482,76 @@ function getBankroll() {
 }
 
 function refreshKellyStakes() {
-    // FIX: Replaced eval() approach with data attributes stored on each input.
-    // eval() was fragile — any parameter rename would silently break stake refresh.
     document.querySelectorAll(".bookie-input").forEach(input => {
         if (input.value) {
             const fairOdds = parseFloat(input.dataset.fair || "0");
             const kellyId  = input.dataset.kelly;
-            if (fairOdds && kellyId) {
-                calcKelly(input, fairOdds, kellyId);
-            }
+            if (fairOdds && kellyId) calcKelly(input, fairOdds, kellyId);
         }
     });
 }
 
 document.getElementById("date").value = new Date().toISOString().split("T")[0];
 
-const toggleBtn = () => {
-    document.getElementById("btn").disabled =
-        document.getElementById("matches").value === "";
-};
+function selectFixture(idx) {
+    selectedIndex = idx;
+    document.querySelectorAll(".fixture-card").forEach((c, i) => {
+        // match by data-idx since cards may be sorted differently from fixturesData order
+        c.classList.toggle("selected", parseInt(c.dataset.idx) === idx);
+    });
+    document.getElementById("btn").disabled = false;
+    document.getElementById("output").innerHTML = "";
+}
+
+function renderFixtureList(fixtures) {
+    const list = document.getElementById("fixture-list");
+    if (!fixtures.length) {
+        list.innerHTML = `<div class="status-msg">No matches found for this date.</div>`;
+        return;
+    }
+
+    // Sort: value first, then unknown, then no-value; within each group by kickoff
+    const sorted = fixtures.map((m, i) => ({...m, _origIdx: i}));
+    sorted.sort((a, b) => {
+        const rank = s => s === "value" ? 0 : s === "unknown" ? 1 : 2;
+        const dr = rank(a.value_status) - rank(b.value_status);
+        if (dr !== 0) return dr;
+        return (a.kickoff || a.date) < (b.kickoff || b.date) ? -1 : 1;
+    });
+
+    list.innerHTML = sorted.map(m => {
+        const idx = m._origIdx;
+
+        let timeStr = "";
+        if (m.kickoff && m.kickoff.length > 10) {
+            try { timeStr = new Date(m.kickoff).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}); }
+            catch(e) {}
+        }
+
+        let badge = "";
+        if (m.value_status === "value" && m.best_edge_mkt) {
+            badge = `<span class="fx-value-badge badge-value">⚡ +${m.best_edge}% · ${m.best_edge_mkt.label}</span>`;
+        } else if (m.value_status === "no_value") {
+            badge = `<span class="fx-value-badge badge-novalue">— No edge</span>`;
+        } else {
+            badge = `<span class="fx-value-badge badge-unknown">? Odds pending</span>`;
+        }
+
+        const cardClass = m.value_status === "value" ? "has-value"
+                        : m.value_status === "no_value" ? "no-value" : "";
+
+        return `<div class="fixture-card ${cardClass}" data-idx="${idx}" onclick="selectFixture(${idx})">
+            <div>
+                <div class="fx-teams">${m.home} vs ${m.away}</div>
+                <div class="fx-meta">${m.league}</div>
+            </div>
+            <div class="fx-right">
+                ${timeStr ? `<div class="fx-time">${timeStr}</div>` : ""}
+                ${badge}
+            </div>
+        </div>`;
+    }).join("");
+}
 
 function renderForm(str, align = "left", venueLabel = "") {
     const isRight      = align === "right";
@@ -469,52 +575,46 @@ function renderForm(str, align = "left", venueLabel = "") {
 }
 
 async function getFixtures() {
-    const d   = document.getElementById("date").value;
-    const sel = document.getElementById("matches");
-    const out = document.getElementById("output");
+    const d    = document.getElementById("date").value;
+    const list = document.getElementById("fixture-list");
+    const out  = document.getElementById("output");
 
     if (!d) return;
 
-    sel.innerHTML = "<option>Accessing Satellites...</option>";
-    out.innerHTML = "";
+    selectedIndex = null;
     document.getElementById("btn").disabled = true;
+    out.innerHTML = "";
+    list.innerHTML = `<div class="status-msg"><div class="loader" style="width:20px;height:20px;margin:8px auto 4px;border-width:2px;"></div>Scanning fixtures...</div>`;
 
     try {
-        const res  = await fetch(`${API}/fixtures?date=${d}`);
+        // Use /scan for the single date — returns fixtures with edge detection
+        const res  = await fetch(`${API}/scan?date_from=${d}&date_to=${d}`);
         const data = await res.json();
 
         if (data.status === "loading") {
-            sel.innerHTML = "<option value=''>Still syncing...</option>";
-            out.innerHTML = `<div class="card">
-                <div class="loader"></div>
-                <div class="status-msg">${data.message || "Server is booting. Refresh in ~30s."}</div>
-            </div>`;
+            list.innerHTML = `<div class="status-msg">Server syncing — refresh in ~30s.</div>`;
             return;
         }
-
+        if (data.error) {
+            list.innerHTML = `<div class="error-msg">⚡ ${data.error}</div>`;
+            return;
+        }
         if (data.status === "no_games") {
-            sel.innerHTML = "<option value=''>No matches today</option>";
-            out.innerHTML = `<div class="card">
-                <div class="status-msg">📋 ${data.message || "No fixtures scheduled for this date."}</div>
-            </div>`;
+            list.innerHTML = `<div class="status-msg">📋 No matches scheduled for this date.</div>`;
             return;
         }
 
         fixturesData = Array.isArray(data) ? data : [];
 
-        if (fixturesData.length === 0) {
-            sel.innerHTML = "<option value=''>No matches found</option>";
+        if (!fixturesData.length) {
+            list.innerHTML = `<div class="status-msg">No matches found for this date.</div>`;
             return;
         }
 
-        sel.innerHTML = "<option value=''>Select match...</option>";
-        fixturesData.forEach((m, i) => {
-            sel.innerHTML += `<option value="${i}">[${m.comp}] ${m.home} vs ${m.away}</option>`;
-        });
+        renderFixtureList(fixturesData);
 
     } catch (e) {
-        sel.innerHTML = "<option value=''>Connection error</option>";
-        out.innerHTML = `<div class="error-msg">⚡ Satellite link lost. Check connection.</div>`;
+        list.innerHTML = `<div class="error-msg">⚡ Connection lost. Check your link and retry.</div>`;
     }
 }
 
@@ -555,10 +655,10 @@ function calcKelly(inputEl, fairOdds, targetId) {
 }
 
 async function predict() {
-    const idx = document.getElementById("matches").value;
+    const idx = selectedIndex;
     const out = document.getElementById("output");
 
-    if (idx === "") return;
+    if (idx === null || idx === undefined) return;
 
     out.innerHTML = "<div class='loader'></div>";
 

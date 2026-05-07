@@ -1172,11 +1172,18 @@ def session():
         print(f"[SESSION] Request: {d_from} → {d_to}")
 
         def mas_score(prob, fo, conf):
-            if fo < 1.10 or fo > 5.0:   odds_suit = 0.0
-            elif fo <= 2.0:              odds_suit = (fo - 1.10) / 0.9
-            elif fo <= 3.5:              odds_suit = 1.0 - ((fo - 2.0) / 2.5)
-            else:                        odds_suit = max(0, 1.0 - ((fo - 3.5) / 3.0))
-            return round(prob * conf * odds_suit, 6)
+            """
+            Masaniello suitability score.
+            Confidence used as a gate (min 0.08) not a multiplier —
+            prevents balanced fixtures from scoring near-zero.
+            Odds suitability peaks at 1.60-2.20, falls off at extremes.
+            """
+            if conf < 0.08: return 0.0   # too close to call — skip
+            if fo < 1.10 or fo > 5.0: odds_suit = 0.0
+            elif fo <= 2.0:            odds_suit = (fo - 1.10) / 0.9
+            elif fo <= 3.5:            odds_suit = 1.0 - ((fo - 2.0) / 2.5)
+            else:                      odds_suit = max(0, 1.0 - ((fo - 3.5) / 3.0))
+            return round(prob * odds_suit, 6)
 
         # Hoist standings + radv outside loop
         _comps: set = set()
@@ -1276,9 +1283,6 @@ def session():
 
         print(f"[SESSION] Fixtures seen: {total_fixtures_seen} | Scored: {total_fixtures_scored} | Unique fixtures: {len(fixture_best)}")
 
-        # Sort all scored fixtures by score descending
-        all_picks_by_score = sorted(fixture_best.values(), key=lambda x: -x["mas_score"])
-
         def kickoff_dt(pick):
             ko = pick.get("kickoff", "")
             if ko and len(ko) > 10:
@@ -1295,52 +1299,71 @@ def session():
         def to_epoch(t_struct):
             return int(time.mktime(t_struct))
 
-        # ── Multi-pass greedy selection ──
-        # Pass 1: strict 105-minute gap (90min regulation + 15min added time)
-        # Pass 2: relax to 90 minutes if still short
-        # Pass 3: relax to 75 minutes as last resort for very dense schedules
+        # ── Greedy sequential selection ──
+        # CRITICAL: sort by kickoff time first, not by score.
+        # Sorting by score causes the algorithm to jump to the best scorer
+        # regardless of time, leaving dense same-time fixtures all rejected.
+        # Sorting by time builds a natural chronological chain, then within
+        # each valid time slot picks the highest-scoring fixture.
 
-        def greedy_select(pool, gap_minutes, already_selected):
-            """Select picks from pool respecting gap_minutes after the last selected pick."""
-            selected = list(already_selected)
-            rejected = []
-            last_epoch = to_epoch(kickoff_dt(selected[-1])) if selected else 0
+        all_sorted_by_time = sorted(fixture_best.values(), key=lambda x: to_epoch(kickoff_dt(x)))
 
-            for pick in pool:
-                ko_epoch = to_epoch(kickoff_dt(pick))
-                if not selected or (ko_epoch - last_epoch) >= (gap_minutes * 60):
-                    selected.append(pick)
-                    last_epoch = ko_epoch
-                    if len(selected) >= 10:
-                        break
-                else:
-                    rejected.append(pick)
+        def greedy_select(pool, gap_minutes):
+            """
+            Build sequential chain from time-sorted pool.
+            At each step: from all fixtures whose kickoff >= last_kickoff + gap,
+            pick the ONE with the highest mas_score.
+            This ensures we always pick the best available fixture at each slot.
+            """
+            selected    = []
+            used_keys   = set()
+            last_epoch  = 0
+            remaining   = list(pool)
 
-            return selected, rejected
+            while len(selected) < 10 and remaining:
+                # Find all candidates that satisfy the gap from last pick
+                candidates = [
+                    p for p in remaining
+                    if to_epoch(kickoff_dt(p)) - last_epoch >= (gap_minutes * 60)
+                    and (p["home"], p["away"], p["date"]) not in used_keys
+                ]
 
-        selected, rejected_105 = greedy_select(all_picks_by_score, 105, [])
-        print(f"[SESSION] Pass 1 (105min gap): {len(selected)} selected, {len(rejected_105)} rejected")
+                if not candidates:
+                    break  # no more valid fixtures at this gap — stop
 
-        if len(selected) < 10 and rejected_105:
-            remaining = sorted(rejected_105, key=lambda x: -x["mas_score"])
-            selected, rejected_90 = greedy_select(remaining, 90, selected)
-            print(f"[SESSION] Pass 2 (90min gap): {len(selected)} selected")
+                # Among valid candidates, pick the highest scoring one
+                best = max(candidates, key=lambda x: x["mas_score"])
+                selected.append(best)
+                used_keys.add((best["home"], best["away"], best["date"]))
+                last_epoch = to_epoch(kickoff_dt(best))
+                remaining  = [p for p in remaining if (p["home"], p["away"], p["date"]) not in used_keys]
 
-            if len(selected) < 10 and rejected_90:
-                remaining2 = sorted(rejected_90, key=lambda x: -x["mas_score"])
-                selected, _ = greedy_select(remaining2, 75, selected)
-                print(f"[SESSION] Pass 3 (75min gap): {len(selected)} selected")
+            return selected
 
-        # Collect reserves: anything not selected, sorted by score
+        # Pass 1: 105 minutes (full regulation + added time)
+        selected = greedy_select(all_sorted_by_time, 105)
+        print(f"[SESSION] Pass 1 (105min): {len(selected)} picks")
+
+        # Pass 2: if still short, fill gaps with 75-minute threshold
+        # (only used when fixtures are sparse — midweek with few games)
+        if len(selected) < 10:
+            selected = greedy_select(all_sorted_by_time, 75)
+            print(f"[SESSION] Pass 2 (75min): {len(selected)} picks")
+
+        # Pass 3: last resort 45-minute gap — catches fixtures where
+        # kickoffs are genuinely close but still meaningfully separated
+        if len(selected) < 10:
+            selected = greedy_select(all_sorted_by_time, 45)
+            print(f"[SESSION] Pass 3 (45min): {len(selected)} picks")
+
+        # Collect reserves: all scored fixtures not in selected session
         selected_keys = {(p["home"], p["away"], p["date"]) for p in selected}
         reserves = sorted(
-            [p for p in all_picks_by_score if (p["home"], p["away"], p["date"]) not in selected_keys],
+            [p for p in all_sorted_by_time if (p["home"], p["away"], p["date"]) not in selected_keys],
             key=lambda x: -x["mas_score"]
         )
 
-        # Sort selected in strict kickoff order for display
-        selected.sort(key=lambda x: kickoff_dt(x))
-
+        # Selected is already in chronological order from greedy_select
         print(f"[SESSION] Final: {len(selected)} session picks, {len(reserves)} reserves")
 
         return jsonify({"session": selected, "reserves": reserves[:15]})

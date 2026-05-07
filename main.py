@@ -1248,10 +1248,62 @@ def session():
                     print(f"[SESSION] Skipped {m.get('home','?')} vs {m.get('away','?')}: {e}")
             current += timedelta(days=1)
 
-        all_picks = sorted(fixture_best.values(),
-                           key=lambda x: (x["kickoff"] or x["date"], -x["mas_score"]))
-        selected  = all_picks[:10]
-        reserves  = sorted(all_picks[10:], key=lambda x: -x["mas_score"])
+        # ── Step 2: sort all picks by score descending (best first) ──
+        # The greedy selector below will pick from this ordered pool.
+        all_picks_by_score = sorted(
+            fixture_best.values(),
+            key=lambda x: -x["mas_score"]
+        )
+
+        # ── Step 3: greedy sequential selection with 105-minute gap ──
+        # At each step, pick the HIGHEST-SCORING fixture whose kickoff is
+        # at least 105 minutes after the previous pick's kickoff.
+        # This guarantees every match result is known before the next bet.
+        # Fixtures without a kickoff time fall back to date-based ordering.
+
+        GAP_MINUTES = 90
+
+        def kickoff_dt(pick):
+            """Parse kickoff to datetime, fallback to date at 00:00 UTC."""
+            ko = pick.get("kickoff", "")
+            if ko and len(ko) > 10:
+                try:
+                    # ISO format: "2026-05-10T14:00:00Z"
+                    return time.strptime(ko[:19], "%Y-%m-%dT%H:%M:%S")
+                except Exception:
+                    pass
+            # Fallback: use date only — treated as midnight so same-day
+            # fixtures without exact times are grouped together
+            ds = pick.get("date", "2000-01-01")
+            try:
+                return time.strptime(ds, "%Y-%m-%d")
+            except Exception:
+                return time.gmtime(0)
+
+        def to_epoch(t_struct):
+            return int(time.mktime(t_struct))
+
+        selected = []
+        reserves = []
+        last_kickoff_epoch = 0  # epoch seconds of last selected pick's kickoff
+
+        for pick in all_picks_by_score:
+            ko_epoch = to_epoch(kickoff_dt(pick))
+            gap_ok   = (ko_epoch - last_kickoff_epoch) >= (GAP_MINUTES * 60)
+
+            if len(selected) == 0 or gap_ok:
+                selected.append(pick)
+                last_kickoff_epoch = ko_epoch
+                if len(selected) >= 10:
+                    break
+            else:
+                reserves.append(pick)
+
+        # Sort selected in strict kickoff order for display
+        selected.sort(key=lambda x: kickoff_dt(x))
+
+        # Sort reserves by score so best replacements appear first
+        reserves.sort(key=lambda x: -x["mas_score"])
 
         return jsonify({"session": selected, "reserves": reserves[:15]})
 

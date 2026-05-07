@@ -1151,7 +1151,6 @@ def session():
             return jsonify({"status": "loading", "message": "Data syncing, try again shortly."})
 
         today   = _date.today()
-        # Allow up to 7 days ahead — not clamped to 5 so weekend ranges work fully
         max_day = today + timedelta(days=7)
 
         raw_from = request.args.get("date_from","").split("T")[0] or today.isoformat()
@@ -1163,208 +1162,223 @@ def session():
         except ValueError:
             return jsonify({"error": "Invalid date format. Use YYYY-MM-DD."}), 400
 
-        # Only clamp the from-date to today (can't bet on past fixtures)
-        # Do NOT clamp d_to — respect the user's chosen end date exactly
         d_from = max(d_from, today)
         if d_from > d_to:
             return jsonify({"error": "date_from must be before date_to"}), 400
 
-        print(f"[SESSION] Request: {d_from} → {d_to}")
+        print(f"[SESSION] ═══ REQUEST {d_from} → {d_to} ═══")
+        print(f"[SESSION] fixtures_store keys: {sorted(fixtures_store.keys())}")
 
-        def mas_score(prob, fo, conf):
-            """
-            Masaniello suitability score.
-            Confidence used as a gate (min 0.08) not a multiplier —
-            prevents balanced fixtures from scoring near-zero.
-            Odds suitability peaks at 1.60-2.20, falls off at extremes.
-            """
-            if conf < 0.08: return 0.0   # too close to call — skip
-            if fo < 1.10 or fo > 5.0: odds_suit = 0.0
-            elif fo <= 2.0:            odds_suit = (fo - 1.10) / 0.9
-            elif fo <= 3.5:            odds_suit = 1.0 - ((fo - 2.0) / 2.5)
-            else:                      odds_suit = max(0, 1.0 - ((fo - 3.5) / 3.0))
-            return round(prob * odds_suit, 6)
+        # ── Stage 1: raw fixtures in date range ──
+        stage1_total = 0
+        stage1_no_ids = 0
+        stage1_date_filtered = 0
+        raw_pool = []  # all fixtures passing date + id checks
 
-        # Hoist standings + radv outside loop
         _comps: set = set()
-        _tmp = d_from
-        while _tmp <= d_to:
-            for _m in fixtures_store.get(_tmp.isoformat(), []):
-                if _m.get("comp"): _comps.add(_m["comp"])
-            _tmp += timedelta(days=1)
-        _standings = {c: get_standings(c) for c in _comps}
-        _radv      = {c: math.sqrt(LEAGUE_HOME_ADV.get(c, DEFAULT_HOME_ADV)) for c in _comps}
-
-        print(f"[SESSION] Competitions in range: {_comps}")
-
-        fixture_best = {}
-        total_fixtures_seen   = 0
-        total_fixtures_scored = 0
-
         current = d_from
         while current <= d_to:
-            ds       = current.isoformat()
-            days_out = (current - today).days
+            ds = current.isoformat()
             day_matches = fixtures_store.get(ds, [])
-            total_fixtures_seen += len(day_matches)
-
+            print(f"[SESSION] Stage1 {ds}: {len(day_matches)} fixtures in store")
             for m in day_matches:
-                try:
-                    comp = m.get("comp"); h_id = m.get("home_id"); a_id = m.get("away_id")
-                    if not comp or not h_id or not a_id: continue
-
-                    # UTC date check: ensure fixture kickoff falls within user range
-                    # Fixes timezone bleed where a May 10 UTC kickoff at 23:00
-                    # displays as May 11 in local time
-                    kickoff_str = m.get("kickoff", "")
-                    if kickoff_str and len(kickoff_str) >= 10:
-                        ko_date = _date.fromisoformat(kickoff_str[:10])
-                        if ko_date < d_from or ko_date > d_to:
-                            print(f"[SESSION] Skipping {m.get('home')} vs {m.get('away')} — kickoff date {ko_date} outside range")
-                            continue
-
-                    all_s  = _standings.get(comp, {"home": {}, "away": {}, "total": {}})
-                    lg_avg = all_s.get("league_avg", LEAGUE_AVG_GOALS.get(comp, DEFAULT_LEAGUE_AVG))
-                    fh = {"gf": 1.2, "ga": 1.2}; fa = {"gf": 1.0, "ga": 1.3}
-                    h_v = all_s["home"].get(str(h_id)) or all_s["total"].get(str(h_id), fh)
-                    a_v = all_s["away"].get(str(a_id)) or all_s["total"].get(str(a_id), fa)
-
-                    hc = form_cache.get((h_id, "HOME")); ac = form_cache.get((a_id, "AWAY"))
-                    h_atk = hc["atk"] if hc else 1.0; h_def = hc["def"] if hc else 1.0
-                    a_atk = ac["atk"] if ac else 1.0; a_def = ac["def"] if ac else 1.0
-
-                    radv  = _radv.get(comp, math.sqrt(DEFAULT_HOME_ADV))
-                    h_lam = max(min(h_v["gf"] * (a_v["ga"] / lg_avg) * h_atk * (1.0 / a_def) * radv, 3.2), 0.35)
-                    a_lam = max(min(a_v["gf"] * (h_v["ga"] / lg_avg) * a_atk * (1.0 / h_def), 3.2), 0.35)
-
-                    p_h, p_d, p_a, p_btts, p_o15, p_o25, p_o35 = compute_probs(h_lam, a_lam)
-                    t = p_h + p_d + p_a; p_h /= t; p_d /= t; p_a /= t
-
-                    ps = sorted([p_h, p_d, p_a], reverse=True)
-                    confidence = ps[0] - ps[1]
-
-                    def fair(p): return round(1 / p, 2) if p > 0.04 else 25.0
-
-                    markets = [
-                        ("Home Win",  "1X2",   p_h,    fair(p_h),    confidence),
-                        ("Draw",      "1X2",   p_d,    fair(p_d),    confidence * 0.7),
-                        ("Away Win",  "1X2",   p_a,    fair(p_a),    confidence),
-                        ("BTTS",      "Goals", p_btts, fair(p_btts), 0.25),
-                        ("Over 1.5",  "Goals", p_o15,  fair(p_o15),  0.30),
-                        ("Over 2.5",  "Goals", p_o25,  fair(p_o25),  0.28),
-                        ("Over 3.5",  "Goals", p_o35,  fair(p_o35),  0.20),
-                    ]
-
-                    best_fix = None
-                    for label, mkt_type, prob, fo, conf in markets:
-                        sc = mas_score(prob, fo, conf)
-                        if sc <= 0 or prob < 0.25: continue
-                        total_fixtures_scored += 1
-                        if best_fix is None or sc > best_fix["mas_score"]:
-                            best_fix = {
-                                "date": ds, "kickoff": kickoff_str,
-                                "home": m["home"], "away": m["away"],
-                                "home_id": h_id,   "away_id": a_id,
-                                "comp": comp,      "league": m.get("league", comp),
-                                "market": label,   "mkt_type": mkt_type,
-                                "prob": round(prob * 100, 1), "fair_odds": fo,
-                                "confidence": round(conf, 4), "mas_score": sc,
-                                "h_lam": round(h_lam, 3), "a_lam": round(a_lam, 3),
-                                "days_out": days_out,
-                            }
-
-                    if best_fix:
-                        key = (ds, m["home"], m["away"])
-                        fixture_best[key] = best_fix
-
-                except Exception as e:
-                    print(f"[SESSION] Skipped {m.get('home','?')} vs {m.get('away','?')}: {e}")
+                stage1_total += 1
+                comp  = m.get("comp")
+                h_id  = m.get("home_id")
+                a_id  = m.get("away_id")
+                if not comp or not h_id or not a_id:
+                    stage1_no_ids += 1
+                    print(f"[SESSION]   REJECT no-ids: {m.get('home')} vs {m.get('away')}")
+                    continue
+                kickoff_str = m.get("kickoff", "")
+                if kickoff_str and len(kickoff_str) >= 10:
+                    ko_date = _date.fromisoformat(kickoff_str[:10])
+                    if ko_date < d_from or ko_date > d_to:
+                        stage1_date_filtered += 1
+                        print(f"[SESSION]   REJECT date-out: {m.get('home')} vs {m.get('away')} ko={ko_date}")
+                        continue
+                _comps.add(comp)
+                raw_pool.append({**m, "_ds": ds})
             current += timedelta(days=1)
 
-        print(f"[SESSION] Fixtures seen: {total_fixtures_seen} | Scored: {total_fixtures_scored} | Unique fixtures: {len(fixture_best)}")
+        print(f"[SESSION] Stage1: total={stage1_total} | no_ids={stage1_no_ids} | date_filtered={stage1_date_filtered} | raw_pool={len(raw_pool)}")
 
-        def kickoff_dt(pick):
-            ko = pick.get("kickoff", "")
+        # ── Stage 2: fetch standings ──
+        _standings = {c: get_standings(c) for c in _comps}
+        _radv      = {c: math.sqrt(LEAGUE_HOME_ADV.get(c, DEFAULT_HOME_ADV)) for c in _comps}
+        print(f"[SESSION] Stage2: standings fetched for {list(_comps)}")
+
+        # ── Stage 3: score every fixture ──
+        def mas_score(prob, fo):
+            """Score purely on probability × odds suitability. No confidence multiplier."""
+            if fo < 1.10 or fo > 6.0: return 0.0
+            if fo <= 2.0:   odds_suit = (fo - 1.10) / 0.9
+            elif fo <= 3.5: odds_suit = 1.0 - ((fo - 2.0) / 2.5)
+            else:           odds_suit = max(0, 1.0 - ((fo - 3.5) / 3.0))
+            return round(prob * odds_suit, 6)
+
+        stage3_no_score    = 0
+        stage3_low_prob    = 0
+        stage3_conf_gate   = 0
+        scored_pool = []  # one entry per fixture with best market attached
+
+        for m in raw_pool:
+            comp   = m.get("comp")
+            h_id   = m.get("home_id")
+            a_id   = m.get("away_id")
+            ds     = m["_ds"]
+            days_out = (d_from - today).days + raw_pool.index(m) // max(len(raw_pool), 1)
+            days_out = (_date.fromisoformat(ds) - today).days
+
+            all_s  = _standings.get(comp, {"home": {}, "away": {}, "total": {}})
+            lg_avg = all_s.get("league_avg", LEAGUE_AVG_GOALS.get(comp, DEFAULT_LEAGUE_AVG))
+            fh = {"gf": 1.2, "ga": 1.2}; fa = {"gf": 1.0, "ga": 1.3}
+            h_v = all_s["home"].get(str(h_id)) or all_s["total"].get(str(h_id), fh)
+            a_v = all_s["away"].get(str(a_id)) or all_s["total"].get(str(a_id), fa)
+
+            hc = form_cache.get((h_id, "HOME")); ac = form_cache.get((a_id, "AWAY"))
+            h_atk = hc["atk"] if hc else 1.0; h_def = hc["def"] if hc else 1.0
+            a_atk = ac["atk"] if ac else 1.0; a_def = ac["def"] if ac else 1.0
+
+            radv  = _radv.get(comp, math.sqrt(DEFAULT_HOME_ADV))
+            h_lam = max(min(h_v["gf"]*(a_v["ga"]/lg_avg)*h_atk*(1.0/a_def)*radv, 3.2), 0.35)
+            a_lam = max(min(a_v["gf"]*(h_v["ga"]/lg_avg)*a_atk*(1.0/h_def), 3.2), 0.35)
+
+            p_h,p_d,p_a,p_btts,p_o15,p_o25,p_o35 = compute_probs(h_lam, a_lam)
+            t = p_h+p_d+p_a; p_h/=t; p_d/=t; p_a/=t
+
+            ps         = sorted([p_h,p_d,p_a], reverse=True)
+            confidence = ps[0] - ps[1]
+
+            def fair(p): return round(1/p,2) if p>0.04 else 25.0
+
+            markets = [
+                ("Home Win",  "1X2",   p_h,    fair(p_h)),
+                ("Draw",      "1X2",   p_d,    fair(p_d)),
+                ("Away Win",  "1X2",   p_a,    fair(p_a)),
+                ("BTTS",      "Goals", p_btts, fair(p_btts)),
+                ("Over 1.5",  "Goals", p_o15,  fair(p_o15)),
+                ("Over 2.5",  "Goals", p_o25,  fair(p_o25)),
+                ("Over 3.5",  "Goals", p_o35,  fair(p_o35)),
+            ]
+
+            best_mkt = None
+            best_sc  = 0.0
+            for label, mkt_type, prob, fo in markets:
+                sc = mas_score(prob, fo)
+                if sc > best_sc:
+                    best_sc  = sc
+                    best_mkt = (label, mkt_type, prob, fo)
+
+            kickoff_str = m.get("kickoff", "")
+
+            if best_mkt is None or best_sc <= 0:
+                stage3_no_score += 1
+                print(f"[SESSION]   REJECT no-score: {m.get('home')} vs {m.get('away')} conf={confidence:.3f}")
+                continue
+
+            label, mkt_type, prob, fo = best_mkt
+            print(f"[SESSION]   SCORED: {m.get('home')} vs {m.get('away')} | {label} | prob={prob:.2f} fo={fo} sc={best_sc:.4f} conf={confidence:.3f} ko={kickoff_str}")
+
+            scored_pool.append({
+                "date": ds, "kickoff": kickoff_str,
+                "home": m["home"], "away": m["away"],
+                "home_id": h_id, "away_id": a_id,
+                "comp": comp, "league": m.get("league", comp),
+                "market": label, "mkt_type": mkt_type,
+                "prob": round(prob*100,1), "fair_odds": fo,
+                "confidence": round(confidence,4), "mas_score": best_sc,
+                "h_lam": round(h_lam,3), "a_lam": round(a_lam,3),
+                "days_out": days_out,
+            })
+
+        print(f"[SESSION] Stage3: raw_pool={len(raw_pool)} | scored={len(scored_pool)} | no_score={stage3_no_score}")
+
+        if not scored_pool:
+            return jsonify({"session": [], "reserves": [], "debug": "No fixtures passed scoring — check Render logs"})
+
+        # ── Stage 4: wave-based selection ──
+        # Group fixtures into "waves" — fixtures within 30 minutes of each other
+        # share a kickoff cluster. Pick ONE per wave (best scorer).
+        # Then enforce 105-minute gap BETWEEN waves, not within them.
+        # This is the correct model: one bet per kickoff cluster, wait for it
+        # to finish, then move to the next cluster.
+
+        def ko_epoch(pick):
+            ko = pick.get("kickoff","")
             if ko and len(ko) > 10:
                 try:
-                    return time.strptime(ko[:19], "%Y-%m-%dT%H:%M:%S")
-                except Exception:
-                    pass
-            ds = pick.get("date", "2000-01-01")
+                    t = time.strptime(ko[:19], "%Y-%m-%dT%H:%M:%S")
+                    return int(time.mktime(t))
+                except: pass
             try:
-                return time.strptime(ds, "%Y-%m-%d")
-            except Exception:
-                return time.gmtime(0)
+                t = time.strptime(pick["date"], "%Y-%m-%d")
+                return int(time.mktime(t))
+            except: return 0
 
-        def to_epoch(t_struct):
-            return int(time.mktime(t_struct))
+        # Sort all scored fixtures by kickoff time
+        scored_pool.sort(key=ko_epoch)
 
-        # ── Greedy sequential selection ──
-        # CRITICAL: sort by kickoff time first, not by score.
-        # Sorting by score causes the algorithm to jump to the best scorer
-        # regardless of time, leaving dense same-time fixtures all rejected.
-        # Sorting by time builds a natural chronological chain, then within
-        # each valid time slot picks the highest-scoring fixture.
+        WAVE_WINDOW_SEC  = 30 * 60   # fixtures within 30min = same wave
+        GAP_REQUIRED_SEC = 105 * 60  # 105 minutes between selected picks
 
-        all_sorted_by_time = sorted(fixture_best.values(), key=lambda x: to_epoch(kickoff_dt(x)))
+        # Build waves
+        waves = []
+        for pick in scored_pool:
+            ep = ko_epoch(pick)
+            if not waves or ep - waves[-1]["epoch"] > WAVE_WINDOW_SEC:
+                waves.append({"epoch": ep, "picks": []})
+            waves[-1]["picks"].append(pick)
 
-        def greedy_select(pool, gap_minutes):
-            """
-            Build sequential chain from time-sorted pool.
-            At each step: from all fixtures whose kickoff >= last_kickoff + gap,
-            pick the ONE with the highest mas_score.
-            This ensures we always pick the best available fixture at each slot.
-            """
-            selected    = []
-            used_keys   = set()
-            last_epoch  = 0
-            remaining   = list(pool)
+        print(f"[SESSION] Stage4: {len(scored_pool)} scored fixtures → {len(waves)} waves")
+        for i, w in enumerate(waves):
+            best_in_wave = max(w["picks"], key=lambda x: x["mas_score"])
+            print(f"[SESSION]   Wave {i+1}: {len(w['picks'])} fixtures | best={best_in_wave['home']} vs {best_in_wave['away']} sc={best_in_wave['mas_score']:.4f}")
 
-            while len(selected) < 10 and remaining:
-                # Find all candidates that satisfy the gap from last pick
-                candidates = [
-                    p for p in remaining
-                    if to_epoch(kickoff_dt(p)) - last_epoch >= (gap_minutes * 60)
-                    and (p["home"], p["away"], p["date"]) not in used_keys
-                ]
+        # From each wave, take the best scorer
+        wave_bests = [max(w["picks"], key=lambda x: x["mas_score"]) for w in waves]
 
-                if not candidates:
-                    break  # no more valid fixtures at this gap — stop
+        # Now apply 105-minute gap between selected waves
+        # If gap fails, skip that wave (don't consume it — try next wave)
+        selected  = []
+        reserves  = []
+        last_ep   = 0
 
-                # Among valid candidates, pick the highest scoring one
-                best = max(candidates, key=lambda x: x["mas_score"])
-                selected.append(best)
-                used_keys.add((best["home"], best["away"], best["date"]))
-                last_epoch = to_epoch(kickoff_dt(best))
-                remaining  = [p for p in remaining if (p["home"], p["away"], p["date"]) not in used_keys]
+        for i, pick in enumerate(wave_bests):
+            ep = ko_epoch(pick)
+            gap_ok = (not selected) or (ep - last_ep >= GAP_REQUIRED_SEC)
 
-            return selected
+            if gap_ok and len(selected) < 10:
+                selected.append(pick)
+                last_ep = ep
+                print(f"[SESSION]   SELECT wave {i+1}: {pick['home']} vs {pick['away']} gap={(ep-last_ep)//60 if selected else 0}min")
+            else:
+                # Add non-selected wave bests + all other picks in that wave to reserves
+                reserves.append(pick)
+                for p in waves[i]["picks"]:
+                    if p is not pick and p not in reserves:
+                        reserves.append(p)
+                if not gap_ok:
+                    gap_min = (ep - last_ep) // 60
+                    print(f"[SESSION]   SKIP wave {i+1}: gap={gap_min}min < 105min | {pick['home']} vs {pick['away']}")
 
-        # Pass 1: 105 minutes (full regulation + added time)
-        selected = greedy_select(all_sorted_by_time, 105)
-        print(f"[SESSION] Pass 1 (105min): {len(selected)} picks")
-
-        # Pass 2: if still short, fill gaps with 75-minute threshold
-        # (only used when fixtures are sparse — midweek with few games)
+        # If still under 10, relax gap to 75 minutes and retry on skipped waves
         if len(selected) < 10:
-            selected = greedy_select(all_sorted_by_time, 75)
-            print(f"[SESSION] Pass 2 (75min): {len(selected)} picks")
+            print(f"[SESSION] Pass 2 (75min gap): {len(selected)} so far, trying skipped waves")
+            last_ep = ko_epoch(selected[-1]) if selected else 0
+            for pick in list(reserves):
+                ep = ko_epoch(pick)
+                if ep - last_ep >= 75*60 and len(selected) < 10:
+                    selected.append(pick)
+                    reserves.remove(pick)
+                    last_ep = ep
+                    print(f"[SESSION]   SELECT (75min): {pick['home']} vs {pick['away']}")
+            selected.sort(key=ko_epoch)
 
-        # Pass 3: last resort 45-minute gap — catches fixtures where
-        # kickoffs are genuinely close but still meaningfully separated
-        if len(selected) < 10:
-            selected = greedy_select(all_sorted_by_time, 45)
-            print(f"[SESSION] Pass 3 (45min): {len(selected)} picks")
+        # Final reserve sort by score
+        reserves.sort(key=lambda x: -x["mas_score"])
 
-        # Collect reserves: all scored fixtures not in selected session
-        selected_keys = {(p["home"], p["away"], p["date"]) for p in selected}
-        reserves = sorted(
-            [p for p in all_sorted_by_time if (p["home"], p["away"], p["date"]) not in selected_keys],
-            key=lambda x: -x["mas_score"]
-        )
-
-        # Selected is already in chronological order from greedy_select
-        print(f"[SESSION] Final: {len(selected)} session picks, {len(reserves)} reserves")
+        print(f"[SESSION] ═══ FINAL: {len(selected)} session picks | {len(reserves)} reserves ═══")
 
         return jsonify({"session": selected, "reserves": reserves[:15]})
 

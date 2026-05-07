@@ -1139,28 +1139,23 @@ def scan():
 
                     def fo(p): return round(1/p,2) if p>0.04 else 25.0
 
-                    # ── Edge detection using cached odds (no new API calls) ──
-                    # Only checks if odds are already in memory for this competition.
-                    # If not cached, value_status = "unknown" — no badge shown.
+                    # ── Edge detection ──
                     best_edge      = 0.0
                     best_edge_mkt  = None
-                    value_status   = "unknown"  # "value" | "no_value" | "unknown"
+                    value_status   = "unknown"
 
                     cached_odds = odds_cache.get(comp)
                     if cached_odds and cached_odds.get("d"):
                         match_ev = find_match_odds(cached_odds["d"], m["home"], m["away"])
                         if match_ev:
-                            # Check 1X2 edges from cached odds
                             checks = [
-                                ("H",   p_h,    match_ev.get("home_odds"), f"{m['home']} Win"),
-                                ("D",   p_d,    match_ev.get("draw_odds"), "Draw"),
-                                ("A",   p_a,    match_ev.get("away_odds"), f"{m['away']} Win"),
+                                ("H",   p_h,     match_ev.get("home_odds"),   f"{m['home']} Win"),
+                                ("D",   p_d,     match_ev.get("draw_odds"),   "Draw"),
+                                ("A",   p_a,     match_ev.get("away_odds"),   f"{m['away']} Win"),
                                 ("1X",  p_h+p_d, match_ev.get("dc_1x_odds"), "1X"),
                                 ("X2",  p_d+p_a, match_ev.get("dc_x2_odds"), "X2"),
                             ]
-                            # Also check totals if available
-                            totals = match_ev.get("totals", {})
-                            api_o25 = totals.get("over_2.5")
+                            api_o25 = (match_ev.get("totals") or {}).get("over_2.5")
                             if api_o25:
                                 checks.append(("O25", p_o25, api_o25, "Over 2.5"))
 
@@ -1213,6 +1208,28 @@ def scan():
             current += timedelta(days=1)
 
         ranked.sort(key=lambda x: x["confidence"], reverse=True)
+
+        # ── Background odds warm-up (rate-limit safe) ──
+        # Only fires if some competitions have no cached odds.
+        # Single serial thread, one competition at a time, 6s gap between each.
+        # No football-data.org calls involved — only Odds API which has no
+        # strict per-minute limit. Frontend re-polls after 8s to pick up results.
+        uncached_comps = [
+            c for c in _comps
+            if not odds_cache.get(c) or not odds_cache[c].get("d")
+        ]
+        if uncached_comps and ODDS_API_KEY:
+            def _warm_odds_serial(comps=list(uncached_comps)):
+                for c in comps:
+                    try:
+                        get_market_odds(c)
+                        print(f"[SCAN BG] Odds warmed for {c}")
+                        time.sleep(6)
+                    except Exception as e:
+                        print(f"[SCAN BG] Odds failed for {c}: {e}")
+            threading.Thread(target=_warm_odds_serial, daemon=True).start()
+            print(f"[SCAN] Background odds fetch started for: {uncached_comps}")
+
         return jsonify(ranked)
 
     except Exception as e:
@@ -1708,26 +1725,32 @@ def preload_standings():
 
 def preload_odds():
     """
-    Warm the odds cache at boot for all competitions that have fixtures today.
-    Called after standings preload so the cache is ready before any /scan requests.
-    Uses a 12-second gap between competitions to stay well within Odds API rate limits.
-    Only runs if ODDS_API_KEY is set.
+    Warm odds cache at boot — only for competitions that have fixtures
+    in the fixture store. Serial, 6-second gap between competitions.
+    Odds API has no strict per-minute limit so 6s is conservative and safe.
+    Total time: at most 10 comps × 6s = 60 seconds.
     """
     if not ODDS_API_KEY:
         print("[BOOT] No ODDS_API_KEY — skipping odds preload")
         return
-    print("[BOOT] Preloading odds cache...")
+    # Only fetch competitions that actually have fixtures loaded
+    active_comps = [c for c in COMPETITIONS if any(
+        any(m.get("comp") == c for m in matches)
+        for matches in fixtures_store.values()
+    )] or COMPETITIONS   # fallback to all if store empty
+
+    print(f"[BOOT] Preloading odds for {len(active_comps)} active competitions...")
     fetched = 0
-    for comp in COMPETITIONS:
+    for comp in active_comps:
         try:
             result = get_market_odds(comp)
             if result:
                 fetched += 1
-                print(f"[BOOT] Odds loaded for {comp} ({len(result)} fixtures)")
-            time.sleep(12)   # Odds API free tier: ~500 req/month, 1 per comp = safe
+                print(f"[BOOT] Odds: {comp} ({len(result)} fixtures)")
+            time.sleep(6)
         except Exception as e:
-            print(f"[BOOT] Odds preload failed for {comp}: {e}")
-    print(f"[BOOT] Odds preload complete — {fetched}/{len(COMPETITIONS)} competitions loaded")
+            print(f"[BOOT] Odds failed for {comp}: {e}")
+    print(f"[BOOT] Odds preload done — {fetched}/{len(active_comps)} competitions")
 
 def run_scheduler():
     fetch_all_fixtures()

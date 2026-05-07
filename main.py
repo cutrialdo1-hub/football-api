@@ -1197,6 +1197,19 @@ def session():
                         stage1_date_filtered += 1
                         print(f"[SESSION]   REJECT date-out: {m.get('home')} vs {m.get('away')} ko={ko_date}")
                         continue
+                    # Filter out placeholder/unconfirmed kickoff times.
+                    # European fixtures never kick off at 22:00-23:00 UTC —
+                    # these are API placeholders for matches not yet scheduled.
+                    # BSA (Brazil) legitimately kicks off late so exempt from filter.
+                    if len(kickoff_str) > 16 and comp != "BSA":
+                        try:
+                            ko_hour = int(kickoff_str[11:13])
+                            if ko_hour >= 22:
+                                stage1_date_filtered += 1
+                                print(f"[SESSION]   REJECT placeholder-time: {m.get('home')} vs {m.get('away')} UTC={kickoff_str[11:16]}")
+                                continue
+                        except Exception:
+                            pass
                 _comps.add(comp)
                 raw_pool.append({**m, "_ds": ds})
             current += timedelta(days=1)

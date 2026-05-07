@@ -713,31 +713,56 @@ function applyBookieOdds(idx, oddsStr) {
 function requestReplacement(idx) {
     removingIdx = idx;
 
-    // Filter reserves: exclude fixtures already in session
+    const GAP_MS = 90 * 60 * 1000;
+
+    // Find adjacent active picks to determine the valid kickoff window
+    const active   = session.filter(p => p.status !== "removed");
+    const slotPos  = active.indexOf(session[idx]);
+    const prevPick = slotPos > 0 ? active[slotPos - 1] : null;
+    const nextPick = slotPos < active.length - 1 ? active[slotPos + 1] : null;
+
+    const prevKo   = prevPick && prevPick.kickoff ? new Date(prevPick.kickoff) : null;
+    const nextKo   = nextPick && nextPick.kickoff ? new Date(nextPick.kickoff) : null;
+    const earliest = prevKo ? new Date(prevKo.getTime() + GAP_MS) : null;
+    const latest   = nextKo ? new Date(nextKo.getTime() - GAP_MS) : null;
+
     const usedFixtures = new Set(session.map(p => `${p.home}|${p.away}`));
-    const available    = reserves.filter(r => !usedFixtures.has(`${r.home}|${r.away}`)).slice(0, 5);
+
+    const available = reserves.filter(r => {
+        if (usedFixtures.has(`${r.home}|${r.away}`)) return false;
+        if (!r.kickoff || r.kickoff.length <= 10) return true;
+        const rKo = new Date(r.kickoff);
+        if (earliest && rKo < earliest) return false;
+        if (latest   && rKo > latest)   return false;
+        return true;
+    }).slice(0, 8);
 
     if (available.length === 0) {
-        alert("No replacement picks available in reserve list.");
+        alert("No valid replacements — no reserves fit the 90-minute gap around this slot.");
         return;
     }
 
     const panel = document.getElementById("rep-panel");
     const opts  = document.getElementById("rep-options");
 
-    opts.innerHTML = available.map((r, i) => `
+    opts.innerHTML = available.map((r, i) => {
+        const rKo     = r.kickoff && r.kickoff.length > 10 ? new Date(r.kickoff) : null;
+        const timeStr = rKo
+            ? rKo.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + " · " +
+              rKo.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })
+            : r.date;
+        return `
         <div class="rep-option" onclick="selectReplacement(${i})" id="rep-opt-${i}">
             <div>
                 <div class="rep-match">${r.home} vs ${r.away}</div>
-                <div class="rep-market">${r.market} · ${r.date} · ${r.league}</div>
+                <div class="rep-market">${r.market} · ${timeStr} · ${r.league}</div>
             </div>
             <div class="rep-score">${r.prob}%<br><span style="font-size:0.6rem;color:var(--dim);">${r.fair_odds}</span></div>
-        </div>`).join("");
+        </div>`;
+    }).join("");
 
-    // Store available for confirmation
     panel._available = available;
     panel._selected  = null;
-
     panel.classList.add("visible");
     panel.scrollIntoView({ behavior: "smooth", block: "start" });
 }

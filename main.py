@@ -1139,6 +1139,43 @@ def scan():
 
                     def fo(p): return round(1/p,2) if p>0.04 else 25.0
 
+                    # ── Edge detection using cached odds (no new API calls) ──
+                    # Only checks if odds are already in memory for this competition.
+                    # If not cached, value_status = "unknown" — no badge shown.
+                    best_edge      = 0.0
+                    best_edge_mkt  = None
+                    value_status   = "unknown"  # "value" | "no_value" | "unknown"
+
+                    cached_odds = odds_cache.get(comp)
+                    if cached_odds and cached_odds.get("d"):
+                        match_ev = find_match_odds(cached_odds["d"], m["home"], m["away"])
+                        if match_ev:
+                            # Check 1X2 edges from cached odds
+                            checks = [
+                                ("H",   p_h,    match_ev.get("home_odds"), f"{m['home']} Win"),
+                                ("D",   p_d,    match_ev.get("draw_odds"), "Draw"),
+                                ("A",   p_a,    match_ev.get("away_odds"), f"{m['away']} Win"),
+                                ("1X",  p_h+p_d, match_ev.get("dc_1x_odds"), "1X"),
+                                ("X2",  p_d+p_a, match_ev.get("dc_x2_odds"), "X2"),
+                            ]
+                            # Also check totals if available
+                            totals = match_ev.get("totals", {})
+                            api_o25 = totals.get("over_2.5")
+                            if api_o25:
+                                checks.append(("O25", p_o25, api_o25, "Over 2.5"))
+
+                            for code, prob, api_price, label in checks:
+                                if not api_price or api_price <= 1.0 or prob <= 0: continue
+                                fair_p = fo(prob)
+                                edge   = round((api_price / fair_p) - 1, 4)
+                                if edge > best_edge:
+                                    best_edge     = edge
+                                    best_edge_mkt = {"code": code, "label": label,
+                                                     "edge": edge, "api": api_price,
+                                                     "fair": fair_p}
+
+                            value_status = "value" if best_edge > 0.05 else "no_value"
+
                     # Full market breakdown for acca leg card display
                     all_markets = [
                         {"code":"H",    "label":f"{m['home']} Win", "type":"1X2",   "prob":round(p_h*100,1),    "fair":fo(p_h)},
@@ -1166,6 +1203,10 @@ def scan():
                         "probs": {"home":round(p_h*100,1),"draw":round(p_d*100,1),"away":round(p_a*100,1)},
                         "fair_odds": fo(pp),
                         "all_markets": all_markets,
+                        # Edge detection fields — used by index.html fixture list
+                        "value_status":  value_status,   # "value" | "no_value" | "unknown"
+                        "best_edge":     round(best_edge*100, 1),
+                        "best_edge_mkt": best_edge_mkt,
                     })
                 except Exception as e:
                     print(f"[SCAN] Skipped {m.get('home','?')} vs {m.get('away','?')}: {e}")

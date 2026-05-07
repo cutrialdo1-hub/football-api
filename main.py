@@ -1167,8 +1167,8 @@ def session():
             return jsonify({"error": "date_from must be before date_to"}), 400
 
         def mas_score(prob, fo, conf):
-            if fo < 1.2 or fo > 5.0:    odds_suit = 0.0
-            elif fo <= 2.0:              odds_suit = (fo-1.2)/0.8
+            if fo < 1.10 or fo > 5.0:    odds_suit = 0.0
+            elif fo <= 2.0:              odds_suit = (fo-1.10)/0.9
             elif fo <= 3.5:              odds_suit = 1.0-((fo-2.0)/2.5)
             else:                        odds_suit = max(0, 1.0-((fo-3.5)/3.0))
             return round(prob * conf * odds_suit, 6)
@@ -1227,7 +1227,7 @@ def session():
                     best_fix = None
                     for label, mkt_type, prob, fo, conf in markets:
                         sc = mas_score(prob, fo, conf)
-                        if sc <= 0 or prob < 0.40: continue
+                        if sc <= 0 or prob < 0.25: continue
                         if best_fix is None or sc > best_fix["mas_score"]:
                             best_fix = {
                                 "date": ds, "kickoff": m.get("kickoff",""),

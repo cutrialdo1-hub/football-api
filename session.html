@@ -7,30 +7,136 @@
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;700&display=swap" rel="stylesheet">
 <style>
     :root {
-        --neon:   #00ff9d;
-        --bg:     #0a0b10;
-        --card:   #151821;
-        --border: #2a2d3a;
-        --away:   #ff3366;
-        --draw:   #8892b0;
-        --dim:    #4a5060;
-        --gold:   #ffcc00;
+        --neon:     #00ff9d;
+        --bg:       #0a0b10;
+        --card:     #151821;
+        --border:   #2a2d3a;
+        --away:     #ff3366;
+        --draw:     #8892b0;
+        --dim:      #4a5060;
+        --gold:     #ffcc00;
         --gold-dim: rgba(255,204,0,0.08);
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-        background: var(--bg);
-        color: #fff;
+        background: var(--bg); color: #fff;
         font-family: Inter, sans-serif;
-        display: flex;
-        justify-content: center;
-        padding: 20px 16px 60px;
         min-height: 100vh;
     }
 
-    .container { width: 100%; max-width: 520px; }
+    /* ── Layout: sidebar + main ── */
+    .layout {
+        display: flex;
+        min-height: 100vh;
+        max-width: 900px;
+        margin: 0 auto;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+        width: 220px;
+        min-width: 220px;
+        background: #0d0f18;
+        border-right: 1px solid var(--border);
+        padding: 20px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        overflow-y: auto;
+    }
+
+    .sidebar-title {
+        font-family: Orbitron, sans-serif;
+        font-size: 0.6rem;
+        letter-spacing: 3px;
+        color: var(--gold);
+        text-transform: uppercase;
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 4px;
+    }
+
+    .sidebar-empty {
+        font-size: 0.7rem;
+        color: var(--dim);
+        text-align: center;
+        padding: 20px 0;
+        line-height: 1.6;
+    }
+
+    /* Session card in sidebar */
+    .sess-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 12px;
+        cursor: pointer;
+        transition: border-color 0.2s;
+        position: relative;
+    }
+    .sess-card:hover       { border-color: rgba(255,204,0,0.4); }
+    .sess-card.active-sess { border-color: var(--gold); background: rgba(255,204,0,0.05); }
+    .sess-card.complete-sess { border-color: var(--neon); opacity: 0.7; }
+
+    .sess-name {
+        font-family: Orbitron, sans-serif;
+        font-size: 0.62rem;
+        color: var(--gold);
+        letter-spacing: 1px;
+        margin-bottom: 5px;
+        word-break: break-word;
+        padding-right: 18px;
+    }
+    .sess-card.complete-sess .sess-name { color: var(--neon); }
+
+    .sess-meta { font-size: 0.6rem; color: var(--dim); margin-bottom: 6px; }
+
+    .sess-progress-bar {
+        height: 3px; background: #1a1d28; border-radius: 2px; overflow: hidden; margin-bottom: 4px;
+    }
+    .sess-progress-fill { height: 100%; background: var(--gold); border-radius: 2px; }
+    .sess-card.complete-sess .sess-progress-fill { background: var(--neon); }
+
+    .sess-pnl {
+        font-family: Orbitron, sans-serif;
+        font-size: 0.65rem;
+        font-weight: 700;
+    }
+    .sess-pnl.pos { color: var(--neon); }
+    .sess-pnl.neg { color: var(--away); }
+    .sess-pnl.zero { color: var(--dim); }
+
+    .sess-delete {
+        position: absolute; top: 8px; right: 8px;
+        background: none; border: none; color: var(--dim);
+        font-size: 0.75rem; cursor: pointer; padding: 2px 4px;
+        line-height: 1; width: auto; margin: 0;
+    }
+    .sess-delete:hover { color: var(--away); box-shadow: none; }
+
+    .btn-new-sess {
+        width: 100%; padding: 10px; border-radius: 8px;
+        background: transparent; color: var(--gold);
+        border: 1px solid rgba(255,204,0,0.3);
+        font-family: Orbitron, sans-serif; font-size: 0.62rem;
+        letter-spacing: 1px; cursor: pointer; transition: all 0.2s;
+        margin-top: auto;
+    }
+    .btn-new-sess:hover { background: var(--gold-dim); box-shadow: none; }
+
+    /* ── Main content ── */
+    .main {
+        flex: 1;
+        padding: 20px 16px 60px;
+        overflow-y: auto;
+    }
+
+    .container { width: 100%; max-width: 520px; margin: 0 auto; }
 
     /* ── Header ── */
     .back-btn {
@@ -50,12 +156,10 @@
 
     .section-label { font-size: 0.6rem; letter-spacing: 3px; color: var(--dim); text-transform: uppercase; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #1a1d28; }
 
-    /* ── Session config grid ── */
+    /* ── Config card ── */
     .config-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 14px; }
-
     .cfg-group { display: flex; flex-direction: column; gap: 5px; }
     .cfg-group label { font-size: 0.58rem; letter-spacing: 2px; color: var(--dim); text-transform: uppercase; }
-
     .cfg-input {
         padding: 11px 10px; border-radius: 8px; background: #000;
         border: 1px solid rgba(255,204,0,0.2); color: var(--gold);
@@ -65,7 +169,6 @@
     .cfg-input:focus { outline: none; border-color: var(--gold); }
     .cfg-input::-webkit-inner-spin-button { -webkit-appearance: none; }
 
-    /* Bankroll full width */
     .bankroll-row {
         display: flex; align-items: center; gap: 10px;
         background: #000; border: 1px solid rgba(255,204,0,0.2);
@@ -76,7 +179,7 @@
     .bankroll-row input { flex: 1; background: transparent; border: none; color: var(--gold); font-family: Orbitron, sans-serif; font-size: 0.9rem; outline: none; min-width: 0; }
     .bankroll-row input::-webkit-inner-spin-button { -webkit-appearance: none; }
 
-    /* ── Primary button ── */
+    /* ── Buttons ── */
     button.primary {
         width: 100%; padding: 14px; border-radius: 10px;
         background: var(--gold); color: #000; font-weight: 800;
@@ -87,18 +190,48 @@
     button.primary:hover { box-shadow: 0 0 18px rgba(255,204,0,0.35); }
     button.primary:disabled { background: #1a1a1a; color: #444; cursor: not-allowed; box-shadow: none; }
 
-    /* ── Session progress card ── */
+    /* ── Session name editor (shown after build, before accept) ── */
+    .name-editor {
+        display: flex; gap: 8px; align-items: center;
+        background: #000; border: 1px solid rgba(255,204,0,0.3);
+        border-radius: 10px; padding: 10px 14px; margin-bottom: 14px;
+    }
+    .name-editor label { font-size: 0.6rem; letter-spacing: 2px; color: var(--dim); text-transform: uppercase; white-space: nowrap; flex-shrink: 0; }
+    .name-editor input {
+        flex: 1; background: transparent; border: none;
+        color: var(--gold); font-family: Orbitron, sans-serif;
+        font-size: 0.72rem; outline: none; min-width: 0;
+    }
+
+    /* ── Review phase buttons ── */
+    .review-bar {
+        display: flex; gap: 8px; margin-bottom: 16px;
+    }
+    .btn-accept {
+        flex: 1; padding: 12px; border-radius: 10px;
+        background: var(--gold); color: #000; font-weight: 800;
+        font-family: Orbitron, sans-serif; font-size: 0.7rem;
+        letter-spacing: 2px; cursor: pointer; border: none;
+        transition: box-shadow 0.2s; margin: 0;
+    }
+    .btn-accept:hover { box-shadow: 0 0 18px rgba(255,204,0,0.35); }
+    .btn-add-pick {
+        flex: 0 0 auto; padding: 12px 16px; border-radius: 10px;
+        background: transparent; color: var(--neon);
+        border: 1px solid rgba(0,255,157,0.3);
+        font-family: Orbitron, sans-serif; font-size: 0.7rem;
+        letter-spacing: 1px; cursor: pointer; transition: all 0.2s; margin: 0;
+    }
+    .btn-add-pick:hover { background: rgba(0,255,157,0.05); box-shadow: none; }
+
+    /* ── Progress card ── */
     .progress-card {
         background: var(--card); border: 1px solid rgba(255,204,0,0.2);
-        border-radius: 16px; padding: 20px; margin-bottom: 16px;
-        display: none;
+        border-radius: 16px; padding: 20px; margin-bottom: 16px; display: none;
     }
     .progress-card.visible { display: block; }
 
-    .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-
     .session-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
-
     .stat-box { background: #0d0f16; border: 1px solid var(--border); border-radius: 8px; padding: 10px; text-align: center; }
     .stat-box .sv { font-family: Orbitron, sans-serif; font-size: 1rem; font-weight: 700; }
     .stat-box .sl { font-size: 0.55rem; letter-spacing: 1px; color: var(--dim); text-transform: uppercase; margin-top: 3px; }
@@ -107,7 +240,6 @@
     .sv-away  { color: var(--away); }
     .sv-white { color: #fff; }
 
-    /* Progress bar */
     .prog-bar-wrap { height: 6px; background: #1a1d28; border-radius: 3px; overflow: hidden; margin-bottom: 6px; }
     .prog-bar-fill { height: 100%; background: var(--gold); border-radius: 3px; transition: width 0.4s; box-shadow: 0 0 8px rgba(255,204,0,0.4); }
     .prog-label { font-size: 0.62rem; color: var(--dim); letter-spacing: 1px; text-align: right; }
@@ -118,11 +250,11 @@
         padding: 14px; margin-bottom: 10px; position: relative;
         transition: border-color 0.2s;
     }
-
     .pick-card.pending  { border-left: 3px solid var(--gold); }
     .pick-card.won      { border-left: 3px solid var(--neon); background: rgba(0,255,157,0.03); }
     .pick-card.lost     { border-left: 3px solid var(--away); background: rgba(255,51,102,0.03); opacity: 0.7; }
     .pick-card.upcoming { border-left: 3px solid #2a2d3a; opacity: 0.55; }
+    .pick-card.reviewing { border-left: 3px solid rgba(0,255,157,0.4); }
     .pick-card.removed  { display: none; }
 
     .pick-num {
@@ -134,9 +266,18 @@
     .pick-card.won  .pick-num { background: var(--neon); }
     .pick-card.lost .pick-num { background: var(--away); color: #fff; }
     .pick-card.upcoming .pick-num { background: #2a2d3a; color: #556; }
+    .pick-card.reviewing .pick-num { background: rgba(0,255,157,0.4); color: #000; }
+
+    /* Hard-delete button (review phase only) */
+    .btn-hard-remove {
+        position: absolute; top: 10px; right: 10px;
+        background: none; border: none; color: var(--dim);
+        font-size: 0.85rem; cursor: pointer; padding: 2px 5px;
+        line-height: 1; width: auto; margin: 0; transition: color 0.2s;
+    }
+    .btn-hard-remove:hover { color: var(--away); box-shadow: none; }
 
     .pick-body { padding-left: 36px; }
-
     .pick-match { font-size: 0.82rem; font-weight: 600; color: #dde; margin-bottom: 3px; }
     .pick-meta  { font-size: 0.65rem; color: var(--dim); margin-bottom: 6px; }
 
@@ -152,25 +293,20 @@
 
     .pick-prob { display: inline; font-family: Orbitron, sans-serif; font-size: 0.65rem; color: #aab; }
 
-    /* Stake display */
     .stake-row {
         display: flex; justify-content: space-between; align-items: center;
         margin-top: 8px; padding-top: 8px; border-top: 1px solid #1a1d28;
     }
     .stake-label { font-size: 0.6rem; letter-spacing: 2px; color: var(--dim); text-transform: uppercase; }
     .stake-val { font-family: Orbitron, sans-serif; font-size: 1rem; font-weight: 700; color: var(--gold); }
-    .stake-val.recalc { animation: flash-gold 0.6s ease; }
     @keyframes flash-gold { 0%,100%{color:var(--gold);} 50%{color:#fff;} }
 
-    /* Result buttons */
     .result-btns { display: flex; gap: 8px; margin-top: 10px; }
-
     .btn-won, .btn-lost, .btn-remove {
         flex: 1; padding: 9px; border-radius: 8px; font-family: Orbitron, sans-serif;
         font-size: 0.65rem; letter-spacing: 1px; cursor: pointer; border: none;
         font-weight: 700; transition: all 0.2s; width: auto; margin: 0;
     }
-
     .btn-won    { background: rgba(0,255,157,0.12); color: var(--neon); border: 1px solid rgba(0,255,157,0.3); }
     .btn-won:hover    { background: rgba(0,255,157,0.22); box-shadow: none; }
     .btn-lost   { background: rgba(255,51,102,0.12); color: var(--away); border: 1px solid rgba(255,51,102,0.3); }
@@ -185,7 +321,6 @@
     .tag-won  { background: rgba(0,255,157,0.15); color: var(--neon); }
     .tag-lost { background: rgba(255,51,102,0.15); color: var(--away); }
 
-    /* Gap indicator */
     .gap-indicator {
         text-align: center; font-size: 0.6rem; color: var(--dim);
         letter-spacing: 2px; padding: 6px 0; margin: -4px 0 6px;
@@ -193,11 +328,10 @@
     .gap-ok   { color: rgba(0,255,157,0.4); }
     .gap-warn { color: var(--gold); }
 
-    /* ── Replacement panel ── */
+    /* ── Replacement / Add panel ── */
     .replacement-panel {
         background: rgba(255,204,0,0.04); border: 1px solid rgba(255,204,0,0.2);
-        border-radius: 12px; padding: 14px; margin-bottom: 12px;
-        display: none;
+        border-radius: 12px; padding: 14px; margin-bottom: 12px; display: none;
     }
     .replacement-panel.visible { display: block; }
     .replacement-panel .rp-title { font-family: Orbitron, sans-serif; font-size: 0.65rem; color: var(--gold); letter-spacing: 2px; margin-bottom: 10px; }
@@ -208,29 +342,27 @@
         margin-bottom: 8px; cursor: pointer; transition: border-color 0.2s;
     }
     .rep-option:hover { border-color: var(--gold); background: var(--gold-dim); }
-    .rep-option .rep-match { font-size: 0.78rem; color: #dde; }
+    .rep-option .rep-match  { font-size: 0.78rem; color: #dde; }
     .rep-option .rep-market { font-size: 0.65rem; color: var(--dim); margin-top: 2px; }
-    .rep-option .rep-score { font-family: Orbitron, sans-serif; font-size: 0.72rem; color: var(--gold); }
+    .rep-option .rep-score  { font-family: Orbitron, sans-serif; font-size: 0.72rem; color: var(--gold); }
 
     .rep-confirm-btn {
         width: 100%; padding: 10px; border-radius: 8px;
         background: transparent; color: var(--gold);
         border: 1px solid rgba(255,204,0,0.3);
         font-family: Orbitron, sans-serif; font-size: 0.65rem;
-        letter-spacing: 2px; cursor: pointer; transition: all 0.2s;
-        margin-top: 4px;
+        letter-spacing: 2px; cursor: pointer; transition: all 0.2s; margin-top: 4px;
     }
     .rep-confirm-btn:hover { background: var(--gold-dim); box-shadow: none; }
     .rep-cancel-btn {
         width: 100%; padding: 8px; border-radius: 8px;
         background: transparent; color: var(--dim);
         border: 1px solid #2a2d3a; font-family: Orbitron, sans-serif;
-        font-size: 0.6rem; letter-spacing: 1px; cursor: pointer;
-        transition: color 0.2s; margin-top: 6px;
+        font-size: 0.6rem; letter-spacing: 1px; cursor: pointer; transition: color 0.2s; margin-top: 6px;
     }
     .rep-cancel-btn:hover { color: var(--away); box-shadow: none; }
 
-    /* ── Session complete card ── */
+    /* ── Session complete ── */
     .complete-card {
         background: var(--card); border: 1px solid rgba(0,255,157,0.2);
         border-radius: 16px; padding: 24px; text-align: center; display: none;
@@ -239,136 +371,266 @@
     .complete-title { font-family: Orbitron, sans-serif; font-size: 1.1rem; letter-spacing: 3px; margin-bottom: 8px; }
     .complete-title.success { color: var(--neon); }
     .complete-title.fail    { color: var(--away); }
-
     .final-pnl { font-family: Orbitron, sans-serif; font-size: 2.5rem; font-weight: 900; margin: 12px 0 4px; }
     .final-pnl.pos { color: var(--neon); text-shadow: 0 0 20px rgba(0,255,157,0.4); }
     .final-pnl.neg { color: var(--away); }
 
     /* ── Quick range buttons ── */
     .quick-btn {
-        padding: 6px 12px; border-radius: 6px;
-        border: 1px solid var(--border); background: transparent;
-        color: var(--dim); font-family: Orbitron, sans-serif;
-        font-size: 0.6rem; letter-spacing: 1px; cursor: pointer;
-        transition: all 0.2s; width: auto; margin-bottom: 0;
+        padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border);
+        background: transparent; color: var(--dim); font-family: Orbitron, sans-serif;
+        font-size: 0.6rem; letter-spacing: 1px; cursor: pointer; transition: all 0.2s; width: auto; margin-bottom: 0;
     }
-    .quick-btn:hover, .quick-btn.active {
-        border-color: var(--gold); color: var(--gold);
-        background: rgba(255,204,0,0.05); box-shadow: none;
-    }
+    .quick-btn:hover, .quick-btn.active { border-color: var(--gold); color: var(--gold); background: rgba(255,204,0,0.05); box-shadow: none; }
 
     /* ── Loader ── */
     .loader { border: 3px solid #1a1d28; border-top: 3px solid var(--gold); border-radius: 50%; width: 32px; height: 32px; margin: 20px auto; animation: spin 0.9s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .status-msg { text-align: center; font-size: 0.75rem; color: var(--dim); padding: 8px 0; }
     .error-msg  { text-align: center; font-size: 0.78rem; color: var(--away); padding: 10px 0; }
+
+    /* ── Mobile: collapse sidebar ── */
+    @media (max-width: 600px) {
+        .layout { flex-direction: column; }
+        .sidebar {
+            width: 100%; min-width: 0; height: auto; position: static;
+            border-right: none; border-bottom: 1px solid var(--border);
+            flex-direction: row; flex-wrap: wrap; padding: 12px;
+            gap: 8px; overflow-x: auto;
+        }
+        .sidebar-title { width: 100%; margin-bottom: 0; }
+        .sess-card { min-width: 160px; flex-shrink: 0; }
+        .btn-new-sess { margin-top: 0; min-width: 120px; }
+    }
 </style>
 </head>
 <body>
-<div class="container">
+<div class="layout">
 
-    <button class="back-btn" onclick="window.location.href='index.html'">← BACK TO GAFFER</button>
-
-    <h1>MASANIELLO</h1>
-    <p class="tagline">Sequential Session Planner</p>
-
-    <!-- Session config -->
-    <div class="card" id="config-card">
-        <div class="section-label">Date Range</div>
-
-        <div style="display:flex;gap:10px;margin-bottom:10px;">
-            <input type="date" id="cfg-from" style="flex:1;padding:10px 12px;border-radius:10px;background:#000;border:1px solid rgba(255,204,0,0.2);color:var(--gold);font-family:Inter,sans-serif;font-size:0.85rem;margin-bottom:0;">
-            <input type="date" id="cfg-to"   style="flex:1;padding:10px 12px;border-radius:10px;background:#000;border:1px solid rgba(255,204,0,0.2);color:var(--gold);font-family:Inter,sans-serif;font-size:0.85rem;margin-bottom:0;">
+    <!-- ── Sidebar: saved sessions ── -->
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-title">📋 Sessions</div>
+        <div id="sidebar-sessions">
+            <div class="sidebar-empty">No sessions saved yet.<br>Build one below.</div>
         </div>
+        <button class="btn-new-sess" onclick="startNewSession()">＋ New Session</button>
+    </div>
 
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;">
-            <button class="quick-btn active" onclick="setRange(0,0,this)">TODAY</button>
-            <button class="quick-btn" onclick="setRange(0,1,this)">+1 DAY</button>
-            <button class="quick-btn" onclick="setRange(0,2,this)">+2 DAYS</button>
-            <button class="quick-btn" onclick="setRange(0,3,this)">+3 DAYS</button>
-            <button class="quick-btn" onclick="setRange(0,5,this)">FULL 5 DAYS</button>
-        </div>
+    <!-- ── Main content ── -->
+    <div class="main">
+    <div class="container">
 
-        <div class="section-label">Session Parameters</div>
+        <button class="back-btn" onclick="window.location.href='index.html'">← BACK TO GAFFER</button>
 
-        <div class="bankroll-row">
-            <label>Bankroll</label>
-            <span class="bankroll-sym">€</span>
-            <input type="number" id="cfg-bankroll" value="1000" min="10" step="10" inputmode="decimal" placeholder="1000">
-        </div>
+        <h1>MASANIELLO</h1>
+        <p class="tagline">Sequential Session Planner</p>
 
-        <div class="config-grid">
-            <div class="cfg-group">
-                <label>Total Bets</label>
-                <input type="number" class="cfg-input" id="cfg-n" value="10" min="4" max="15">
+        <!-- Config card -->
+        <div class="card" id="config-card">
+            <div class="section-label">Date Range</div>
+            <div style="display:flex;gap:10px;margin-bottom:10px;">
+                <input type="date" id="cfg-from" style="flex:1;padding:10px 12px;border-radius:10px;background:#000;border:1px solid rgba(255,204,0,0.2);color:var(--gold);font-family:Inter,sans-serif;font-size:0.85rem;margin-bottom:0;">
+                <input type="date" id="cfg-to"   style="flex:1;padding:10px 12px;border-radius:10px;background:#000;border:1px solid rgba(255,204,0,0.2);color:var(--gold);font-family:Inter,sans-serif;font-size:0.85rem;margin-bottom:0;">
             </div>
-            <div class="cfg-group">
-                <label>Wins Needed</label>
-                <input type="number" class="cfg-input" id="cfg-k" value="6" min="2" max="15">
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;">
+                <button class="quick-btn active" onclick="setRange(0,0,this)">TODAY</button>
+                <button class="quick-btn" onclick="setRange(0,1,this)">+1 DAY</button>
+                <button class="quick-btn" onclick="setRange(0,2,this)">+2 DAYS</button>
+                <button class="quick-btn" onclick="setRange(0,3,this)">+3 DAYS</button>
+                <button class="quick-btn" onclick="setRange(0,5,this)">FULL 5 DAYS</button>
             </div>
-            <div class="cfg-group">
-                <label>Target €</label>
-                <input type="number" class="cfg-input" id="cfg-target" value="200" min="10">
+            <div class="section-label">Session Parameters</div>
+            <div class="bankroll-row">
+                <label>Bankroll</label>
+                <span class="bankroll-sym">€</span>
+                <input type="number" id="cfg-bankroll" value="1000" min="10" step="10" inputmode="decimal" placeholder="1000">
+            </div>
+            <div class="config-grid">
+                <div class="cfg-group"><label>Total Bets</label><input type="number" class="cfg-input" id="cfg-n" value="10" min="4" max="15"></div>
+                <div class="cfg-group"><label>Wins Needed</label><input type="number" class="cfg-input" id="cfg-k" value="6" min="2" max="15"></div>
+                <div class="cfg-group"><label>Target €</label><input type="number" class="cfg-input" id="cfg-target" value="200" min="10"></div>
+            </div>
+            <button class="primary" onclick="buildSession()">🎯 BUILD SESSION</button>
+        </div>
+
+        <!-- Loader -->
+        <div id="session-loader" style="display:none;">
+            <div class="card">
+                <div class="loader"></div>
+                <div class="status-msg">Cherry-picking best sequential picks...</div>
             </div>
         </div>
 
-        <button class="primary" onclick="buildSession()">🎯 BUILD SESSION</button>
-    </div>
-
-    <!-- Loader -->
-    <div id="session-loader" style="display:none;">
-        <div class="card">
-            <div class="loader"></div>
-            <div class="status-msg">Cherry-picking best sequential picks across all markets...</div>
-        </div>
-    </div>
-
-    <!-- Session progress -->
-    <div class="progress-card" id="progress-card">
-        <div class="section-label">Session Progress</div>
-
-        <div class="session-stats">
-            <div class="stat-box"><div class="sv sv-white" id="st-total">0/10</div><div class="sl">Bets</div></div>
-            <div class="stat-box"><div class="sv sv-neon"  id="st-wins">0</div><div class="sl">Wins</div></div>
-            <div class="stat-box"><div class="sv sv-away"  id="st-losses">0</div><div class="sl">Losses</div></div>
-            <div class="stat-box"><div class="sv sv-gold"  id="st-pnl">€0</div><div class="sl">P&L</div></div>
+        <!-- Review phase: name editor + accept/add buttons (shown before session is accepted) -->
+        <div id="review-phase" style="display:none;">
+            <div class="name-editor">
+                <label>Name</label>
+                <input type="text" id="session-name-input" placeholder="Session name..." maxlength="40">
+            </div>
+            <div class="review-bar">
+                <button class="btn-accept" onclick="acceptSession()">✓ ACCEPT &amp; SAVE SESSION</button>
+                <button class="btn-add-pick" onclick="openAddPanel()">＋ ADD</button>
+            </div>
         </div>
 
-        <div class="prog-bar-wrap">
-            <div class="prog-bar-fill" id="prog-fill" style="width:0%"></div>
+        <!-- Progress card -->
+        <div class="progress-card" id="progress-card">
+            <div class="section-label">Session Progress</div>
+            <div class="session-stats">
+                <div class="stat-box"><div class="sv sv-white" id="st-total">0/10</div><div class="sl">Bets</div></div>
+                <div class="stat-box"><div class="sv sv-neon"  id="st-wins">0</div><div class="sl">Wins</div></div>
+                <div class="stat-box"><div class="sv sv-away"  id="st-losses">0</div><div class="sl">Losses</div></div>
+                <div class="stat-box"><div class="sv sv-gold"  id="st-pnl">€0</div><div class="sl">P&L</div></div>
+            </div>
+            <div class="prog-bar-wrap"><div class="prog-bar-fill" id="prog-fill" style="width:0%"></div></div>
+            <div class="prog-label" id="prog-label">0 of 10 complete</div>
         </div>
-        <div class="prog-label" id="prog-label">0 of 10 complete</div>
+
+        <!-- Replacement / Add panel -->
+        <div class="replacement-panel" id="rep-panel">
+            <div class="rp-title" id="rep-panel-title">⚡ SELECT REPLACEMENT</div>
+            <div id="rep-options"></div>
+            <button class="rep-cancel-btn" onclick="cancelReplacement()">CANCEL</button>
+        </div>
+
+        <!-- Pick list -->
+        <div id="pick-list"></div>
+
+        <!-- Session complete -->
+        <div class="complete-card" id="complete-card">
+            <div class="complete-title" id="complete-title">SESSION COMPLETE</div>
+            <div id="complete-summary" style="font-size:0.75rem;color:var(--dim);margin-bottom:8px;"></div>
+            <div class="final-pnl" id="final-pnl"></div>
+            <div style="font-size:0.7rem;color:var(--dim);margin-bottom:20px;" id="final-sub"></div>
+            <button class="primary" onclick="startNewSession()">START NEW SESSION</button>
+        </div>
+
     </div>
-
-    <!-- Replacement panel -->
-    <div class="replacement-panel" id="rep-panel">
-        <div class="rp-title">⚡ SELECT REPLACEMENT</div>
-        <div id="rep-options"></div>
-        <button class="rep-cancel-btn" onclick="cancelReplacement()">CANCEL</button>
-    </div>
-
-    <!-- Pick list -->
-    <div id="pick-list"></div>
-
-    <!-- Session complete -->
-    <div class="complete-card" id="complete-card">
-        <div class="complete-title" id="complete-title">SESSION COMPLETE</div>
-        <div id="complete-summary" style="font-size:0.75rem;color:var(--dim);margin-bottom:8px;"></div>
-        <div class="final-pnl" id="final-pnl"></div>
-        <div style="font-size:0.7rem;color:var(--dim);margin-bottom:20px;" id="final-sub"></div>
-        <button class="primary" onclick="resetSession()">START NEW SESSION</button>
-    </div>
-
-</div>
+    </div><!-- /main -->
+</div><!-- /layout -->
 
 <script>
 const API = "https://football-api-9e4p.onrender.com";
+const STORAGE_PREFIX = "gaffer_sess_";
 
-// ── Session state ──
-let session     = [];     // active picks [{...pick, status, stake, stakeHistory}]
-let reserves    = [];     // reserve picks for replacements
-let sessionCfg  = {};     // {bankroll, n, k, target}
-let removingIdx = null;   // index of pick being replaced
+// ── Active state ──
+let session      = [];
+let reserves     = [];
+let sessionCfg   = {};
+let removingIdx  = null;
+let addingMode   = false;   // true when rep-panel is open for ADD (not replace)
+let activeId     = null;    // localStorage key of the active session
+let isReviewing  = false;   // true = review phase (before accept)
+
+// ── localStorage helpers ──
+function allSessionIds() {
+    return Object.keys(localStorage)
+        .filter(k => k.startsWith(STORAGE_PREFIX))
+        .sort();
+}
+
+function saveSession() {
+    if (!activeId) return;
+    const data = {
+        id:         activeId,
+        name:       document.getElementById("session-name-input")?.value || sessionCfg.name || activeId,
+        cfg:        sessionCfg,
+        session:    session,
+        reserves:   reserves,
+        isReviewing: isReviewing,
+        savedAt:    Date.now(),
+    };
+    localStorage.setItem(activeId, JSON.stringify(data));
+    renderSidebar();
+}
+
+function loadSessionById(id) {
+    const raw = localStorage.getItem(id);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    activeId     = id;
+    sessionCfg   = data.cfg   || {};
+    session      = data.session  || [];
+    reserves     = data.reserves || [];
+    isReviewing  = data.isReviewing ?? false;
+
+    // Update name input if visible
+    const nameEl = document.getElementById("session-name-input");
+    if (nameEl) nameEl.value = data.name || "";
+
+    // Hide config, show session
+    document.getElementById("config-card").style.display    = "none";
+    document.getElementById("session-loader").style.display = "none";
+    document.getElementById("complete-card").classList.remove("visible");
+
+    if (isReviewing) {
+        document.getElementById("review-phase").style.display = "block";
+    } else {
+        document.getElementById("review-phase").style.display = "none";
+    }
+
+    renderSession();
+    renderSidebar();
+}
+
+function deleteSession(id, e) {
+    e.stopPropagation();
+    if (!confirm("Delete this session? This cannot be undone.")) return;
+    localStorage.removeItem(id);
+    if (id === activeId) {
+        activeId    = null;
+        session     = [];
+        reserves    = [];
+        sessionCfg  = {};
+        isReviewing = false;
+        document.getElementById("config-card").style.display = "block";
+        document.getElementById("progress-card").classList.remove("visible");
+        document.getElementById("pick-list").innerHTML = "";
+        document.getElementById("review-phase").style.display = "none";
+        document.getElementById("complete-card").classList.remove("visible");
+    }
+    renderSidebar();
+}
+
+function renderSidebar() {
+    const ids = allSessionIds();
+    const el  = document.getElementById("sidebar-sessions");
+
+    if (!ids.length) {
+        el.innerHTML = `<div class="sidebar-empty">No sessions saved yet.<br>Build one below.</div>`;
+        return;
+    }
+
+    el.innerHTML = ids.map(id => {
+        const raw  = localStorage.getItem(id);
+        if (!raw) return "";
+        const d    = JSON.parse(raw);
+        const sess = d.session || [];
+        const active_picks = sess.filter(p => p.status !== "removed");
+        const done   = active_picks.filter(p => p.status === "won" || p.status === "lost").length;
+        const total  = active_picks.length;
+        const wins   = active_picks.filter(p => p.status === "won").length;
+        const pnl    = active_picks.reduce((s, p) => s + (p.pnl || 0), 0);
+        const pct    = total > 0 ? (done / total * 100).toFixed(0) : 0;
+        const isComplete = done === total && total > 0 && !d.isReviewing;
+        const isActive   = id === activeId;
+        const pnlClass   = pnl > 0 ? "pos" : pnl < 0 ? "neg" : "zero";
+        const pnlStr     = `${pnl >= 0 ? "+" : ""}€${pnl.toFixed(0)}`;
+        const name       = d.name || id.replace(STORAGE_PREFIX, "");
+
+        return `
+        <div class="sess-card ${isActive ? 'active-sess' : ''} ${isComplete ? 'complete-sess' : ''}"
+             onclick="loadSessionById('${id}')">
+            <button class="sess-delete" onclick="deleteSession('${id}', event)" title="Delete session">✕</button>
+            <div class="sess-name">${name}</div>
+            <div class="sess-meta">${done}/${total} settled · ${wins} wins</div>
+            <div class="sess-progress-bar">
+                <div class="sess-progress-fill" style="width:${pct}%"></div>
+            </div>
+            <div class="sess-pnl ${pnlClass}">${pnlStr}</div>
+        </div>`;
+    }).join("");
+}
 
 // ── Date helpers ──
 function toISO(d) { return d.toISOString().split("T")[0]; }
@@ -383,32 +645,50 @@ function setRange(fromOffset, toOffset, btn) {
     if (btn) btn.classList.add("active");
 }
 
-// Default: today only
+// Default date
 (function() {
     const today = new Date();
     document.getElementById("cfg-from").value = toISO(today);
     document.getElementById("cfg-to").value   = toISO(today);
 })();
 
-// ── Conservative Masaniello stake calculation ──
-// After each result, recalculate remaining stakes using updated wins/losses.
-// Conservative mode: dampen recovery rate by 0.6× to protect bankroll.
-function calcMasStake(bankroll, target, n_total, k_needed, n_remaining, k_remaining, odds) {
-    if (n_remaining <= 0 || k_remaining <= 0 || odds <= 1) return 0;
+function startNewSession() {
+    activeId    = null;
+    session     = [];
+    reserves    = [];
+    sessionCfg  = {};
+    isReviewing = false;
+    removingIdx = null;
 
-    // Base stake: target profit / (wins_still_needed × (odds − 1))
-    const base = target / (k_remaining * (odds - 1));
+    document.getElementById("config-card").style.display = "block";
+    document.getElementById("review-phase").style.display = "none";
+    document.getElementById("progress-card").classList.remove("visible");
+    document.getElementById("complete-card").classList.remove("visible");
+    document.getElementById("rep-panel").classList.remove("visible");
+    document.getElementById("pick-list").innerHTML = "";
 
-    // Conservative dampening — reduce recovery aggression
-    const recovery_factor = 0.6 + (0.4 * (k_remaining / Math.max(n_remaining, 1)));
-    const stake = base * recovery_factor;
-
-    // Never exceed 20% of remaining bankroll (bankroll protection)
-    const max_stake = bankroll * 0.20;
-    return Math.min(stake, max_stake);
+    renderSidebar();
+    window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-// ── Build session from /session endpoint ──
+// ── Masaniello stake calc ──
+function calcMasStake(bankroll, target, n_total, k_needed, n_remaining, k_remaining, odds) {
+    if (n_remaining <= 0 || k_remaining <= 0 || odds <= 1) return 0;
+    const base = target / (k_remaining * (odds - 1));
+    const recovery_factor = 0.6 + (0.4 * (k_remaining / Math.max(n_remaining, 1)));
+    const stake = base * recovery_factor;
+    return Math.min(stake, bankroll * 0.20);
+}
+
+// ── Auto-generate session name ──
+function autoName(dateFrom, dateTo, n) {
+    const fmt = d => new Date(d + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+    return dateFrom === dateTo
+        ? `${fmt(dateFrom)} · ${n} games`
+        : `${fmt(dateFrom)} – ${fmt(dateTo)} · ${n} games`;
+}
+
+// ── Build session from API ──
 async function buildSession() {
     const bankroll = parseFloat(document.getElementById("cfg-bankroll").value) || 1000;
     const n        = parseInt(document.getElementById("cfg-n").value)           || 10;
@@ -420,12 +700,13 @@ async function buildSession() {
     if (!dateFrom || !dateTo) { alert("Please select a date range."); return; }
     if (k > n) { alert("Wins needed cannot exceed total bets."); return; }
 
-    sessionCfg = { bankroll, n, k, target };
+    sessionCfg = { bankroll, n, k, target, dateFrom, dateTo };
 
     document.getElementById("config-card").style.display    = "none";
     document.getElementById("session-loader").style.display = "block";
     document.getElementById("pick-list").innerHTML          = "";
     document.getElementById("complete-card").classList.remove("visible");
+    document.getElementById("review-phase").style.display   = "none";
 
     try {
         const res  = await fetch(`${API}/session?date_from=${encodeURIComponent(dateFrom)}&date_to=${encodeURIComponent(dateTo)}`);
@@ -444,33 +725,27 @@ async function buildSession() {
             return;
         }
 
-        // Take up to cfg.n picks
         const rawPicks = (data.session || []).slice(0, n);
         reserves       = data.reserves || [];
 
         if (rawPicks.length === 0) {
             document.getElementById("config-card").style.display = "block";
-            document.getElementById("pick-list").innerHTML = `<div class="error-msg">No suitable picks found. Try again later when more fixtures are loaded.</div>`;
+            document.getElementById("pick-list").innerHTML = `<div class="error-msg">No suitable picks found. Try a wider date range.</div>`;
             return;
         }
 
-        // Initialise session picks with stakes
-        session = rawPicks.map((p, i) => ({
-            ...p,
-            idx:    i,
-            status: "upcoming",  // upcoming | pending | won | lost | removed
-            stake:  0,
-            pnl:    0,
-        }));
+        session = rawPicks.map((p, i) => ({ ...p, idx: i, status: "upcoming", stake: 0, pnl: 0 }));
 
-        // First pending pick gets stake calculated
-        if (session.length > 0) {
-            session[0].status = "pending";
-            session[0].stake  = parseFloat(calcMasStake(
-                bankroll, target, n, k, rawPicks.length, k, session[0].fair_odds
-            ).toFixed(2));
-        }
+        // Generate ID and name
+        activeId    = STORAGE_PREFIX + Date.now();
+        isReviewing = true;
 
+        const nameEl = document.getElementById("session-name-input");
+        nameEl.value = autoName(dateFrom, dateTo, rawPicks.length);
+
+        document.getElementById("review-phase").style.display = "block";
+
+        saveSession();
         renderSession();
 
     } catch (e) {
@@ -480,39 +755,66 @@ async function buildSession() {
     }
 }
 
-// ── Render full session ──
+// ── Accept session — locks list, activates first pick ──
+function acceptSession() {
+    if (session.length === 0) { alert("No picks to accept."); return; }
+
+    // Save the potentially edited name
+    const nameEl = document.getElementById("session-name-input");
+    if (nameEl) sessionCfg.name = nameEl.value || sessionCfg.name;
+
+    isReviewing = false;
+    document.getElementById("review-phase").style.display = "none";
+
+    // Activate first pick
+    const { bankroll, n, k, target } = sessionCfg;
+    const active = session.filter(p => p.status !== "removed");
+    if (active.length > 0 && active[0].status === "upcoming") {
+        active[0].status = "pending";
+        active[0].stake  = parseFloat(calcMasStake(bankroll, target, n, k, active.length, k, active[0].fair_odds).toFixed(2));
+    }
+
+    saveSession();
+    renderSession();
+}
+
+// ── Render session ──
 function renderSession() {
-    // Progress card
     const progressCard = document.getElementById("progress-card");
     progressCard.classList.add("visible");
 
-    const done    = session.filter(p => p.status === "won" || p.status === "lost").length;
-    const wins    = session.filter(p => p.status === "won").length;
-    const losses  = session.filter(p => p.status === "lost").length;
-    const pnl     = session.reduce((s, p) => s + (p.pnl || 0), 0);
-    const total   = session.filter(p => p.status !== "removed").length;
+    const active  = session.filter(p => p.status !== "removed");
+    const done    = active.filter(p => p.status === "won" || p.status === "lost").length;
+    const wins    = active.filter(p => p.status === "won").length;
+    const losses  = active.filter(p => p.status === "lost").length;
+    const pnl     = active.reduce((s, p) => s + (p.pnl || 0), 0);
+    const total   = active.length;
 
-    document.getElementById("st-total").textContent   = `${done}/${total}`;
-    document.getElementById("st-wins").textContent    = wins;
-    document.getElementById("st-losses").textContent  = losses;
-    document.getElementById("st-pnl").textContent     = `${pnl >= 0 ? "+" : ""}€${pnl.toFixed(0)}`;
-    document.getElementById("st-pnl").className       = `sv ${pnl >= 0 ? "sv-neon" : "sv-away"}`;
+    document.getElementById("st-total").textContent  = `${done}/${total}`;
+    document.getElementById("st-wins").textContent   = wins;
+    document.getElementById("st-losses").textContent = losses;
+    document.getElementById("st-pnl").textContent    = `${pnl >= 0 ? "+" : ""}€${pnl.toFixed(0)}`;
+    document.getElementById("st-pnl").className      = `sv ${pnl >= 0 ? "sv-neon" : "sv-away"}`;
 
     const pct = total > 0 ? (done / total * 100).toFixed(0) : 0;
     document.getElementById("prog-fill").style.width  = `${pct}%`;
     document.getElementById("prog-label").textContent = `${done} of ${total} complete`;
 
-    // Pick list
     let html = "";
     session.forEach((pick, i) => {
         if (pick.status === "removed") return;
 
-        // Gap indicator between picks
-        if (i > 0 && session[i-1] && session[i-1].status !== "removed") {
-            const prev = session[i-1];
-            const sameDay = prev.date === pick.date;
-            html += `<div class="gap-indicator ${sameDay ? 'gap-warn' : 'gap-ok'}">
-                ${sameDay ? "⚠ SAME DAY" : "✓ DIFFERENT DAY"} · 105+ MIN BUFFER
+        // Gap indicator
+        const activeList = session.filter(p => p.status !== "removed");
+        const posInActive = activeList.indexOf(pick);
+        let gapHtml = "";
+        if (posInActive > 0) {
+            const prev     = activeList[posInActive - 1];
+            const prevEnd  = prev.kickoff  ? new Date(new Date(prev.kickoff).getTime() + 105*60000) : null;
+            const thisKick = pick.kickoff  ? new Date(pick.kickoff) : null;
+            const overlap  = prevEnd && thisKick && thisKick < prevEnd;
+            gapHtml = `<div class="gap-indicator ${overlap ? 'gap-warn' : 'gap-ok'}">
+                ${overlap ? '⚠ OVERLAPPING TIMES' : '✓ SEQUENTIAL · SAFE TO PROCEED'}
             </div>`;
         }
 
@@ -521,47 +823,30 @@ function renderSession() {
         const isWon      = pick.status === "won";
         const isLost     = pick.status === "lost";
 
-        // Format kickoff time
-        let kickoffStr = "";
+        // Kickoff display
+        let kickoffStr = pick.date;
         if (pick.kickoff && pick.kickoff.length > 10) {
             try {
-                const ko   = new Date(pick.kickoff);
-                const time = ko.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-                const day  = ko.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
-                kickoffStr = `${time} · ${day}`;
-            } catch(e) { kickoffStr = pick.date; }
-        } else {
-            kickoffStr = pick.date;
+                const ko  = new Date(pick.kickoff);
+                kickoffStr = ko.toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" })
+                           + " · " + ko.toLocaleDateString([], { weekday:"short", day:"numeric", month:"short" });
+            } catch(e) {}
         }
 
-        // Gap indicator — compare kickoff times for overlap detection
-        let gapHtml = "";
-        if (i > 0) {
-            const prev = session.filter(p => p.status !== "removed")[session.filter(p => p.status !== "removed").indexOf(pick) - 1];
-            if (prev) {
-                const prevEnd  = prev.kickoff  ? new Date(new Date(prev.kickoff).getTime()  + 105*60000) : null;
-                const thisKick = pick.kickoff  ? new Date(pick.kickoff) : null;
-                const overlap  = prevEnd && thisKick && thisKick < prevEnd;
-                gapHtml = `<div class="gap-indicator ${overlap ? 'gap-warn' : 'gap-ok'}">
-                    ${overlap ? '⚠ OVERLAPPING TIMES — results may not be known' : '✓ SEQUENTIAL · SAFE TO PROCEED'}
-                </div>`;
-            }
-        }
+        // Hard-remove button (review phase only)
+        const hardRemoveBtn = isReviewing
+            ? `<button class="btn-hard-remove" onclick="hardRemovePick(${i})" title="Remove pick">✕</button>` : "";
 
         const resultTag = isWon
-            ? `<div class="result-tag tag-won">✓ WON · +€${(pick.stake * (pick.fair_odds - 1)).toFixed(2)}</div>`
+            ? `<div class="result-tag tag-won">✓ WON · +€${(pick.stake*(pick.fair_odds-1)).toFixed(2)}</div>`
             : isLost
-            ? `<div class="result-tag tag-lost">✗ LOST · -€${pick.stake.toFixed(2)}</div>`
-            : "";
+            ? `<div class="result-tag tag-lost">✗ LOST · -€${pick.stake.toFixed(2)}</div>` : "";
 
-        // Bookie odds input — pending pick only
-        // When user enters bookie odds, stake recalculates using actual payout
         const bookieOddsInput = isPending ? `
             <div style="margin-top:8px;padding-top:8px;border-top:1px solid #1a1d28;">
                 <div style="font-size:0.58rem;letter-spacing:2px;color:var(--dim);text-transform:uppercase;margin-bottom:6px;">Your Bookie Odds (optional)</div>
                 <div style="display:flex;gap:8px;align-items:center;">
-                    <input type="number" id="bookie-odds-${i}"
-                        placeholder="e.g. 1.85" step="0.01" min="1.01" inputmode="decimal"
+                    <input type="number" id="bookie-odds-${i}" placeholder="e.g. 1.85" step="0.01" min="1.01" inputmode="decimal"
                         style="flex:1;padding:8px 10px;border-radius:8px;background:#000;border:1px solid rgba(255,204,0,0.3);color:var(--gold);font-family:Orbitron,sans-serif;font-size:0.78rem;outline:none;"
                         oninput="applyBookieOdds(${i}, this.value)">
                     <span id="kelly-badge-${i}" style="font-family:Orbitron,sans-serif;font-size:0.65rem;color:var(--dim);min-width:60px;text-align:right;"></span>
@@ -571,27 +856,29 @@ function renderSession() {
 
         const actionBtns = isPending ? `
             <div class="result-btns">
-                <button class="btn-won"  onclick="recordResult(${i}, 'won')">✓ WON</button>
-                <button class="btn-lost" onclick="recordResult(${i}, 'lost')">✗ LOST</button>
+                <button class="btn-won"  onclick="recordResult(${i},'won')">✓ WON</button>
+                <button class="btn-lost" onclick="recordResult(${i},'lost')">✗ LOST</button>
                 <button class="btn-remove" onclick="requestReplacement(${i})">↺</button>
             </div>` : "";
 
         const staleWarn = pick.days_out > 3
-            ? `<div style="font-size:0.62rem;color:var(--gold);margin-top:4px;">⚠ ${pick.days_out} days away — verify team news</div>`
-            : "";
+            ? `<div style="font-size:0.62rem;color:var(--gold);margin-top:4px;">⚠ ${pick.days_out} days away — verify team news</div>` : "";
+
+        const cardStatus = isReviewing ? "reviewing" : pick.status;
 
         html += `
         ${gapHtml}
-        <div class="pick-card ${pick.status}" id="pick-${i}">
-            <div class="pick-num">${i + 1}</div>
+        <div class="pick-card ${cardStatus}" id="pick-${i}">
+            <div class="pick-num">${posInActive + 1}</div>
+            ${hardRemoveBtn}
             <div class="pick-body">
                 <div class="pick-match">${pick.home} vs ${pick.away}</div>
                 <div class="pick-meta">🕐 ${kickoffStr} · ${pick.league}</div>
-                <span class="pick-market-badge mkt-${pick.mkt_type || '1X2'}">${pick.market}</span>
+                <span class="pick-market-badge mkt-${pick.mkt_type||'1X2'}">${pick.market}</span>
                 <span class="pick-prob">${pick.prob}% · Fair: ${pick.fair_odds}</span>
                 ${staleWarn}
                 ${resultTag}
-                ${isPending || isUpcoming ? `
+                ${(isPending || isUpcoming) && !isReviewing ? `
                 <div class="stake-row">
                     <span class="stake-label">${isPending ? "STAKE NOW" : "EST. STAKE"}</span>
                     <span class="stake-val" id="stake-${i}">€${pick.stake.toFixed(2)}</span>
@@ -603,12 +890,57 @@ function renderSession() {
     });
 
     document.getElementById("pick-list").innerHTML = html;
-
-    // Check if session is complete
-    checkSessionComplete();
+    if (!isReviewing) checkSessionComplete();
+    saveSession();
 }
 
-// ── Record result (WON or LOST) ──
+// ── Hard remove (review phase only) ──
+function hardRemovePick(idx) {
+    if (!isReviewing) return;
+    session[idx].status = "removed";
+    renderSession();
+}
+
+// ── Open add-from-reserves panel ──
+function openAddPanel() {
+    addingMode  = true;
+    removingIdx = null;
+
+    document.getElementById("rep-panel-title").textContent = "＋ ADD FIXTURE FROM RESERVES";
+
+    const usedFixtures = new Set(session.filter(p => p.status !== "removed").map(p => `${p.home}|${p.away}`));
+    const available    = reserves.filter(r => !usedFixtures.has(`${r.home}|${r.away}`)).slice(0, 10);
+
+    if (!available.length) {
+        alert("No reserve fixtures available to add.");
+        return;
+    }
+
+    const opts = document.getElementById("rep-options");
+    opts.innerHTML = available.map((r, i) => {
+        const rKo     = r.kickoff && r.kickoff.length > 10 ? new Date(r.kickoff) : null;
+        const timeStr = rKo
+            ? rKo.toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" }) + " · " +
+              rKo.toLocaleDateString([], { weekday:"short", day:"numeric", month:"short" })
+            : r.date;
+        return `
+        <div class="rep-option" onclick="selectReplacement(${i})" id="rep-opt-${i}">
+            <div>
+                <div class="rep-match">${r.home} vs ${r.away}</div>
+                <div class="rep-market">${r.market} · ${timeStr} · ${r.league}</div>
+            </div>
+            <div class="rep-score">${r.prob}%<br><span style="font-size:0.6rem;color:var(--dim);">${r.fair_odds}</span></div>
+        </div>`;
+    }).join("");
+
+    const panel = document.getElementById("rep-panel");
+    panel._available = available;
+    panel._selected  = null;
+    panel.classList.add("visible");
+    panel.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// ── Record result ──
 function recordResult(idx, result) {
     const pick = session[idx];
     if (!pick || pick.status !== "pending") return;
@@ -618,34 +950,21 @@ function recordResult(idx, result) {
         ? parseFloat((pick.stake * (pick.fair_odds - 1)).toFixed(2))
         : -parseFloat(pick.stake.toFixed(2));
 
-    // Find next pick to make pending
     const nextIdx = session.findIndex((p, i) => i > idx && p.status === "upcoming");
-
     if (nextIdx !== -1) {
-        // Recalculate Masaniello for remaining picks — conservative mode
         const wins_so_far    = session.filter(p => p.status === "won").length;
-        const settled        = session.filter(p => p.status === "won" || p.status === "lost").length;
         const remaining_bets = session.filter(p => p.status === "upcoming" || p.status === "pending").length;
         const k_remaining    = Math.max(sessionCfg.k - wins_so_far, 0);
-        const bankroll       = sessionCfg.bankroll;
-        const target         = sessionCfg.target;
+        const { bankroll, n, k, target } = sessionCfg;
 
         session[nextIdx].status = "pending";
-        session[nextIdx].stake  = parseFloat(calcMasStake(
-            bankroll, target, sessionCfg.n, sessionCfg.k,
-            remaining_bets, k_remaining, session[nextIdx].fair_odds
-        ).toFixed(2));
+        session[nextIdx].stake  = parseFloat(calcMasStake(bankroll, target, n, k, remaining_bets, k_remaining, session[nextIdx].fair_odds).toFixed(2));
 
-        // Estimate stakes for all remaining upcoming picks
-        let rem_bets = remaining_bets - 1;
-        let rem_wins = k_remaining;
+        let rem = remaining_bets - 1;
         session.forEach((p, i) => {
             if (i > nextIdx && p.status === "upcoming") {
-                rem_bets--;
-                p.stake = parseFloat(calcMasStake(
-                    bankroll, target, sessionCfg.n, sessionCfg.k,
-                    rem_bets + 1, rem_wins, p.fair_odds
-                ).toFixed(2));
+                rem--;
+                p.stake = parseFloat(calcMasStake(bankroll, target, n, k, rem + 1, k_remaining, p.fair_odds).toFixed(2));
             }
         });
     }
@@ -653,44 +972,33 @@ function recordResult(idx, result) {
     renderSession();
 }
 
-// ── Apply bookie odds — recalc stake using actual payout ──
+// ── Apply bookie odds to pending pick ──
 function applyBookieOdds(idx, oddsStr) {
-    const pick     = session[idx];
+    const pick    = session[idx];
     if (!pick || pick.status !== "pending") return;
-
-    const odds     = parseFloat(oddsStr);
-    const badgeEl  = document.getElementById(`kelly-badge-${idx}`);
-    const adjEl    = document.getElementById(`stake-adj-${idx}`);
-    const stakeEl  = document.getElementById(`stake-${idx}`);
+    const odds    = parseFloat(oddsStr);
+    const badgeEl = document.getElementById(`kelly-badge-${idx}`);
+    const adjEl   = document.getElementById(`stake-adj-${idx}`);
+    const stakeEl = document.getElementById(`stake-${idx}`);
+    const { bankroll, n, k, target } = sessionCfg;
 
     if (!odds || isNaN(odds) || odds <= 1.0) {
-        // Revert to fair odds stake
-        pick.stake = parseFloat(calcMasStake(
-            sessionCfg.bankroll, sessionCfg.target, sessionCfg.n, sessionCfg.k,
-            session.filter(p => p.status === "upcoming" || p.status === "pending").length,
-            Math.max(sessionCfg.k - session.filter(p => p.status === "won").length, 0),
-            pick.fair_odds
-        ).toFixed(2));
+        const wins_so_far    = session.filter(p => p.status === "won").length;
+        const remaining_bets = session.filter(p => p.status === "upcoming" || p.status === "pending").length;
+        const k_remaining    = Math.max(k - wins_so_far, 0);
+        pick.stake = parseFloat(calcMasStake(bankroll, target, n, k, remaining_bets, k_remaining, pick.fair_odds).toFixed(2));
         if (stakeEl) stakeEl.textContent = `€${pick.stake.toFixed(2)}`;
         if (badgeEl) badgeEl.textContent = "";
         if (adjEl)   adjEl.textContent   = "";
         return;
     }
 
-    // Recalculate Masaniello stake using bookie odds instead of fair odds
     const wins_so_far    = session.filter(p => p.status === "won").length;
     const remaining_bets = session.filter(p => p.status === "upcoming" || p.status === "pending").length;
-    const k_remaining    = Math.max(sessionCfg.k - wins_so_far, 0);
+    const k_remaining    = Math.max(k - wins_so_far, 0);
+    pick.stake = parseFloat(calcMasStake(bankroll, target, n, k, remaining_bets, k_remaining, odds).toFixed(2));
+    if (stakeEl) stakeEl.textContent = `€${pick.stake.toFixed(2)}`;
 
-    const newStake = parseFloat(calcMasStake(
-        sessionCfg.bankroll, sessionCfg.target, sessionCfg.n, sessionCfg.k,
-        remaining_bets, k_remaining, odds
-    ).toFixed(2));
-
-    pick.stake = newStake;
-    if (stakeEl) stakeEl.textContent = `€${newStake.toFixed(2)}`;
-
-    // Kelly edge check
     const fairOdds = pick.fair_odds;
     const p        = 1 / fairOdds;
     const q        = 1 - p;
@@ -699,9 +1007,9 @@ function applyBookieOdds(idx, oddsStr) {
     const edge     = (odds / fairOdds) - 1;
 
     if (edge > 0.05 && f_star > 0) {
-        const kellyStake = (0.25 * f_star * sessionCfg.bankroll).toFixed(2);
-        if (badgeEl) { badgeEl.style.color = "var(--neon)"; badgeEl.textContent = `★ VALUE`; }
-        if (adjEl)   adjEl.innerHTML = `<span style="color:var(--neon);">+${(edge*100).toFixed(1)}% edge · ¼ Kelly: €${kellyStake}</span>`;
+        const ks = (0.25 * f_star * bankroll).toFixed(2);
+        if (badgeEl) { badgeEl.style.color = "var(--neon)"; badgeEl.textContent = "★ VALUE"; }
+        if (adjEl)   adjEl.innerHTML = `<span style="color:var(--neon);">+${(edge*100).toFixed(1)}% edge · ¼ Kelly: €${ks}</span>`;
     } else if (edge > 0) {
         if (badgeEl) { badgeEl.style.color = "var(--draw)"; badgeEl.textContent = "Thin"; }
         if (adjEl)   adjEl.innerHTML = `<span style="color:var(--draw);">Thin edge — proceed with caution</span>`;
@@ -710,26 +1018,26 @@ function applyBookieOdds(idx, oddsStr) {
         if (adjEl)   adjEl.innerHTML = `<span style="color:var(--dim);">Bookie odds below fair price</span>`;
     }
 }
+
+// ── Request replacement (live phase) ──
 function requestReplacement(idx) {
     removingIdx = idx;
+    addingMode  = false;
+    document.getElementById("rep-panel-title").textContent = "⚡ SELECT REPLACEMENT";
 
-    const GAP_MS = 90 * 60 * 1000;
-
-    // Find adjacent active picks to determine the valid kickoff window
+    const GAP_MS = 105 * 60 * 1000;
     const active   = session.filter(p => p.status !== "removed");
     const slotPos  = active.indexOf(session[idx]);
     const prevPick = slotPos > 0 ? active[slotPos - 1] : null;
     const nextPick = slotPos < active.length - 1 ? active[slotPos + 1] : null;
-
     const prevKo   = prevPick && prevPick.kickoff ? new Date(prevPick.kickoff) : null;
     const nextKo   = nextPick && nextPick.kickoff ? new Date(nextPick.kickoff) : null;
     const earliest = prevKo ? new Date(prevKo.getTime() + GAP_MS) : null;
     const latest   = nextKo ? new Date(nextKo.getTime() - GAP_MS) : null;
-
-    const usedFixtures = new Set(session.map(p => `${p.home}|${p.away}`));
+    const used     = new Set(session.map(p => `${p.home}|${p.away}`));
 
     const available = reserves.filter(r => {
-        if (usedFixtures.has(`${r.home}|${r.away}`)) return false;
+        if (used.has(`${r.home}|${r.away}`)) return false;
         if (!r.kickoff || r.kickoff.length <= 10) return true;
         const rKo = new Date(r.kickoff);
         if (earliest && rKo < earliest) return false;
@@ -737,19 +1045,18 @@ function requestReplacement(idx) {
         return true;
     }).slice(0, 8);
 
-    if (available.length === 0) {
-        alert("No valid replacements — no reserves fit the 90-minute gap around this slot.");
+    if (!available.length) {
+        alert("No valid replacements fit the 105-minute gap around this slot.");
         return;
     }
 
     const panel = document.getElementById("rep-panel");
     const opts  = document.getElementById("rep-options");
-
     opts.innerHTML = available.map((r, i) => {
         const rKo     = r.kickoff && r.kickoff.length > 10 ? new Date(r.kickoff) : null;
         const timeStr = rKo
-            ? rKo.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + " · " +
-              rKo.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })
+            ? rKo.toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" }) + " · " +
+              rKo.toLocaleDateString([], { weekday:"short", day:"numeric", month:"short" })
             : r.date;
         return `
         <div class="rep-option" onclick="selectReplacement(${i})" id="rep-opt-${i}">
@@ -770,21 +1077,16 @@ function requestReplacement(idx) {
 function selectReplacement(i) {
     const panel = document.getElementById("rep-panel");
     panel._selected = panel._available[i];
-
-    // Highlight selected
     document.querySelectorAll(".rep-option").forEach((el, idx) => {
         el.style.borderColor = idx === i ? "var(--gold)" : "#2a2d3a";
         el.style.background  = idx === i ? "var(--gold-dim)" : "transparent";
     });
-
-    // Show confirm button
     let confBtn = document.getElementById("rep-confirm");
     if (!confBtn) {
         confBtn = document.createElement("button");
-        confBtn.id        = "rep-confirm";
-        confBtn.className = "rep-confirm-btn";
-        confBtn.textContent = "CONFIRM REPLACEMENT";
-        confBtn.onclick   = confirmReplacement;
+        confBtn.id = "rep-confirm"; confBtn.className = "rep-confirm-btn";
+        confBtn.textContent = addingMode ? "CONFIRM ADD" : "CONFIRM REPLACEMENT";
+        confBtn.onclick = confirmReplacement;
         document.getElementById("rep-options").after(confBtn);
     }
 }
@@ -792,50 +1094,40 @@ function selectReplacement(i) {
 function confirmReplacement() {
     const panel = document.getElementById("rep-panel");
     const repl  = panel._selected;
-    if (!repl || removingIdx === null) return;
+    if (!repl) return;
 
-    const oldPick = session[removingIdx];
-
-    // Build the replacement pick object
-    const newPick = {
-        ...repl,
-        idx:    removingIdx,
-        status: "pending",
-        stake:  oldPick.stake,
-        pnl:    0,
-    };
-
-    // Find the correct chronological insertion point among upcoming picks.
-    // The replacement should slot in wherever its kickoff time fits — not
-    // blindly into the removed pick's index position.
-    const activeUpcoming = session
-        .map((p, i) => ({ p, i }))
-        .filter(({ p }) => p.status === "upcoming");
-
-    // Remove the old pick from the session array
-    session.splice(removingIdx, 1);
-
-    // Find where to insert based on kickoff time
-    const replKickoff = repl.kickoff || repl.date;
-    let insertAt = session.length; // default: append at end
-    for (let i = 0; i < session.length; i++) {
-        const s = session[i];
-        if (s.status === "upcoming" || s.status === "pending") {
-            const sKickoff = s.kickoff || s.date;
-            if (replKickoff <= sKickoff) {
-                insertAt = i;
-                break;
+    if (addingMode) {
+        // ADD: insert at correct chronological position in session
+        const newPick = { ...repl, status: isReviewing ? "upcoming" : "upcoming", stake: 0, pnl: 0 };
+        const replKo  = repl.kickoff || repl.date;
+        let insertAt  = session.length;
+        for (let i = 0; i < session.length; i++) {
+            if (session[i].status !== "removed") {
+                const sKo = session[i].kickoff || session[i].date;
+                if (replKo <= sKo) { insertAt = i; break; }
             }
         }
+        session.splice(insertAt, 0, newPick);
+        session.forEach((p, i) => { p.idx = i; });
+        reserves = reserves.filter(r => !(r.home === repl.home && r.away === repl.away));
+    } else {
+        // REPLACE: slot into removed pick's position then sort
+        if (removingIdx === null) return;
+        const oldPick = session[removingIdx];
+        const newPick = { ...repl, idx: removingIdx, status: "pending", stake: oldPick.stake, pnl: 0 };
+        session.splice(removingIdx, 1);
+        const replKo = repl.kickoff || repl.date;
+        let insertAt = session.length;
+        for (let i = 0; i < session.length; i++) {
+            if (session[i].status === "upcoming" || session[i].status === "pending") {
+                const sKo = session[i].kickoff || session[i].date;
+                if (replKo <= sKo) { insertAt = i; break; }
+            }
+        }
+        session.splice(insertAt, 0, newPick);
+        session.forEach((p, i) => { p.idx = i; });
+        reserves = reserves.filter(r => !(r.home === repl.home && r.away === repl.away));
     }
-
-    session.splice(insertAt, 0, newPick);
-
-    // Re-index all picks
-    session.forEach((p, i) => { p.idx = i; });
-
-    // Remove from reserves
-    reserves = reserves.filter(r => !(r.home === repl.home && r.away === repl.away));
 
     cancelReplacement();
     renderSession();
@@ -843,10 +1135,12 @@ function confirmReplacement() {
 
 function cancelReplacement() {
     removingIdx = null;
+    addingMode  = false;
     const panel = document.getElementById("rep-panel");
     panel.classList.remove("visible");
     const conf = document.getElementById("rep-confirm");
     if (conf) conf.remove();
+    document.getElementById("rep-panel-title").textContent = "⚡ SELECT REPLACEMENT";
 }
 
 // ── Check session complete ──
@@ -854,48 +1148,44 @@ function checkSessionComplete() {
     const active  = session.filter(p => p.status !== "removed");
     const settled = active.filter(p => p.status === "won" || p.status === "lost");
     const pending = active.filter(p => p.status === "pending" || p.status === "upcoming");
-
     if (settled.length === 0 || pending.length > 0) return;
 
-    const wins   = active.filter(p => p.status === "won").length;
-    const pnl    = active.reduce((s, p) => s + (p.pnl || 0), 0);
-    const target = sessionCfg.target;
+    const wins    = active.filter(p => p.status === "won").length;
+    const pnl     = active.reduce((s, p) => s + (p.pnl || 0), 0);
     const success = wins >= sessionCfg.k;
 
-    const card   = document.getElementById("complete-card");
-    const title  = document.getElementById("complete-title");
-    const pnlEl  = document.getElementById("final-pnl");
-    const subEl  = document.getElementById("final-sub");
-    const sumEl  = document.getElementById("complete-summary");
-
-    title.textContent   = success ? "🏆 SESSION TARGET HIT" : "SESSION COMPLETE";
-    title.className     = `complete-title ${success ? "success" : "fail"}`;
-    pnlEl.textContent   = `${pnl >= 0 ? "+" : ""}€${pnl.toFixed(2)}`;
-    pnlEl.className     = `final-pnl ${pnl >= 0 ? "pos" : "neg"}`;
-    subEl.textContent   = `${wins} wins from ${settled.length} bets`;
-    sumEl.textContent   = success
-        ? `Target was €${target}. Session completed successfully.`
+    document.getElementById("complete-title").textContent = success ? "🏆 SESSION TARGET HIT" : "SESSION COMPLETE";
+    document.getElementById("complete-title").className   = `complete-title ${success ? "success" : "fail"}`;
+    document.getElementById("final-pnl").textContent      = `${pnl >= 0 ? "+" : ""}€${pnl.toFixed(2)}`;
+    document.getElementById("final-pnl").className        = `final-pnl ${pnl >= 0 ? "pos" : "neg"}`;
+    document.getElementById("final-sub").textContent      = `${wins} wins from ${settled.length} bets`;
+    document.getElementById("complete-summary").textContent = success
+        ? `Target was €${sessionCfg.target}. Session completed successfully.`
         : `Needed ${sessionCfg.k} wins, got ${wins}.`;
 
-    card.classList.add("visible");
-    card.scrollIntoView({ behavior: "smooth" });
+    document.getElementById("complete-card").classList.add("visible");
+    document.getElementById("complete-card").scrollIntoView({ behavior: "smooth" });
+    saveSession();
 }
 
-// ── Reset session ──
-function resetSession() {
-    session     = [];
-    reserves    = [];
-    sessionCfg  = {};
-    removingIdx = null;
-
-    document.getElementById("config-card").style.display = "block";
-    document.getElementById("progress-card").classList.remove("visible");
-    document.getElementById("complete-card").classList.remove("visible");
-    document.getElementById("rep-panel").classList.remove("visible");
-    document.getElementById("pick-list").innerHTML = "";
-
-    window.scrollTo({ top: 0, behavior: "smooth" });
-}
+// ── On load: restore sidebar and last active session ──
+window.addEventListener("load", () => {
+    renderSidebar();
+    // Restore the most recently active session if one exists
+    const ids = allSessionIds();
+    if (ids.length > 0) {
+        // Find the most recently saved session
+        let latest = ids[0];
+        let latestTime = 0;
+        ids.forEach(id => {
+            try {
+                const d = JSON.parse(localStorage.getItem(id));
+                if (d.savedAt > latestTime) { latestTime = d.savedAt; latest = id; }
+            } catch(e) {}
+        });
+        loadSessionById(latest);
+    }
+});
 </script>
 </body>
 </html>

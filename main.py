@@ -4,16 +4,16 @@ import time
 import json
 import random
 import calendar
+import bisect
 import requests
 import threading
-import netrc
 import functools
 from datetime import date as _date, timedelta
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 # =========================================================
-# 🚀 APP INIT & ENV CHECK
+# 🚀 APP INIT
 # =========================================================
 app = Flask(__name__)
 CORS(app)
@@ -23,7 +23,7 @@ if not API_KEY:
     raise RuntimeError("CRITICAL: FOOTBALL_API_KEY environment variable not set!")
 
 BASE_URL = "https://api.football-data.org/v4"
-HEADERS = {"X-Auth-Token": API_KEY}
+HEADERS  = {"X-Auth-Token": API_KEY}
 
 COMPETITIONS = ["CL", "PL", "PD", "BL1", "SA", "FL1", "ELC", "DED", "PPL", "BSA"]
 
@@ -41,30 +41,10 @@ LEAGUE_HOME_ADV = {
 }
 DEFAULT_HOME_ADV = 1.10
 
-# =========================================================
-# 🎲 ODDS API
-# =========================================================
-ODDS_API_KEY  = os.getenv("ODDS_API_KEY")
-ODDS_API_BASE = "https://api.the-odds-api.com/v4/sports"
-
-ODDS_SPORT_KEYS = {
-    "PL":  "soccer_england_league1",
-    "BL1": "soccer_germany_bundesliga",
-    "PD":  "soccer_spain_la_liga",
-    "SA":  "soccer_italy_serie_a",
-    "FL1": "soccer_france_ligue_one",
-    "CL":  "soccer_uefa_champions_league",
-    "ELC": "soccer_efl_champ",          # FIX: was soccer_england_league2 (League Two) — ELC is Championship
-    "DED": "soccer_netherlands_eredivisie",
-    "PPL": "soccer_portugal_primeira_liga",
-    "BSA": "soccer_brazil_campeonato",
-}
-
+# Bayesian blend weights — 40% Poisson model, 60% market
+# Applied only when user manually enters bookie odds in the Kelly staker
 WEIGHT_POISSON = 0.40
 WEIGHT_MARKET  = 0.60
-
-odds_cache: dict = {}
-ODDS_EXPIRY = 10800  # 3 hours
 
 fetch_lock             = threading.Lock()
 football_api_lock      = threading.Lock()
@@ -74,11 +54,10 @@ form_cache: dict       = {}
 fixtures_store: dict   = {}
 
 FOOTBALL_API_MIN_INTERVAL = 6.5
-CACHE_FILE        = "cache.json"
-ODDS_CACHE_FILE   = "odds_cache.json"   # FIX 9: persist odds cache across restarts
-CACHE_MAX_AGE     = 3600
-STANDINGS_EXPIRY  = 86400
-FORM_EXPIRY       = 3600
+CACHE_FILE       = "cache.json"
+CACHE_MAX_AGE    = 3600
+STANDINGS_EXPIRY = 86400
+FORM_EXPIRY      = 3600
 
 def football_data_get(url: str, **kwargs):
     global football_api_last_call
@@ -128,278 +107,15 @@ def get_cache_age() -> float:
     except:
         return float("inf")
 
-
-def load_odds_cache_from_disk():
-    """FIX 9: Load persisted odds cache on boot so restarts don't burn API quota."""
-    global odds_cache
-    if not os.path.exists(ODDS_CACHE_FILE):
-        return
-    try:
-        with open(ODDS_CACHE_FILE, "r") as f:
-            raw = json.load(f)
-        now = time.time()
-        loaded = 0
-        for comp, entry in raw.items():
-            # Only restore if still within expiry window
-            if now - entry.get("t", 0) < ODDS_EXPIRY:
-                odds_cache[comp] = entry
-                loaded += 1
-        if loaded:
-            print(f"[ODDS DISK] Restored {loaded} competition odds from disk")
-    except Exception as e:
-        print(f"[ODDS DISK] Load error: {e}")
-
-
-def save_odds_cache_to_disk():
-    """FIX 9: Persist current odds cache to disk."""
-    try:
-        with open(ODDS_CACHE_FILE, "w") as f:
-            json.dump(odds_cache, f)
-    except Exception as e:
-        print(f"[ODDS DISK] Save error: {e}")
-
 # =========================================================
-# 🎲 ODDS ENGINE — expanded to h2h + totals + spreads + double_chance
-# =========================================================
-def get_market_odds(comp: str) -> list:
-    """
-    Fetch pre-match odds from The Odds API for a competition.
-    Fetches h2h (1X2), totals (O/U), spreads (AH), double_chance in one call.
-    Uses median across bookmakers. Caches 3h to protect free tier quota.
-    """
-    if not ODDS_API_KEY:
-        return []
-    sport_key = ODDS_SPORT_KEYS.get(comp)
-    if not sport_key:
-        return []
-
-    now    = time.time()
-    cached = odds_cache.get(comp)
-    if cached and now - cached["t"] < ODDS_EXPIRY:
-        return cached["d"]
-
-    try:
-        r = requests.get(
-            f"{ODDS_API_BASE}/{sport_key}/odds",
-            params={
-                "apiKey":     ODDS_API_KEY,
-                "regions":    "eu",
-                "markets":    "h2h,totals,spreads,double_chance",
-                "oddsFormat": "decimal",
-            },
-            timeout=10
-        )
-
-        if r.status_code == 401:
-            print("[ODDS API] Invalid API key"); return []
-        if r.status_code == 422:
-            print(f"[ODDS API] Sport key not supported: {sport_key}"); return []
-        if r.status_code != 200:
-            print(f"[ODDS API] {comp} returned {r.status_code}"); return []
-
-        events    = r.json()
-        remaining = r.headers.get("x-requests-remaining", "?")
-        print(f"[ODDS API] {comp} — {len(events)} events. Markets: h2h+totals+spreads+dc. Quota left: {remaining}")
-
-        def median(lst):
-            if not lst: return None
-            s = sorted(lst); n = len(s)
-            return s[n//2] if n % 2 else (s[n//2-1] + s[n//2]) / 2
-
-        parsed = []
-        for ev in events:
-            try:
-                home_name = ev["home_team"]
-                away_name = ev["away_team"]
-
-                h2h_h, h2h_d, h2h_a  = [], [], []
-                dc_1x, dc_x2, dc_12  = [], [], []
-                totals: dict          = {}
-                spreads_h: dict       = {}
-                spreads_a: dict       = {}
-
-                for bookie in ev.get("bookmakers", []):
-                    for mkt in bookie.get("markets", []):
-                        key = mkt["key"]
-
-                        if key == "h2h":
-                            for o in mkt["outcomes"]:
-                                n = o["name"]
-                                if n == home_name:   h2h_h.append(o["price"])
-                                elif n == away_name: h2h_a.append(o["price"])
-                                else:                h2h_d.append(o["price"])
-
-                        elif key == "double_chance":
-                            for o in mkt["outcomes"]:
-                                n = o["name"]
-                                # The Odds API double_chance outcome names vary by bookie.
-                                # Match by checking if both team fragments present.
-                                hn = home_name[:5].lower()
-                                an = away_name[:5].lower()
-                                nl = n.lower()
-                                if "draw" in nl and (hn in nl or "1x" in nl):
-                                    dc_1x.append(o["price"])
-                                elif "draw" in nl and (an in nl or "x2" in nl):
-                                    dc_x2.append(o["price"])
-                                elif hn in nl and an in nl:
-                                    dc_12.append(o["price"])
-                                # Fallback: positional if exactly 3 outcomes
-                            # Simpler fallback: if lists still empty, try name-based
-                            if not dc_1x and not dc_x2 and not dc_12:
-                                outs = mkt["outcomes"]
-                                if len(outs) == 3:
-                                    dc_1x.append(outs[0]["price"])
-                                    dc_x2.append(outs[1]["price"])
-                                    dc_12.append(outs[2]["price"])
-
-                        elif key == "totals":
-                            for o in mkt["outcomes"]:
-                                pt = o.get("point", "")
-                                mk = f"{o['name'].lower()}_{pt}"
-                                totals.setdefault(mk, []).append(o["price"])
-
-                        elif key == "spreads":
-                            for o in mkt["outcomes"]:
-                                pt = o.get("point", 0)
-                                if o["name"] == home_name:
-                                    spreads_h.setdefault(str(pt), []).append(o["price"])
-                                else:
-                                    spreads_a.setdefault(str(pt), []).append(o["price"])
-
-                if not h2h_h or not h2h_a or not h2h_d:
-                    continue
-
-                entry = {
-                    "home_team":  home_name,
-                    "away_team":  away_name,
-                    "commence":   ev.get("commence_time", ""),
-                    "home_odds":  median(h2h_h),
-                    "draw_odds":  median(h2h_d),
-                    "away_odds":  median(h2h_a),
-                    "dc_1x_odds": median(dc_1x),
-                    "dc_x2_odds": median(dc_x2),
-                    "dc_12_odds": median(dc_12),
-                    "totals":     {k: median(v) for k, v in totals.items()},
-                    "spreads_h":  {k: median(v) for k, v in spreads_h.items()},
-                    "spreads_a":  {k: median(v) for k, v in spreads_a.items()},
-                }
-                parsed.append(entry)
-
-            except Exception as e:
-                print(f"[ODDS API] Parse error: {e}")
-                continue
-
-        odds_cache[comp] = {"t": now, "d": parsed}
-        save_odds_cache_to_disk()
-        return parsed
-
-    except Exception as e:
-        print(f"[ODDS API ERROR] {comp}: {e}")
-        return []
-
-
-def find_match_odds(events: list, home: str, away: str) -> dict | None:
-    """
-    FIX 7: Match fixture names between football-data.org and The Odds API.
-    Uses token-overlap (Jaccard) rather than substring containment to avoid
-    false positives like 'City' matching 'Man City' AND 'Bristol City'.
-    Requires at least 50% token overlap on both home and away names.
-    """
-    if not events:
-        return None
-
-    def tokenise(name: str) -> set:
-        # Lowercase, split on spaces/punctuation, drop short stop-words
-        import re
-        tokens = re.split(r'[\s\-\.]+', name.lower().strip())
-        return {t for t in tokens if len(t) > 1}
-
-    def jaccard(a: set, b: set) -> float:
-        if not a or not b: return 0.0
-        return len(a & b) / len(a | b)
-
-    ht = tokenise(home)
-    at = tokenise(away)
-
-    best_match = None
-    best_score = 0.0
-
-    for ev in events:
-        eh = tokenise(ev["home_team"])
-        ea = tokenise(ev["away_team"])
-
-        # Exact string match always wins
-        if ev["home_team"].lower().strip() == home.lower().strip() and \
-           ev["away_team"].lower().strip() == away.lower().strip():
-            return ev
-
-        score = jaccard(ht, eh) + jaccard(at, ea)
-        # Threshold: each side needs at least 0.30 Jaccard similarity.
-        # 0.30 catches heavy abbreviations: {"man","city"} vs {"manchester","city"}
-        # = 1 shared / 3 union = 0.33 ✓. Strict enough to prevent false positives.
-        if jaccard(ht, eh) >= 0.30 and jaccard(at, ea) >= 0.30 and score > best_score:
-            best_score = score
-            best_match = ev
-
-    return best_match
-
-
-def calc_edge(fair_odds: float, api_odds) -> float:
-    """Edge = (api_odds / fair_odds) - 1. Returns 0 if no real api price."""
-    if not api_odds or api_odds <= 1.0 or not fair_odds or fair_odds <= 1.0:
-        return 0.0
-    return round((api_odds / fair_odds) - 1, 4)
-
-
-def bayesian_blend(p_h: float, p_d: float, p_a: float,
-                   h_odds: float, d_odds: float, a_odds: float) -> tuple:
-    """
-    FIX 3: Blend Poisson 1X2 probabilities with market-implied probabilities.
-
-    BEFORE: Raw implied probs (1/odds) included bookmaker overround, which
-    systematically compressed draw probability since bookmakers apply higher
-    margin to draws. The old approach blended overround-inflated probs then
-    normalised — but the normalisation couldn't recover the lost draw signal.
-
-    NOW: Remove overround first by normalising the three raw implied probs to
-    sum to 1.0, then blend with Poisson. This gives the market's TRUE belief
-    about each outcome, overround-free, before weighting.
-
-    Returns (p_h_blended, p_d_blended, p_a_blended) already normalised.
-    """
-    # Raw market implied (includes overround)
-    raw_h = 1.0 / h_odds if h_odds > 1 else 0.0
-    raw_d = 1.0 / d_odds if d_odds > 1 else 0.0
-    raw_a = 1.0 / a_odds if a_odds > 1 else 0.0
-    total_raw = raw_h + raw_d + raw_a
-
-    if total_raw <= 0:
-        return p_h, p_d, p_a
-
-    # Overround-free market probabilities (Shin normalisation is more precise
-    # but simple division is industry standard and sufficient here)
-    mkt_h = raw_h / total_raw
-    mkt_d = raw_d / total_raw
-    mkt_a = raw_a / total_raw
-
-    # Weighted blend: 40% Poisson model, 60% overround-free market
-    b_h = WEIGHT_POISSON * p_h + WEIGHT_MARKET * mkt_h
-    b_d = WEIGHT_POISSON * p_d + WEIGHT_MARKET * mkt_d
-    b_a = WEIGHT_POISSON * p_a + WEIGHT_MARKET * mkt_a
-
-    # Normalise to guarantee sum = 1.0 (floating point safety)
-    b_tot = b_h + b_d + b_a
-    return b_h / b_tot, b_d / b_tot, b_a / b_tot
-
-# =========================================================
-# 📊 POISSON MATH — cached PMF + fast compute_probs
+# 📊 POISSON MATH
 # =========================================================
 @functools.lru_cache(maxsize=1024)
 def _pmf_vec(lam_q: int) -> tuple:
     """
-    Cached Poisson PMF for k=0..10. Extended from k=6 to eliminate truncation
-    bias — for λ=3.2, P(k≥7)≈7.6% was silently discarded before.
-    lam_q = round(lam * 1000) — quantised to 3dp for cache efficiency.
+    Cached Poisson PMF for k=0..10.
+    Extended from k=6 to eliminate truncation bias at high lambdas.
+    lam_q = round(lam * 1000) for cache key efficiency.
     """
     lam = max(min(lam_q / 1000.0, 3.5), 0.3)
     p   = math.exp(-lam)
@@ -409,16 +125,12 @@ def _pmf_vec(lam_q: int) -> tuple:
         out.append(p)
     return tuple(out)
 
-
 def poisson_vec(lam: float) -> tuple:
     return _pmf_vec(round(lam * 1000))
 
-
 def poisson(k: int, lam: float) -> float:
-    """Backward-compatible point lookup."""
     vec = poisson_vec(float(lam or DEFAULT_LEAGUE_AVG))
     return vec[k] if 0 <= k < 7 else 0.0
-
 
 def compute_probs(h_lam: float, a_lam: float):
     """
@@ -428,13 +140,10 @@ def compute_probs(h_lam: float, a_lam: float):
     hp = poisson_vec(h_lam)
     ap = poisson_vec(a_lam)
     n  = len(hp)
-
-    h_sum  = sum(hp)
-    a_sum  = sum(ap)
+    h_sum  = sum(hp); a_sum = sum(ap)
     t_mass = h_sum * a_sum
 
-    a_prefix = 0.0
-    p_h = p_d = 0.0
+    a_prefix = 0.0; p_h = p_d = 0.0
     for i in range(n):
         p_h      += hp[i] * a_prefix
         p_d      += hp[i] * ap[i]
@@ -452,7 +161,7 @@ def compute_probs(h_lam: float, a_lam: float):
     return p_h, p_d, p_a, p_btts, t_mass-le1, t_mass-le2, t_mass-le3
 
 # =========================================================
-# 📈 STANDINGS ENGINE (home/away splits + live league avg)
+# 📈 STANDINGS ENGINE
 # =========================================================
 def _parse_table(table: list) -> dict:
     return {
@@ -471,20 +180,17 @@ def get_standings(code: str) -> dict:
     cached = standings_cache.get(code)
     if cached and now - cached["t"] < STANDINGS_EXPIRY:
         return cached["d"]
-
     try:
         r = football_data_get(
             f"{BASE_URL}/competitions/{code}/standings",
             headers=HEADERS, timeout=10
         )
         if r.status_code == 429:
-            print(f"[RATE LIMIT] standings {code} — using stale cache")
             return cached["d"] if cached else {"total": {}, "home": {}, "away": {}}
         if r.status_code != 200:
             return cached["d"] if cached else {"total": {}, "home": {}, "away": {}}
 
         standings = r.json()["standings"]
-
         def get_table(stype):
             try:
                 return _parse_table(next(s for s in standings if s["type"] == stype)["table"])
@@ -496,8 +202,6 @@ def get_standings(code: str) -> dict:
             "home":  get_table("HOME"),
             "away":  get_table("AWAY"),
         }
-
-        # Live rolling league average from standings (replaces hardcoded constant)
         total_tbl = out.get("total", {})
         if total_tbl:
             raw_g  = sum(v["gf"] * v["played"] for v in total_tbl.values())
@@ -508,13 +212,12 @@ def get_standings(code: str) -> dict:
 
         standings_cache[code] = {"t": now, "d": out}
         return out
-
     except Exception as e:
         print(f"[STANDINGS ERROR] {code}: {e}")
         return cached["d"] if cached else {"total": {}, "home": {}, "away": {}}
 
 # =========================================================
-# ⚽ FORM ENGINE — exponential decay, 8 games, venue-specific
+# ⚽ FORM ENGINE
 # =========================================================
 FORM_DECAY = 0.75
 FORM_N     = 8
@@ -533,7 +236,6 @@ def get_detailed_form(team_id: int, league_avg: float = DEFAULT_LEAGUE_AVG, venu
 
     try:
         r = football_data_get(url, headers=HEADERS, timeout=10)
-
         if r.status_code == 429:
             if cached: return cached["atk"], cached["def"], cached["s"]
             return 1.0, 1.0, "???"
@@ -541,8 +243,7 @@ def get_detailed_form(team_id: int, league_avg: float = DEFAULT_LEAGUE_AVG, venu
             return 1.0, 1.0, "???"
 
         matches = r.json().get("matches", [])
-        history = []
-        w_gf = w_ga = w_total = 0.0
+        history = []; w_gf = w_ga = w_total = 0.0
 
         for idx, m in enumerate(matches):
             score = m["score"]["fullTime"]
@@ -551,9 +252,7 @@ def get_detailed_form(team_id: int, league_avg: float = DEFAULT_LEAGUE_AVG, venu
             is_home = m["homeTeam"]["id"] == team_id
             gf, ga  = (hs, aw) if is_home else (aw, hs)
             w        = FORM_DECAY ** idx
-            w_gf    += gf * w
-            w_ga    += ga * w
-            w_total += w
+            w_gf    += gf * w; w_ga += ga * w; w_total += w
             history.append("W" if gf > ga else ("D" if gf == ga else "L"))
 
         if w_total == 0 or not history:
@@ -561,48 +260,39 @@ def get_detailed_form(team_id: int, league_avg: float = DEFAULT_LEAGUE_AVG, venu
 
         avg_gf = w_gf / w_total
         avg_ga = max(w_ga / w_total, 0.1)
-
-        atk  = avg_gf / league_avg if league_avg > 0 else 1.0
-        def_ = league_avg / avg_ga
-        atk  = max(min(atk,  1.20), 0.80)
-        def_ = max(min(def_, 1.20), 0.80)
+        atk    = avg_gf / league_avg if league_avg > 0 else 1.0
+        def_   = league_avg / avg_ga
+        atk    = max(min(atk,  1.20), 0.80)
+        def_   = max(min(def_, 1.20), 0.80)
 
         form_str = "".join(history[:5])
         form_cache[cache_key] = {"t": now, "atk": atk, "def": def_, "s": form_str}
         return atk, def_, form_str
-
     except Exception as e:
         print(f"[FORM ERROR] team {team_id} {venue}: {e}")
         if cached: return cached["atk"], cached["def"], cached["s"]
         return 1.0, 1.0, "???"
 
 # =========================================================
-# ⚡ FIXTURE ENGINE (atomic swap + disk persistence)
+# ⚡ FIXTURE ENGINE
 # =========================================================
 def fetch_all_fixtures() -> bool:
     global fixtures_store
-
     if fixtures_store and get_cache_age() < CACHE_MAX_AGE:
         print("[CACHE] Fixtures fresh, skipping fetch")
         return True
-
     if not fetch_lock.acquire(blocking=False):
         print("[CACHE] Fetch already in progress, skipping")
         return bool(fixtures_store)
-
     try:
         print("[CACHE] Fetching fixtures from API...")
         now        = time.time()
         start_date = time.strftime("%Y-%m-%d", time.gmtime(now - 86400))
         end_date   = time.strftime("%Y-%m-%d", time.gmtime(now + 7 * 86400))
-
         r = football_data_get(
-            f"{BASE_URL}/matches",
-            headers=HEADERS,
-            params={"dateFrom": start_date, "dateTo": end_date},
-            timeout=25
+            f"{BASE_URL}/matches", headers=HEADERS,
+            params={"dateFrom": start_date, "dateTo": end_date}, timeout=25
         )
-
         if r.status_code == 429:
             print("[RATE LIMIT] fixtures — keeping existing store")
             return bool(fixtures_store)
@@ -615,9 +305,8 @@ def fetch_all_fixtures() -> bool:
             comp      = m.get("competition", {})
             comp_code = comp.get("code")
             if comp_code not in COMPETITIONS: continue
-            date  = m.get("utcDate", "")[:10]
-            h_t   = m.get("homeTeam", {})
-            a_t   = m.get("awayTeam", {})
+            date = m.get("utcDate", "")[:10]
+            h_t  = m.get("homeTeam", {}); a_t = m.get("awayTeam", {})
             if not h_t.get("id") or not a_t.get("id"): continue
             temp.setdefault(date, []).append({
                 "home":    h_t.get("name", "Unknown"),
@@ -633,7 +322,6 @@ def fetch_all_fixtures() -> bool:
         save_cache_to_disk(temp)
         print(f"[CACHE] Loaded {sum(len(v) for v in temp.values())} matches across {len(temp)} days")
         return True
-
     except Exception as e:
         print(f"[FIXTURE ERROR] {e}")
         return False
@@ -647,13 +335,11 @@ def fetch_all_fixtures() -> bool:
 def fixtures():
     date = request.args.get("date", "").split("T")[0]
     if not date: return jsonify([])
-
     if not fixtures_store:
         loaded = load_cache_from_disk()
         if not loaded: fetch_all_fixtures()
         if not fixtures_store:
             return jsonify({"status": "loading", "message": "Server is syncing match data..."})
-
     result = fixtures_store.get(date)
     if result is None:
         return jsonify({"status": "no_games", "data": [], "message": "No matches scheduled for this date."})
@@ -667,10 +353,7 @@ def predict():
         return jsonify({"error": "Invalid request body"}), 400
 
     try:
-        comp     = req["comp"]
-        h_id     = req["home_id"]
-        a_id     = req["away_id"]
-        home_adv = LEAGUE_HOME_ADV.get(comp, DEFAULT_HOME_ADV)
+        comp = req["comp"]; h_id = req["home_id"]; a_id = req["away_id"]
 
         all_stats   = get_standings(comp)
         home_stats  = all_stats.get("home", {})
@@ -680,7 +363,6 @@ def predict():
 
         fallback_h = {"gf": 1.2, "ga": 1.2, "rank": "N/A"}
         fallback_a = {"gf": 1.0, "ga": 1.3, "rank": "N/A"}
-
         h_venue = home_stats.get(str(h_id)) or total_stats.get(str(h_id), fallback_h)
         h_rank  = total_stats.get(str(h_id), fallback_h).get("rank", "N/A")
         a_venue = away_stats.get(str(a_id)) or total_stats.get(str(a_id), fallback_a)
@@ -689,39 +371,24 @@ def predict():
         h_atk, h_def, h_form = get_detailed_form(h_id, league_avg, venue="HOME")
         a_atk, a_def, a_form = get_detailed_form(a_id, league_avg, venue="AWAY")
 
-        # FIX 4: Removed residual_adv = math.sqrt(home_adv) multiplier.
-        # h_venue["gf"] comes from the HOME standings table — goals scored at home
-        # per home game — which already FULLY encodes home advantage.
-        # Multiplying by sqrt(home_adv) was inflating home lambda by ~5% on top
-        # of already home-adjusted data, biasing every prediction toward home wins.
-        h_raw = h_venue["gf"] * (a_venue["ga"] / league_avg) * h_atk * (1.0 / a_def)
-        a_raw = a_venue["gf"] * (h_venue["ga"] / league_avg) * a_atk * (1.0 / h_def)
+        # Venue-specific standings already encode home advantage — no multiplier needed
+        h_lam = max(min(h_venue["gf"] * (a_venue["ga"] / league_avg) * h_atk * (1.0 / a_def), 3.2), 0.35)
+        a_lam = max(min(a_venue["gf"] * (h_venue["ga"] / league_avg) * a_atk * (1.0 / h_def), 3.2), 0.35)
 
-        h_lam = max(min(h_raw, 3.2), 0.35)
-        a_lam = max(min(a_raw, 3.2), 0.35)
-        if h_raw != h_lam: print(f"[CLAMP] h_lam {h_raw:.3f}→{h_lam}")
-        if a_raw != a_lam: print(f"[CLAMP] a_lam {a_raw:.3f}→{a_lam}")
-
-        # ── Score Matrix (11×11 after PMF extension fix) ──────────────────
+        # ── Score Matrix (11×11) ──
         p_h = p_d = p_a = p_btts = p_over15 = p_over25 = p_over35 = 0.0
         matrix = {}
         ah = {"hm15":0.0,"hm1":0.0,"hm05":0.0,"h0":0.0,"hp05":0.0,"hp1":0.0,"hp15":0.0}
-        # FIX 5: Added o20 (Over 2.0 whole line — push on exactly 2 goals).
-        # Previously missing, causing o175 and o225 to both use (o15+o25)/2 — wrong.
         at = {"o05":0.0,"o15":0.0,"o20_over":0.0,"o20_push":0.0,"o20_under":0.0,
-              "o25":0.0,"o35":0.0,"o45":0.0,
-              "u05":0.0,"u15":0.0,"u25":0.0,"u35":0.0}
+              "o25":0.0,"o35":0.0,"o45":0.0,"u05":0.0,"u15":0.0,"u25":0.0,"u35":0.0}
 
-        _hp = poisson_vec(h_lam)
-        _ap = poisson_vec(a_lam)
+        _hp = poisson_vec(h_lam); _ap = poisson_vec(a_lam)
         for i in range(len(_hp)):
             for j in range(len(_ap)):
-                p     = _hp[i] * _ap[j]
-                matrix[(i, j)] = p
-                diff  = i - j
-                total = i + j
+                p = _hp[i] * _ap[j]; matrix[(i,j)] = p
+                diff = i - j; total = i + j
 
-                if   i > j: p_h += p
+                if   i > j:  p_h += p
                 elif i == j: p_d += p
                 else:        p_a += p
 
@@ -730,7 +397,6 @@ def predict():
                 if total > 2:       p_over25  += p
                 if total > 3:       p_over35  += p
 
-                # AH accumulators
                 if diff >= 2:  ah["hm15"] += p
                 if diff >= 2:  ah["hm1"]  += p
                 elif diff==1:  ah["hm1"]  += p * 0.5
@@ -742,12 +408,11 @@ def predict():
                 elif diff==-1: ah["hp1"]  += p * 0.5
                 if diff >= -1: ah["hp15"] += p
 
-                # AT accumulators — FIX 5: o20 whole line (push on total==2)
                 if total > 0: at["o05"] += p
                 if total > 1: at["o15"] += p
-                if total > 2:   at["o20_over"]  += p
-                elif total == 2: at["o20_push"] += p
-                else:            at["o20_under"]+= p
+                if total > 2:    at["o20_over"]  += p
+                elif total == 2: at["o20_push"]  += p
+                else:            at["o20_under"] += p
                 if total > 2: at["o25"] += p
                 if total > 3: at["o35"] += p
                 if total > 4: at["o45"] += p
@@ -756,97 +421,57 @@ def predict():
                 if total < 3: at["u25"] += p
                 if total < 4: at["u35"] += p
 
-        # Quarter AH lines
         ah["hm075"] = (ah["hm05"] + ah["hm1"])  / 2
         ah["hm025"] = (ah["hm05"] + ah["h0"])   / 2
         ah["hp025"] = (ah["h0"]   + ah["hp05"]) / 2
         ah["hp075"] = (ah["hp05"] + ah["hp1"])  / 2
         ah["hp125"] = (ah["hp1"]  + ah["hp15"]) / 2
 
-        # FIX 5: Quarter AT lines now use o20 correctly.
-        # o175 = split between Over 1.5 (half line) and Over 2.0 (whole line)
-        # o225 = split between Over 2.0 (whole line) and Over 2.5 (half line)
-        # For whole-line splits: effective prob = p_over + 0.5 * p_push
-        o20_eff     = at["o20_over"] + 0.5 * at["o20_push"]   # Over 2.0 effective win prob
-        at["o175"]  = (at["o15"]   + o20_eff)   / 2  # Over 1.75 quarter line
-        at["o225"]  = (o20_eff     + at["o25"]) / 2  # Over 2.25 quarter line
-        at["o275"]  = (at["o25"]   + at["o35"]) / 2
-        at["o325"]  = (at["o25"]   + at["o35"]) / 2
+        o20_eff     = at["o20_over"] + 0.5 * at["o20_push"]
+        at["o175"]  = (at["o15"]  + o20_eff)   / 2
+        at["o225"]  = (o20_eff    + at["o25"]) / 2
+        at["o275"]  = (at["o25"]  + at["o35"]) / 2
+        at["o325"]  = (at["o25"]  + at["o35"]) / 2
 
-        # ── Normalise 1X2 ─────────────────────────────────────────────────
-        tot     = p_h + p_d + p_a
-        p_h_raw = p_h / tot
-        p_d_raw = p_d / tot
-        p_a_raw = p_a / tot
+        # Normalise 1X2
+        tot = p_h + p_d + p_a
+        p_h /= tot; p_d /= tot; p_a /= tot
 
-        # ── Bayesian Blend ─────────────────────────────────────────────────
-        # FIX 3: New bayesian_blend removes overround before blending.
-        # Passes all three Poisson probs and all three market odds together
-        # so the overround-removal normalisation is applied across the full
-        # 1X2 market simultaneously, not per-outcome independently.
-        market_events = get_market_odds(comp)
-        match_odds    = find_match_odds(market_events, req.get("home", ""), req.get("away", ""))
+        # Double Chance
+        p_1x = p_h + p_d; p_x2 = p_d + p_a; p_12 = p_h + p_a
 
-        if match_odds and match_odds.get("home_odds") and match_odds.get("draw_odds") and match_odds.get("away_odds"):
-            p_h_final, p_d_final, p_a_final = bayesian_blend(
-                p_h_raw, p_d_raw, p_a_raw,
-                match_odds["home_odds"], match_odds["draw_odds"], match_odds["away_odds"]
-            )
-            blended = True
-            print(f"[BAYES] {req.get('home')} vs {req.get('away')} — "
-                  f"Poisson: H{p_h_raw:.2f}/D{p_d_raw:.2f}/A{p_a_raw:.2f} → "
-                  f"Blended: H{p_h_final:.2f}/D{p_d_final:.2f}/A{p_a_final:.2f}")
-        else:
-            p_h_final = p_h_raw
-            p_d_final = p_d_raw
-            p_a_final = p_a_raw
-            blended   = False
-
-        # ── Scoreline (outcome-consistent, confidence threshold) ───────────
-        sorted_probs = sorted([p_h_final, p_d_final, p_a_final], reverse=True)
+        # Scoreline — filter to winning bracket if model has conviction
+        sorted_probs = sorted([p_h, p_d, p_a], reverse=True)
         lead = sorted_probs[0] - sorted_probs[1]
-
         if lead >= 0.05:
-            if p_h_final >= p_d_final and p_h_final >= p_a_final:
-                valid = lambda i, j: i > j
-            elif p_a_final >= p_h_final and p_a_final >= p_d_final:
-                valid = lambda i, j: j > i
-            else:
-                valid = lambda i, j: i == j
+            if p_h >= p_d and p_h >= p_a: valid = lambda i,j: i > j
+            elif p_a >= p_h and p_a >= p_d: valid = lambda i,j: j > i
+            else: valid = lambda i,j: i == j
         else:
-            valid = lambda i, j: True
+            valid = lambda i,j: True
 
         best = "1-1"; max_p = -1.0
-        for (i, j), p in matrix.items():
-            if valid(i, j) and p > max_p:
-                max_p, best = p, f"{i}-{j}"
+        for (i,j), p in matrix.items():
+            if valid(i,j) and p > max_p: max_p, best = p, f"{i}-{j}"
 
-        h_pct = round(p_h_final * 100)
-        d_pct = round(p_d_final * 100)
-        a_pct = 100 - h_pct - d_pct
+        h_pct = round(p_h * 100); d_pct = round(p_d * 100); a_pct = 100 - h_pct - d_pct
 
         def fair_odds(p: float) -> float:
-            return round(1 / p, 2) if p > 0.04 else 25.0
+            return round(1/p, 2) if p > 0.04 else 25.0
 
-        # ── Double Chance ─────────────────────────────────────────────────
-        p_1x = p_h_final + p_d_final
-        p_x2 = p_d_final + p_a_final
-        p_12 = p_h_final + p_a_final
-
-        # ── AH lines ──────────────────────────────────────────────────────
+        # AH lines
         def ah_prob(handicap: float) -> tuple:
             frac = handicap % 0.5
             if abs(frac) == 0.25:
                 lo = handicap - 0.25; hi = handicap + 0.25
-                ph_l,pp_l,pa_l = ah_prob(lo)
-                ph_h,pp_h,pa_h = ah_prob(hi)
+                ph_l,pp_l,pa_l = ah_prob(lo); ph_h,pp_h,pa_h = ah_prob(hi)
                 return (ph_l+ph_h)/2, (pp_l+pp_h)/2, (pa_l+pa_h)/2
             p_hc = p_push = p_ac = 0.0
-            for (i, j), p in matrix.items():
-                adj = (i - j) + handicap
+            for (i,j), p in matrix.items():
+                adj = (i-j) + handicap
                 if handicap % 1 == 0:
                     if adj > 0:   p_hc   += p
-                    elif adj==0:  p_push  += p
+                    elif adj==0:  p_push += p
                     else:         p_ac   += p
                 else:
                     if adj > 0:   p_hc   += p
@@ -870,24 +495,22 @@ def predict():
                 "away_odds":  ah_fair_odds(pa_c, pp),
             }
 
-        # ── Asian Totals ───────────────────────────────────────────────────
         def at_prob(line: float) -> tuple:
             frac = line % 0.5
             if abs(frac) == 0.25:
-                lo = line - 0.25; hi = line + 0.25
-                po_l,pp_l,pu_l = at_prob(lo)
-                po_h,pp_h,pu_h = at_prob(hi)
+                lo = line-0.25; hi = line+0.25
+                po_l,pp_l,pu_l = at_prob(lo); po_h,pp_h,pu_h = at_prob(hi)
                 return (po_l+po_h)/2, (pp_l+pp_h)/2, (pu_l+pu_h)/2
             p_over = p_push = p_under = 0.0
-            for (i, j), p in matrix.items():
+            for (i,j), p in matrix.items():
                 goals = i + j
                 if line % 1 == 0:
                     if goals > line:    p_over  += p
                     elif goals == line: p_push  += p
                     else:               p_under += p
                 else:
-                    if goals > line:   p_over  += p
-                    else:              p_under += p
+                    if goals > line: p_over  += p
+                    else:            p_under += p
             return p_over, p_push, p_under
 
         at_lines = [0.75,1.0,1.25,1.5,1.75,2.0,2.25,2.5,2.75,3.0,3.25,3.5]
@@ -903,157 +526,22 @@ def predict():
                 "under_odds": ah_fair_odds(pu, pp),
             }
 
-        # ── Fair odds for all markets ──────────────────────────────────────
-        fo_home   = fair_odds(p_h_final)
-        fo_draw   = fair_odds(p_d_final)
-        fo_away   = fair_odds(p_a_final)
-        fo_dc_1x  = fair_odds(p_1x)
-        fo_dc_x2  = fair_odds(p_x2)
-        fo_dc_12  = fair_odds(p_12)
-        fo_o15    = fair_odds(p_over15)
-        fo_o25    = fair_odds(p_over25)
-        fo_o35    = fair_odds(p_over35)
-        fo_btts   = fair_odds(p_btts)
-
-        # AH fair odds from ah_results (key format verified by Python script)
-        fo_ah_hm05 = ah_results.get("ah_m050", {}).get("home_odds", fair_odds(ah["hm05"]))
-        fo_ah_hp05 = ah_results.get("ah_p050", {}).get("home_odds", fair_odds(ah["hp05"]))
-        fo_ah_hm15 = ah_results.get("ah_m150", {}).get("home_odds", fair_odds(ah["hm15"]))
-        fo_ah_hp15 = ah_results.get("ah_p150", {}).get("home_odds", fair_odds(ah["hp15"]))
-
-        # ── Real bookie odds + smart fallback ─────────────────────────────
-        mo        = match_odds or {}
-        totals    = mo.get("totals",    {})
-        spreads_h = mo.get("spreads_h", {})
-
-        _api_home    = mo.get("home_odds")
-        _api_draw    = mo.get("draw_odds")
-        _api_away    = mo.get("away_odds")
-        _api_dc_1x   = mo.get("dc_1x_odds")
-        _api_dc_x2   = mo.get("dc_x2_odds")
-        _api_dc_12   = mo.get("dc_12_odds")
-        _api_o15     = totals.get("over_1.5")
-        _api_o25     = totals.get("over_2.5")
-        _api_o35     = totals.get("over_3.5")
-        _api_ah_hm05 = spreads_h.get("-0.5")
-        _api_ah_hp05 = spreads_h.get("0.5")
-        _api_ah_hm15 = spreads_h.get("-1.5")
-        _api_ah_hp15 = spreads_h.get("1.5")
-
-        def api_or_fair(api_val, fair_val):
-            """Real bookie price if available, else fair price — UI always shows something."""
-            return round(api_val, 2) if (api_val and api_val > 1.0) else fair_val
-
-        api_home    = api_or_fair(_api_home,    fo_home)
-        api_draw    = api_or_fair(_api_draw,    fo_draw)
-        api_away    = api_or_fair(_api_away,    fo_away)
-        api_dc_1x   = api_or_fair(_api_dc_1x,  fo_dc_1x)
-        api_dc_x2   = api_or_fair(_api_dc_x2,  fo_dc_x2)
-        api_dc_12   = api_or_fair(_api_dc_12,  fo_dc_12)
-        api_o15     = api_or_fair(_api_o15,     fo_o15)
-        api_o25     = api_or_fair(_api_o25,     fo_o25)
-        api_o35     = api_or_fair(_api_o35,     fo_o35)
-        api_ah_hm05 = api_or_fair(_api_ah_hm05, fo_ah_hm05)
-        api_ah_hp05 = api_or_fair(_api_ah_hp05, fo_ah_hp05)
-        api_ah_hm15 = api_or_fair(_api_ah_hm15, fo_ah_hm15)
-        api_ah_hp15 = api_or_fair(_api_ah_hp15, fo_ah_hp15)
-
-        # Edge: only computed against real API prices (fallback produces 0)
-        edges = {
-            "home":    calc_edge(fo_home,    _api_home),
-            "draw":    calc_edge(fo_draw,    _api_draw),
-            "away":    calc_edge(fo_away,    _api_away),
-            "dc_1x":   calc_edge(fo_dc_1x,  _api_dc_1x),
-            "dc_x2":   calc_edge(fo_dc_x2,  _api_dc_x2),
-            "dc_12":   calc_edge(fo_dc_12,  _api_dc_12),
-            "over15":  calc_edge(fo_o15,    _api_o15),
-            "over25":  calc_edge(fo_o25,    _api_o25),
-            "over35":  calc_edge(fo_o35,    _api_o35),
-            "ah_hm05": calc_edge(fo_ah_hm05, _api_ah_hm05),
-            "ah_hp05": calc_edge(fo_ah_hp05, _api_ah_hp05),
-            "ah_hm15": calc_edge(fo_ah_hm15, _api_ah_hm15),
-            "ah_hp15": calc_edge(fo_ah_hp15, _api_ah_hp15),
-        }
-
-        # ── Top Recommended Market ─────────────────────────────────────────
-        # Priority 1: real edge > 5% (ranked by edge desc)
-        # Priority 2: highest probability across ALL market types (no odds bias)
-        # Minimum odds floor 1.40 for confidence fallback — excludes Over 0.5
-        # and Over 1.5 which are near-certain and offer no betting value.
-        def mkt_conf(fair):
-            """Pure implied probability — no odds suitability bias."""
-            return round(1 / fair, 4) if fair > 1.0 else 0.0
-
-        candidates = [
-            {"label": f"{req.get('home','Home')} Win", "code": "H",       "fair": fo_home,    "api": api_home,    "edge": edges["home"],    "type": "1X2"},
-            {"label": "Draw",                          "code": "D",       "fair": fo_draw,    "api": api_draw,    "edge": edges["draw"],    "type": "1X2"},
-            {"label": f"{req.get('away','Away')} Win", "code": "A",       "fair": fo_away,    "api": api_away,    "edge": edges["away"],    "type": "1X2"},
-            {"label": "1X (Home or Draw)",             "code": "1X",      "fair": fo_dc_1x,   "api": api_dc_1x,   "edge": edges["dc_1x"],   "type": "DC"},
-            {"label": "X2 (Draw or Away)",             "code": "X2",      "fair": fo_dc_x2,   "api": api_dc_x2,   "edge": edges["dc_x2"],   "type": "DC"},
-            {"label": "12 (Home or Away)",             "code": "12",      "fair": fo_dc_12,   "api": api_dc_12,   "edge": edges["dc_12"],   "type": "DC"},
-            {"label": "Over 1.5",                      "code": "O15",     "fair": fo_o15,     "api": api_o15,     "edge": edges["over15"],  "type": "Goals"},
-            {"label": "Over 2.5",                      "code": "O25",     "fair": fo_o25,     "api": api_o25,     "edge": edges["over25"],  "type": "Goals"},
-            {"label": "Over 3.5",                      "code": "O35",     "fair": fo_o35,     "api": api_o35,     "edge": edges["over35"],  "type": "Goals"},
-            {"label": "BTTS",                          "code": "BTTS",    "fair": fo_btts,    "api": fo_btts,     "edge": 0.0,              "type": "Goals"},
-            {"label": "AH Home -0.5",                  "code": "AH_HM05", "fair": fo_ah_hm05, "api": api_ah_hm05, "edge": edges["ah_hm05"], "type": "AH"},
-            {"label": "AH Home +0.5",                  "code": "AH_HP05", "fair": fo_ah_hp05, "api": api_ah_hp05, "edge": edges["ah_hp05"], "type": "AH"},
-            {"label": "AH Home -1.5",                  "code": "AH_HM15", "fair": fo_ah_hm15, "api": api_ah_hm15, "edge": edges["ah_hm15"], "type": "AH"},
-            {"label": "AH Home +1.5",                  "code": "AH_HP15", "fair": fo_ah_hp15, "api": api_ah_hp15, "edge": edges["ah_hp15"], "type": "AH"},
-        ]
-
-        has_edge = sorted([c for c in candidates if c["edge"] > 0.05], key=lambda x: -x["edge"])
-
-        # FIX 6: No longer surface a fake "Model Confidence" top pick when no edge exists.
-        # Showing the most probable outcome as a "recommendation" when there is no detected
-        # value actively misleads the user into betting on efficiently-priced markets.
-        # Now: top_pick is only set when real edge (>5%) is detected against live bookie odds.
-        # When no edge exists, top_pick is None and the UI shows a clear "no value" signal.
-        if has_edge:
-            top_pick = has_edge[0]
-        else:
-            # No edge detected — check if we even had bookie odds to compare against
-            has_api_data = any(c["edge"] != 0.0 or c.get("api") for c in candidates
-                               if c["code"] in ("H","D","A"))
-            top_pick = {
-                "label": None,
-                "code":  None,
-                "type":  None,
-                "fair":  None,
-                "api":   None,
-                "edge":  0.0,
-                "no_value": True,
-                "reason": "No bookie odds available for comparison" if not has_api_data
-                          else "No market edge detected — all prices efficiently set",
-            }
-
         return jsonify({
             "score":   best,
             "probs":   {"home": h_pct, "draw": d_pct, "away": a_pct},
             "market":  {
-                "home":    fo_home,   "draw":   fo_draw,   "away":   fo_away,
-                "dc_1x":  fo_dc_1x,  "dc_x2":  fo_dc_x2,  "dc_12":  fo_dc_12,
-                "btts":   fo_btts,
-                "over15": fo_o15,    "over25": fo_o25,    "over35": fo_o35,
-                "ah_hm05": fo_ah_hm05, "ah_hp05": fo_ah_hp05,
-                "ah_hm15": fo_ah_hm15, "ah_hp15": fo_ah_hp15,
+                "home":   fair_odds(p_h),   "draw":  fair_odds(p_d),   "away":  fair_odds(p_a),
+                "dc_1x":  fair_odds(p_1x),  "dc_x2": fair_odds(p_x2),  "dc_12": fair_odds(p_12),
+                "btts":   fair_odds(p_btts),
+                "over15": fair_odds(p_over15), "over25": fair_odds(p_over25), "over35": fair_odds(p_over35),
+                "ah_hm05": ah_fair_odds(ah["hm05"], 0), "ah_hp05": ah_fair_odds(ah["hp05"], 0),
+                "ah_hm15": ah_fair_odds(ah["hm15"], 0), "ah_hp15": ah_fair_odds(ah["hp15"], 0),
             },
-            "api_odds": {
-                "home":    api_home,    "draw":   api_draw,   "away":   api_away,
-                "dc_1x":  api_dc_1x,   "dc_x2":  api_dc_x2,  "dc_12":  api_dc_12,
-                "over15": api_o15,     "over25": api_o25,    "over35": api_o35,
-                "ah_hm05": api_ah_hm05,"ah_hp05": api_ah_hp05,
-                "ah_hm15": api_ah_hm15,"ah_hp15": api_ah_hp15,
-            },
-            "edges":       edges,
-            "top_pick":    top_pick,
-            "all_markets": candidates,
-            "ah":          ah_results,
-            "at":          at_results,
+            "ah":      ah_results,
+            "at":      at_results,
             "h_rank":  h_rank,  "a_rank": a_rank,
             "h_form":  h_form,  "a_form": a_form,
-            "h_lam":   round(h_lam, 3),
-            "a_lam":   round(a_lam, 3),
-            "blended": blended,
+            "h_lam":   round(h_lam, 3), "a_lam": round(a_lam, 3),
         })
 
     except Exception as e:
@@ -1061,39 +549,32 @@ def predict():
         return jsonify({"error": "Prediction engine failed", "detail": str(e)}), 500
 
 
-# =========================================================
-# 🔍 SCAN — rank fixtures by confidence for Acca Builder
-# =========================================================
 @app.route("/scan")
 def scan():
     try:
-        date_from = request.args.get("date_from", "").split("T")[0]
-        date_to   = request.args.get("date_to",   "").split("T")[0]
+        date_from = request.args.get("date_from","").split("T")[0]
+        date_to   = request.args.get("date_to",  "").split("T")[0]
         if not date_from or not date_to:
             return jsonify({"error": "date_from and date_to required"}), 400
 
-        if not fixtures_store:
-            load_cache_from_disk()
-        if not fixtures_store:
-            fetch_all_fixtures()
+        if not fixtures_store: load_cache_from_disk()
+        if not fixtures_store: fetch_all_fixtures()
         if not fixtures_store:
             return jsonify({"status": "loading", "message": "Data syncing, try again shortly."})
 
         try:
-            d_from = _date.fromisoformat(date_from)
-            d_to   = _date.fromisoformat(date_to)
+            d_from = _date.fromisoformat(date_from); d_to = _date.fromisoformat(date_to)
         except ValueError:
             return jsonify({"error": "Invalid date format"}), 400
 
         today   = _date.today()
-        max_day = today + timedelta(days=7)  # FIX: was 5, fetcher retrieves 7
+        max_day = today + timedelta(days=7)
         d_to    = min(d_to, max_day)
 
-        # Hoist standings outside per-fixture loop (removed _radv — FIX 4)
         _comps: set = set()
         _tmp = d_from
         while _tmp <= d_to:
-            for _m in fixtures_store.get(_tmp.isoformat(), []):
+            for _m in fixtures_store.get(_tmp.isoformat(),[]):
                 if _m.get("comp"): _comps.add(_m["comp"])
             _tmp += timedelta(days=1)
         _standings = {c: get_standings(c) for c in _comps}
@@ -1118,18 +599,13 @@ def scan():
                     h_atk = hc["atk"] if hc else 1.0; h_def = hc["def"] if hc else 1.0
                     a_atk = ac["atk"] if ac else 1.0; a_def = ac["def"] if ac else 1.0
 
-                    # FIX 4: No residual_adv — home standings gf already encodes home advantage
                     h_lam = max(min(h_v["gf"]*(a_v["ga"]/lg_avg)*h_atk*(1.0/a_def), 3.2), 0.35)
                     a_lam = max(min(a_v["gf"]*(h_v["ga"]/lg_avg)*a_atk*(1.0/h_def), 3.2), 0.35)
 
                     p_h,p_d,p_a,p_btts,p_o15,p_o25,p_o35 = compute_probs(h_lam, a_lam)
                     t = p_h+p_d+p_a; p_h/=t; p_d/=t; p_a/=t
 
-                    # Double chance
-                    p_1x = p_h + p_d
-                    p_x2 = p_d + p_a
-                    p_12 = p_h + p_a
-
+                    p_1x = p_h+p_d; p_x2 = p_d+p_a; p_12 = p_h+p_a
                     ps = sorted([p_h,p_d,p_a], reverse=True)
                     confidence = ps[0] - ps[1]
 
@@ -1141,97 +617,44 @@ def scan():
 
                     def fo(p): return round(1/p,2) if p>0.04 else 25.0
 
-                    # ── Edge detection ──
-                    best_edge      = 0.0
-                    best_edge_mkt  = None
-                    value_status   = "unknown"
+                    kickoff_str = m.get("kickoff","")
+                    # Filter placeholder times (22:00+ UTC for European fixtures)
+                    if kickoff_str and len(kickoff_str) > 16 and comp != "BSA":
+                        try:
+                            if int(kickoff_str[11:13]) >= 22: continue
+                        except: pass
 
-                    cached_odds = odds_cache.get(comp)
-                    if cached_odds and cached_odds.get("d"):
-                        match_ev = find_match_odds(cached_odds["d"], m["home"], m["away"])
-                        if match_ev:
-                            checks = [
-                                ("H",   p_h,     match_ev.get("home_odds"),   f"{m['home']} Win"),
-                                ("D",   p_d,     match_ev.get("draw_odds"),   "Draw"),
-                                ("A",   p_a,     match_ev.get("away_odds"),   f"{m['away']} Win"),
-                                ("1X",  p_h+p_d, match_ev.get("dc_1x_odds"), "1X"),
-                                ("X2",  p_d+p_a, match_ev.get("dc_x2_odds"), "X2"),
-                            ]
-                            api_o25 = (match_ev.get("totals") or {}).get("over_2.5")
-                            if api_o25:
-                                checks.append(("O25", p_o25, api_o25, "Over 2.5"))
-
-                            for code, prob, api_price, label in checks:
-                                if not api_price or api_price <= 1.0 or prob <= 0: continue
-                                fair_p = fo(prob)
-                                edge   = round((api_price / fair_p) - 1, 4)
-                                if edge > best_edge:
-                                    best_edge     = edge
-                                    best_edge_mkt = {"code": code, "label": label,
-                                                     "edge": edge, "api": api_price,
-                                                     "fair": fair_p}
-
-                            value_status = "value" if best_edge > 0.05 else "no_value"
-
-                    # Full market breakdown for acca leg card display
                     all_markets = [
-                        {"code":"H",    "label":f"{m['home']} Win", "type":"1X2",   "prob":round(p_h*100,1),    "fair":fo(p_h)},
-                        {"code":"D",    "label":"Draw",              "type":"1X2",   "prob":round(p_d*100,1),    "fair":fo(p_d)},
-                        {"code":"A",    "label":f"{m['away']} Win",  "type":"1X2",   "prob":round(p_a*100,1),    "fair":fo(p_a)},
-                        {"code":"1X",   "label":"1X Home/Draw",      "type":"DC",    "prob":round(p_1x*100,1),   "fair":fo(p_1x)},
-                        {"code":"X2",   "label":"X2 Draw/Away",      "type":"DC",    "prob":round(p_x2*100,1),   "fair":fo(p_x2)},
-                        {"code":"12",   "label":"12 Home/Away",      "type":"DC",    "prob":round(p_12*100,1),   "fair":fo(p_12)},
-                        {"code":"BTTS", "label":"BTTS",              "type":"Goals", "prob":round(p_btts*100,1), "fair":fo(p_btts)},
-                        {"code":"O15",  "label":"Over 1.5",          "type":"Goals", "prob":round(p_o15*100,1),  "fair":fo(p_o15)},
-                        {"code":"O25",  "label":"Over 2.5",          "type":"Goals", "prob":round(p_o25*100,1),  "fair":fo(p_o25)},
-                        {"code":"O35",  "label":"Over 3.5",          "type":"Goals", "prob":round(p_o35*100,1),  "fair":fo(p_o35)},
+                        {"code":"H",    "label":f"{m['home']} Win","type":"1X2",   "prob":round(p_h*100,1),  "fair":fo(p_h)},
+                        {"code":"D",    "label":"Draw",             "type":"1X2",   "prob":round(p_d*100,1),  "fair":fo(p_d)},
+                        {"code":"A",    "label":f"{m['away']} Win","type":"1X2",   "prob":round(p_a*100,1),  "fair":fo(p_a)},
+                        {"code":"1X",   "label":"1X Home/Draw",    "type":"DC",    "prob":round(p_1x*100,1), "fair":fo(p_1x)},
+                        {"code":"X2",   "label":"X2 Draw/Away",    "type":"DC",    "prob":round(p_x2*100,1), "fair":fo(p_x2)},
+                        {"code":"12",   "label":"12 Home/Away",    "type":"DC",    "prob":round(p_12*100,1), "fair":fo(p_12)},
+                        {"code":"BTTS", "label":"BTTS",            "type":"Goals", "prob":round(p_btts*100,1),"fair":fo(p_btts)},
+                        {"code":"O15",  "label":"Over 1.5",        "type":"Goals", "prob":round(p_o15*100,1),"fair":fo(p_o15)},
+                        {"code":"O25",  "label":"Over 2.5",        "type":"Goals", "prob":round(p_o25*100,1),"fair":fo(p_o25)},
+                        {"code":"O35",  "label":"Over 3.5",        "type":"Goals", "prob":round(p_o35*100,1),"fair":fo(p_o35)},
                     ]
 
                     ranked.append({
-                        "date": ds, "days_out": days_out,
-                        "kickoff": m.get("kickoff", ""),
+                        "date": ds, "days_out": days_out, "kickoff": kickoff_str,
                         "home": m["home"], "away": m["away"],
-                        "home_id": h_id,   "away_id": a_id,
-                        "comp": comp,      "league": m.get("league", comp),
-                        "pick": pick,      "pick_label": pl, "mkt_type": pt,
+                        "home_id": h_id, "away_id": a_id,
+                        "comp": comp, "league": m.get("league", comp),
+                        "pick": pick, "pick_label": pl, "mkt_type": pt,
                         "pick_prob": round(pp*100,1), "confidence": round(confidence,4),
                         "tier": tier,
                         "h_lam": round(h_lam,3), "a_lam": round(a_lam,3),
                         "probs": {"home":round(p_h*100,1),"draw":round(p_d*100,1),"away":round(p_a*100,1)},
                         "fair_odds": fo(pp),
                         "all_markets": all_markets,
-                        # Edge detection fields — used by index.html fixture list
-                        "value_status":  value_status,   # "value" | "no_value" | "unknown"
-                        "best_edge":     round(best_edge*100, 1),
-                        "best_edge_mkt": best_edge_mkt,
                     })
                 except Exception as e:
                     print(f"[SCAN] Skipped {m.get('home','?')} vs {m.get('away','?')}: {e}")
             current += timedelta(days=1)
 
         ranked.sort(key=lambda x: x["confidence"], reverse=True)
-
-        # ── Background odds warm-up (rate-limit safe) ──
-        # Only fires if some competitions have no cached odds.
-        # Single serial thread, one competition at a time, 6s gap between each.
-        # No football-data.org calls involved — only Odds API which has no
-        # strict per-minute limit. Frontend re-polls after 8s to pick up results.
-        uncached_comps = [
-            c for c in _comps
-            if not odds_cache.get(c) or not odds_cache[c].get("d")
-        ]
-        if uncached_comps and ODDS_API_KEY:
-            def _warm_odds_serial(comps=list(uncached_comps)):
-                for c in comps:
-                    try:
-                        get_market_odds(c)
-                        print(f"[SCAN BG] Odds warmed for {c}")
-                        time.sleep(6)
-                    except Exception as e:
-                        print(f"[SCAN BG] Odds failed for {c}: {e}")
-            threading.Thread(target=_warm_odds_serial, daemon=True).start()
-            print(f"[SCAN] Background odds fetch started for: {uncached_comps}")
-
         return jsonify(ranked)
 
     except Exception as e:
@@ -1239,9 +662,6 @@ def scan():
         return jsonify({"error": str(e)}), 500
 
 
-# =========================================================
-# 🎲 ACCA — Monte Carlo simulation
-# =========================================================
 @app.route("/acca", methods=["POST"])
 def acca():
     try:
@@ -1251,123 +671,85 @@ def acca():
 
         legs = body["legs"]; n_sims = 10000; wins = 0
 
-        # FIX 8: Pre-compute cumulative PMF for each leg's h_lam and a_lam once.
-        # Old approach: pois_draw() called math.pow, math.exp, math.factorial
-        # inside the simulation loop — ~400,000 exp() calls per 4-leg acca.
-        # New approach: compute CDF vectors once per unique lambda, then sample
-        # by binary search. Reduces to 8 CDF builds + 20,000 array lookups.
-        import bisect
-
         def build_cdf(lam: float) -> list:
-            """Build cumulative PMF for k=0..10 from poisson_vec."""
             pmf = poisson_vec(max(min(lam, 3.2), 0.35))
-            cdf = []
-            cumsum = 0.0
-            for p in pmf:
-                cumsum += p
-                cdf.append(cumsum)
+            cdf = []; cumsum = 0.0
+            for p in pmf: cumsum += p; cdf.append(cumsum)
             return cdf
 
         def pois_draw_cdf(cdf: list) -> int:
-            """Draw a random Poisson variate using pre-built CDF."""
-            u = random.random()
-            k = bisect.bisect_left(cdf, u)
-            return min(k, len(cdf) - 1)
+            k = bisect.bisect_left(cdf, random.random())
+            return min(k, len(cdf)-1)
 
-        # Build CDFs for each leg (deduplicated by lambda value)
-        leg_cdfs = []
-        for leg in legs:
-            leg_cdfs.append((
-                build_cdf(float(leg["h_lam"])),
-                build_cdf(float(leg["a_lam"])),
-                leg["pick"]
-            ))
+        leg_cdfs = [(build_cdf(float(l["h_lam"])), build_cdf(float(l["a_lam"])), l["pick"]) for l in legs]
 
         for _ in range(n_sims):
             acca_won = True
             for h_cdf, a_cdf, pick in leg_cdfs:
                 hg = pois_draw_cdf(h_cdf); ag = pois_draw_cdf(a_cdf)
                 diff = hg - ag; total = hg + ag
-
                 won = False
-                if   pick=="H":      won = diff>0
-                elif pick=="D":      won = diff==0
-                elif pick=="A":      won = diff<0
-                elif pick=="1X":     won = diff>=0
-                elif pick=="X2":     won = diff<=0
-                elif pick=="12":     won = diff!=0
-                elif pick=="BTTS":   won = hg>0 and ag>0
-                elif pick=="O15":    won = total>1
-                elif pick=="O25":    won = total>2
-                elif pick=="O35":    won = total>3
-                elif pick=="U25":    won = total<3
-                elif pick=="U35":    won = total<4
-                elif pick=="AH_HM15":  won = diff>=2
-                elif pick=="AH_HM10":  won = diff>=2 or (diff==1 and random.random()<0.5)
-                elif pick=="AH_HM075": won = diff>=2 or (diff==1 and random.random()<0.25)
-                elif pick=="AH_HM05":  won = diff>=1
-                elif pick=="AH_HM025": won = diff>=1 or (diff==0 and random.random()<0.5)
-                elif pick=="AH_H0":    won = diff>0  or (diff==0 and random.random()<0.5)
-                elif pick=="AH_HP025": won = diff>=0 or (diff==-1 and random.random()<0.5)
-                elif pick=="AH_HP05":  won = diff>=0
-                elif pick=="AH_HP075": won = diff>=0 or (diff==-1 and random.random()<0.25)
-                elif pick=="AH_HP10":  won = diff>=0 or (diff==-1 and random.random()<0.5)
-                elif pick=="AH_HP15":  won = diff>=-1
-                elif pick=="AT_O125":  won = total>1 or (total==1 and random.random()<0.5)
-                elif pick=="AT_O15":   won = total>1
-                elif pick=="AT_O175":  won = total>2 or (total==2 and random.random()<0.5)
-                elif pick=="AT_O20":   won = total>2 or (total==2 and random.random()<0.5)
-                elif pick=="AT_O225":  won = total>2 or (total==2 and random.random()<0.5)
-                elif pick=="AT_O25":   won = total>2
-                elif pick=="AT_O275":  won = total>3 or (total==3 and random.random()<0.5)
-                elif pick=="AT_O30":   won = total>3 or (total==3 and random.random()<0.5)
-                elif pick=="AT_O325":  won = total>3 or (total==3 and random.random()<0.5)
-                elif pick=="AT_O35":   won = total>3
-                elif pick=="AT_U25":   won = total<3 or (total==3 and random.random()<0.5)
-                elif pick=="AT_U35":   won = total<4 or (total==4 and random.random()<0.5)
-                else:                  won = diff>0
-
+                if   pick=="H":       won = diff>0
+                elif pick=="D":       won = diff==0
+                elif pick=="A":       won = diff<0
+                elif pick=="1X":      won = diff>=0
+                elif pick=="X2":      won = diff<=0
+                elif pick=="12":      won = diff!=0
+                elif pick=="BTTS":    won = hg>0 and ag>0
+                elif pick=="O15":     won = total>1
+                elif pick=="O25":     won = total>2
+                elif pick=="O35":     won = total>3
+                elif pick=="U25":     won = total<3
+                elif pick=="U35":     won = total<4
+                elif pick=="AH_HM15": won = diff>=2
+                elif pick=="AH_HM10": won = diff>=2 or (diff==1 and random.random()<0.5)
+                elif pick=="AH_HM05": won = diff>=1
+                elif pick=="AH_HM025":won = diff>=1 or (diff==0 and random.random()<0.5)
+                elif pick=="AH_H0":   won = diff>0  or (diff==0 and random.random()<0.5)
+                elif pick=="AH_HP025":won = diff>=0 or (diff==-1 and random.random()<0.5)
+                elif pick=="AH_HP05": won = diff>=0
+                elif pick=="AH_HP10": won = diff>=0 or (diff==-1 and random.random()<0.5)
+                elif pick=="AH_HP15": won = diff>=-1
+                elif pick=="AT_O15":  won = total>1
+                elif pick=="AT_O175": won = total>2 or (total==2 and random.random()<0.5)
+                elif pick=="AT_O25":  won = total>2
+                elif pick=="AT_O275": won = total>3 or (total==3 and random.random()<0.5)
+                elif pick=="AT_O35":  won = total>3
+                elif pick=="AT_U25":  won = total<3 or (total==3 and random.random()<0.5)
+                else:                 won = diff>0
                 if not won: acca_won = False; break
             if acca_won: wins += 1
 
         prob      = wins / n_sims
-        fair_odds = round(1/prob, 2) if prob>0.005 else 200.0
+        fair_odds = round(1/prob, 2) if prob > 0.005 else 200.0
         bookie_odds = body.get("bookie_odds")
         ev = None
-        if bookie_odds and float(bookie_odds)>1:
+        if bookie_odds and float(bookie_odds) > 1:
             bo = float(bookie_odds)
             ev = round((prob*(bo-1))-(1-prob), 4)
 
         return jsonify({"probability": round(prob*100,2), "fair_odds": fair_odds,
                         "wins": wins, "simulations": n_sims, "ev": ev})
-
     except Exception as e:
         print(f"[ACCA ERROR] {e}")
         return jsonify({"error": str(e)}), 500
 
 
-# =========================================================
-# 🎯 SESSION — sequential Masaniello picks
-# =========================================================
 @app.route("/session")
 def session():
     try:
-        if not fixtures_store:
-            load_cache_from_disk()
-        if not fixtures_store:
-            fetch_all_fixtures()
+        if not fixtures_store: load_cache_from_disk()
+        if not fixtures_store: fetch_all_fixtures()
         if not fixtures_store:
             return jsonify({"status": "loading", "message": "Data syncing, try again shortly."})
 
         today   = _date.today()
         max_day = today + timedelta(days=7)
-
         raw_from = request.args.get("date_from","").split("T")[0] or today.isoformat()
         raw_to   = request.args.get("date_to",  "").split("T")[0] or max_day.isoformat()
 
         try:
-            d_from = _date.fromisoformat(raw_from)
-            d_to   = _date.fromisoformat(raw_to)
+            d_from = _date.fromisoformat(raw_from); d_to = _date.fromisoformat(raw_to)
         except ValueError:
             return jsonify({"error": "Invalid date format. Use YYYY-MM-DD."}), 400
 
@@ -1378,13 +760,17 @@ def session():
         print(f"[SESSION] ═══ REQUEST {d_from} → {d_to} ═══")
         print(f"[SESSION] fixtures_store keys: {sorted(fixtures_store.keys())}")
 
-        # ── Stage 1: raw fixtures in date range ──
-        stage1_total = 0
-        stage1_no_ids = 0
-        stage1_date_filtered = 0
-        raw_pool = []  # all fixtures passing date + id checks
+        def mas_score(prob, fo):
+            if fo < 1.10 or fo > 6.0: return 0.0
+            if fo <= 2.0:   odds_suit = (fo-1.10)/0.9
+            elif fo <= 3.5: odds_suit = 1.0-((fo-2.0)/2.5)
+            else:           odds_suit = max(0, 1.0-((fo-3.5)/3.0))
+            return round(prob * odds_suit, 6)
 
+        stage1_total = 0; stage1_filtered = 0
+        raw_pool = []
         _comps: set = set()
+
         current = d_from
         while current <= d_to:
             ds = current.isoformat()
@@ -1392,166 +778,94 @@ def session():
             print(f"[SESSION] Stage1 {ds}: {len(day_matches)} fixtures in store")
             for m in day_matches:
                 stage1_total += 1
-                comp  = m.get("comp")
-                h_id  = m.get("home_id")
-                a_id  = m.get("away_id")
+                comp = m.get("comp"); h_id = m.get("home_id"); a_id = m.get("away_id")
                 if not comp or not h_id or not a_id:
-                    stage1_no_ids += 1
-                    print(f"[SESSION]   REJECT no-ids: {m.get('home')} vs {m.get('away')}")
-                    continue
-                kickoff_str = m.get("kickoff", "")
+                    stage1_filtered += 1; continue
+                kickoff_str = m.get("kickoff","")
                 if kickoff_str and len(kickoff_str) >= 10:
                     ko_date = _date.fromisoformat(kickoff_str[:10])
                     if ko_date < d_from or ko_date > d_to:
-                        stage1_date_filtered += 1
-                        print(f"[SESSION]   REJECT date-out: {m.get('home')} vs {m.get('away')} ko={ko_date}")
-                        continue
-                    # Filter out placeholder/unconfirmed kickoff times.
-                    # European fixtures never kick off at 22:00-23:00 UTC —
-                    # these are API placeholders for matches not yet scheduled.
-                    # BSA (Brazil) legitimately kicks off late so exempt from filter.
+                        stage1_filtered += 1; continue
                     if len(kickoff_str) > 16 and comp != "BSA":
                         try:
-                            ko_hour = int(kickoff_str[11:13])
-                            if ko_hour >= 22:
-                                stage1_date_filtered += 1
-                                print(f"[SESSION]   REJECT placeholder-time: {m.get('home')} vs {m.get('away')} UTC={kickoff_str[11:16]}")
+                            if int(kickoff_str[11:13]) >= 22:
+                                stage1_filtered += 1
+                                print(f"[SESSION]   REJECT placeholder-time: {m.get('home')} vs {m.get('away')}")
                                 continue
-                        except Exception:
-                            pass
+                        except: pass
                 _comps.add(comp)
                 raw_pool.append({**m, "_ds": ds})
             current += timedelta(days=1)
 
-        print(f"[SESSION] Stage1: total={stage1_total} | no_ids={stage1_no_ids} | date_filtered={stage1_date_filtered} | raw_pool={len(raw_pool)}")
+        print(f"[SESSION] Stage1: total={stage1_total} | filtered={stage1_filtered} | raw_pool={len(raw_pool)}")
 
-        # ── Stage 2: fetch standings ──
         _standings = {c: get_standings(c) for c in _comps}
-        # FIX 4: _radv removed — venue standings encode home advantage already
-        print(f"[SESSION] Stage2: standings fetched for {list(_comps)}")
+        print(f"[SESSION] Stage2: standings for {list(_comps)}")
 
-        # ── Stage 3: score every fixture ──
-        def mas_score(prob, fo):
-            """Score purely on probability × odds suitability. No confidence multiplier."""
-            if fo < 1.10 or fo > 6.0: return 0.0
-            if fo <= 2.0:   odds_suit = (fo - 1.10) / 0.9
-            elif fo <= 3.5: odds_suit = 1.0 - ((fo - 2.0) / 2.5)
-            else:           odds_suit = max(0, 1.0 - ((fo - 3.5) / 3.0))
-            return round(prob * odds_suit, 6)
-
-        stage3_no_score    = 0
-        stage3_low_prob    = 0
-        stage3_conf_gate   = 0
-        scored_pool = []  # one entry per fixture with best market attached
-
+        scored_pool = []
         for m in raw_pool:
-            comp   = m.get("comp")
-            h_id   = m.get("home_id")
-            a_id   = m.get("away_id")
-            ds     = m["_ds"]
-            # FIX 13: Removed dead O(n²) line — raw_pool.index(m) was computing
-            # an incorrect value that was immediately overwritten anyway.
-            days_out = (_date.fromisoformat(ds) - today).days
+            try:
+                comp = m.get("comp"); h_id = m.get("home_id"); a_id = m.get("away_id")
+                ds   = m["_ds"]; days_out = (_date.fromisoformat(ds) - today).days
+                all_s  = _standings.get(comp, {"home":{}, "away":{}, "total":{}})
+                lg_avg = all_s.get("league_avg", LEAGUE_AVG_GOALS.get(comp, DEFAULT_LEAGUE_AVG))
+                fh = {"gf":1.2,"ga":1.2}; fa = {"gf":1.0,"ga":1.3}
+                h_v = all_s["home"].get(str(h_id)) or all_s["total"].get(str(h_id), fh)
+                a_v = all_s["away"].get(str(a_id)) or all_s["total"].get(str(a_id), fa)
+                hc = form_cache.get((h_id,"HOME")); ac = form_cache.get((a_id,"AWAY"))
+                h_atk = hc["atk"] if hc else 1.0; h_def = hc["def"] if hc else 1.0
+                a_atk = ac["atk"] if ac else 1.0; a_def = ac["def"] if ac else 1.0
+                h_lam = max(min(h_v["gf"]*(a_v["ga"]/lg_avg)*h_atk*(1.0/a_def), 3.2), 0.35)
+                a_lam = max(min(a_v["gf"]*(h_v["ga"]/lg_avg)*a_atk*(1.0/h_def), 3.2), 0.35)
+                p_h,p_d,p_a,p_btts,p_o15,p_o25,p_o35 = compute_probs(h_lam, a_lam)
+                t = p_h+p_d+p_a; p_h/=t; p_d/=t; p_a/=t
+                ps = sorted([p_h,p_d,p_a], reverse=True); confidence = ps[0]-ps[1]
+                def fair(p): return round(1/p,2) if p>0.04 else 25.0
+                markets = [
+                    ("Home Win","1X2",  p_h,    fair(p_h)),
+                    ("Draw",    "1X2",  p_d,    fair(p_d)),
+                    ("Away Win","1X2",  p_a,    fair(p_a)),
+                    ("BTTS",   "Goals", p_btts, fair(p_btts)),
+                    ("Over 1.5","Goals",p_o15,  fair(p_o15)),
+                    ("Over 2.5","Goals",p_o25,  fair(p_o25)),
+                    ("Over 3.5","Goals",p_o35,  fair(p_o35)),
+                ]
+                best_mkt = None; best_sc = 0.0
+                for label, mkt_type, prob, fo in markets:
+                    sc = mas_score(prob, fo)
+                    if sc > best_sc: best_sc = sc; best_mkt = (label, mkt_type, prob, fo)
+                if not best_mkt or best_sc <= 0: continue
+                label, mkt_type, prob, fo = best_mkt
+                kickoff_str = m.get("kickoff","")
+                print(f"[SESSION]   SCORED: {m.get('home')} vs {m.get('away')} | {label} | prob={prob:.2f} fo={fo} sc={best_sc:.4f}")
+                scored_pool.append({
+                    "date": ds, "kickoff": kickoff_str,
+                    "home": m["home"], "away": m["away"],
+                    "home_id": h_id, "away_id": a_id,
+                    "comp": comp, "league": m.get("league", comp),
+                    "market": label, "mkt_type": mkt_type,
+                    "prob": round(prob*100,1), "fair_odds": fo,
+                    "confidence": round(confidence,4), "mas_score": best_sc,
+                    "h_lam": round(h_lam,3), "a_lam": round(a_lam,3),
+                    "days_out": days_out,
+                })
+            except Exception as e:
+                print(f"[SESSION] Skipped {m.get('home','?')} vs {m.get('away','?')}: {e}")
 
-            all_s  = _standings.get(comp, {"home": {}, "away": {}, "total": {}})
-            lg_avg = all_s.get("league_avg", LEAGUE_AVG_GOALS.get(comp, DEFAULT_LEAGUE_AVG))
-            fh = {"gf": 1.2, "ga": 1.2}; fa = {"gf": 1.0, "ga": 1.3}
-            h_v = all_s["home"].get(str(h_id)) or all_s["total"].get(str(h_id), fh)
-            a_v = all_s["away"].get(str(a_id)) or all_s["total"].get(str(a_id), fa)
-
-            hc = form_cache.get((h_id, "HOME")); ac = form_cache.get((a_id, "AWAY"))
-            h_atk = hc["atk"] if hc else 1.0; h_def = hc["def"] if hc else 1.0
-            a_atk = ac["atk"] if ac else 1.0; a_def = ac["def"] if ac else 1.0
-
-            # FIX 4: No residual_adv — home standings gf already encodes home advantage
-            h_lam = max(min(h_v["gf"]*(a_v["ga"]/lg_avg)*h_atk*(1.0/a_def), 3.2), 0.35)
-            a_lam = max(min(a_v["gf"]*(h_v["ga"]/lg_avg)*a_atk*(1.0/h_def), 3.2), 0.35)
-
-            p_h,p_d,p_a,p_btts,p_o15,p_o25,p_o35 = compute_probs(h_lam, a_lam)
-            t = p_h+p_d+p_a; p_h/=t; p_d/=t; p_a/=t
-
-            ps         = sorted([p_h,p_d,p_a], reverse=True)
-            confidence = ps[0] - ps[1]
-
-            def fair(p): return round(1/p,2) if p>0.04 else 25.0
-
-            markets = [
-                ("Home Win",  "1X2",   p_h,    fair(p_h)),
-                ("Draw",      "1X2",   p_d,    fair(p_d)),
-                ("Away Win",  "1X2",   p_a,    fair(p_a)),
-                ("BTTS",      "Goals", p_btts, fair(p_btts)),
-                ("Over 1.5",  "Goals", p_o15,  fair(p_o15)),
-                ("Over 2.5",  "Goals", p_o25,  fair(p_o25)),
-                ("Over 3.5",  "Goals", p_o35,  fair(p_o35)),
-            ]
-
-            best_mkt = None
-            best_sc  = 0.0
-            for label, mkt_type, prob, fo in markets:
-                sc = mas_score(prob, fo)
-                if sc > best_sc:
-                    best_sc  = sc
-                    best_mkt = (label, mkt_type, prob, fo)
-
-            kickoff_str = m.get("kickoff", "")
-
-            if best_mkt is None or best_sc <= 0:
-                stage3_no_score += 1
-                print(f"[SESSION]   REJECT no-score: {m.get('home')} vs {m.get('away')} conf={confidence:.3f}")
-                continue
-
-            label, mkt_type, prob, fo = best_mkt
-            print(f"[SESSION]   SCORED: {m.get('home')} vs {m.get('away')} | {label} | prob={prob:.2f} fo={fo} sc={best_sc:.4f} conf={confidence:.3f} ko={kickoff_str}")
-
-            scored_pool.append({
-                "date": ds, "kickoff": kickoff_str,
-                "home": m["home"], "away": m["away"],
-                "home_id": h_id, "away_id": a_id,
-                "comp": comp, "league": m.get("league", comp),
-                "market": label, "mkt_type": mkt_type,
-                "prob": round(prob*100,1), "fair_odds": fo,
-                "confidence": round(confidence,4), "mas_score": best_sc,
-                "h_lam": round(h_lam,3), "a_lam": round(a_lam,3),
-                "days_out": days_out,
-            })
-
-        print(f"[SESSION] Stage3: raw_pool={len(raw_pool)} | scored={len(scored_pool)} | no_score={stage3_no_score}")
-
-        if not scored_pool:
-            return jsonify({"session": [], "reserves": [], "debug": "No fixtures passed scoring — check Render logs"})
-
-        # ── Stage 4: wave-based selection ──
-        # Group fixtures into "waves" — fixtures within 30 minutes of each other
-        # share a kickoff cluster. Pick ONE per wave (best scorer).
-        # Then enforce 105-minute gap BETWEEN waves, not within them.
-        # This is the correct model: one bet per kickoff cluster, wait for it
-        # to finish, then move to the next cluster.
+        print(f"[SESSION] Stage3: raw_pool={len(raw_pool)} | scored={len(scored_pool)}")
 
         def ko_epoch(pick):
-            """
-            FIX 1: Parse UTC kickoff string to epoch seconds using calendar.timegm,
-            which treats the parsed struct as UTC regardless of server timezone.
-            Previously used time.mktime which treats the struct as local time —
-            correct on Render (UTC server) but silently wrong if timezone changes.
-            """
             ko = pick.get("kickoff","")
             if ko and len(ko) > 10:
-                try:
-                    t = time.strptime(ko[:19], "%Y-%m-%dT%H:%M:%S")
-                    return calendar.timegm(t)   # UTC-safe
+                try: return calendar.timegm(time.strptime(ko[:19], "%Y-%m-%dT%H:%M:%S"))
                 except: pass
-            try:
-                t = time.strptime(pick["date"], "%Y-%m-%d")
-                return calendar.timegm(t)
+            try: return calendar.timegm(time.strptime(pick["date"], "%Y-%m-%d"))
             except: return 0
 
-        # Sort all scored fixtures by kickoff time
         scored_pool.sort(key=ko_epoch)
+        WAVE_WINDOW_SEC  = 30 * 60
+        GAP_REQUIRED_SEC = 105 * 60
 
-        WAVE_WINDOW_SEC  = 30 * 60   # fixtures within 30min = same wave
-        GAP_REQUIRED_SEC = 105 * 60  # 105 minutes between selected picks
-
-        # Build waves
         waves = []
         for pick in scored_pool:
             ep = ko_epoch(pick)
@@ -1559,55 +873,31 @@ def session():
                 waves.append({"epoch": ep, "picks": []})
             waves[-1]["picks"].append(pick)
 
-        print(f"[SESSION] Stage4: {len(scored_pool)} scored fixtures → {len(waves)} waves")
-        for i, w in enumerate(waves):
-            best_in_wave = max(w["picks"], key=lambda x: x["mas_score"])
-            print(f"[SESSION]   Wave {i+1}: {len(w['picks'])} fixtures | best={best_in_wave['home']} vs {best_in_wave['away']} sc={best_in_wave['mas_score']:.4f}")
+        print(f"[SESSION] Stage4: {len(scored_pool)} scored → {len(waves)} waves")
 
-        # From each wave, take the best scorer
         wave_bests = [max(w["picks"], key=lambda x: x["mas_score"]) for w in waves]
-
-        # Now apply 105-minute gap between selected waves
-        # If gap fails, skip that wave (don't consume it — try next wave)
-        selected  = []
-        reserves  = []
-        last_ep   = 0
+        selected = []; reserves = []; last_ep = 0
 
         for i, pick in enumerate(wave_bests):
             ep = ko_epoch(pick)
             gap_ok = (not selected) or (ep - last_ep >= GAP_REQUIRED_SEC)
-
             if gap_ok and len(selected) < 10:
-                selected.append(pick)
-                last_ep = ep
-                print(f"[SESSION]   SELECT wave {i+1}: {pick['home']} vs {pick['away']} gap={(ep-last_ep)//60 if selected else 0}min")
+                selected.append(pick); last_ep = ep
             else:
-                # Add non-selected wave bests + all other picks in that wave to reserves
                 reserves.append(pick)
                 for p in waves[i]["picks"]:
-                    if p is not pick and p not in reserves:
-                        reserves.append(p)
-                if not gap_ok:
-                    gap_min = (ep - last_ep) // 60
-                    print(f"[SESSION]   SKIP wave {i+1}: gap={gap_min}min < 105min | {pick['home']} vs {pick['away']}")
+                    if p is not pick and p not in reserves: reserves.append(p)
 
-        # If still under 10, relax gap to 75 minutes and retry on skipped waves
         if len(selected) < 10:
-            print(f"[SESSION] Pass 2 (75min gap): {len(selected)} so far, trying skipped waves")
             last_ep = ko_epoch(selected[-1]) if selected else 0
             for pick in list(reserves):
                 ep = ko_epoch(pick)
                 if ep - last_ep >= 75*60 and len(selected) < 10:
-                    selected.append(pick)
-                    reserves.remove(pick)
-                    last_ep = ep
-                    print(f"[SESSION]   SELECT (75min): {pick['home']} vs {pick['away']}")
+                    selected.append(pick); reserves.remove(pick); last_ep = ep
             selected.sort(key=ko_epoch)
 
-        # Final reserve sort by score
         reserves.sort(key=lambda x: -x["mas_score"])
-
-        print(f"[SESSION] ═══ FINAL: {len(selected)} session picks | {len(reserves)} reserves ═══")
+        print(f"[SESSION] ═══ FINAL: {len(selected)} picks | {len(reserves)} reserves ═══")
 
         return jsonify({"session": selected, "reserves": reserves[:15]})
 
@@ -1616,8 +906,22 @@ def session():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/calibration")
+def calibration():
+    n = _calibration.get("n", 0); bsum = _calibration.get("brier_sum", 0.0)
+    last = _calibration.get("last_run", 0.0)
+    if n == 0:
+        return jsonify({"status":"pending","message":"Calibration data not yet available.",
+                        "brier":None,"matches":0,"last_run":None,"rating":None})
+    brier = round(bsum/n, 4)
+    rating = "Excellent" if brier<0.45 else "Good" if brier<0.50 else "Fair" if brier<0.55 else "Needs improvement"
+    return jsonify({"status":"ok","brier":brier,"matches":n,
+                    "last_run":time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(last)),
+                    "rating":rating,"baseline":0.667,"target":0.50})
+
+
 # =========================================================
-# 📐 CALIBRATION ENGINE (Brier score — runs hourly in background)
+# 📐 CALIBRATION ENGINE
 # =========================================================
 def run_calibration_check():
     global _calibration
@@ -1626,13 +930,11 @@ def run_calibration_check():
     try:
         r = football_data_get(
             f"{BASE_URL}/matches", headers=HEADERS,
-            params={"dateFrom": yest, "dateTo": yest, "status": "FINISHED"}, timeout=15
+            params={"dateFrom":yest,"dateTo":yest,"status":"FINISHED"}, timeout=15
         )
         if r.status_code != 200:
             print(f"[CALIB] Could not fetch results ({r.status_code})"); return
-
-        matches = r.json().get("matches", [])
-        brier_sum = 0.0; n = 0
+        matches = r.json().get("matches",[]); brier_sum=0.0; n=0
         for m in matches:
             try:
                 comp = m.get("competition",{}).get("code")
@@ -1641,132 +943,49 @@ def run_calibration_check():
                 sc   = m["score"]["fullTime"]
                 if sc["home"] is None: continue
                 hs, as_ = sc["home"], sc["away"]
-                r_h = 1.0 if hs>as_ else 0.0
-                r_d = 1.0 if hs==as_ else 0.0
-                r_a = 1.0 if hs<as_ else 0.0
-
-                all_s  = get_standings(comp)
-                lg_avg = all_s.get("league_avg", LEAGUE_AVG_GOALS.get(comp, DEFAULT_LEAGUE_AVG))
-                tot_s  = all_s.get("total",{})
-                fh = {"gf":1.2,"ga":1.2}; fa = {"gf":1.0,"ga":1.3}
-                h_s = tot_s.get(str(h_id), fh); a_s = tot_s.get(str(a_id), fa)
-
-                # FIX 4: No residual_adv in calibration either
-                h_lam = max(min(h_s["gf"]*(a_s["ga"]/lg_avg), 3.2), 0.35)
-                a_lam = max(min(a_s["gf"]*(h_s["ga"]/lg_avg), 3.2), 0.35)
-
-                p_h,p_d,p_a,_,_,_,_ = compute_probs(h_lam, a_lam)
-                t = p_h+p_d+p_a; p_h/=t; p_d/=t; p_a/=t
-
-                brier_sum += (p_h-r_h)**2 + (p_d-r_d)**2 + (p_a-r_a)**2
-                n += 1
-            except Exception:
-                continue
-
+                r_h=1.0 if hs>as_ else 0.0; r_d=1.0 if hs==as_ else 0.0; r_a=1.0 if hs<as_ else 0.0
+                all_s = get_standings(comp)
+                lg_avg= all_s.get("league_avg", LEAGUE_AVG_GOALS.get(comp, DEFAULT_LEAGUE_AVG))
+                tot_s = all_s.get("total",{})
+                fh={"gf":1.2,"ga":1.2}; fa={"gf":1.0,"ga":1.3}
+                h_s=tot_s.get(str(h_id),fh); a_s=tot_s.get(str(a_id),fa)
+                h_lam=max(min(h_s["gf"]*(a_s["ga"]/lg_avg),3.2),0.35)
+                a_lam=max(min(a_s["gf"]*(h_s["ga"]/lg_avg),3.2),0.35)
+                p_h,p_d,p_a,_,_,_,_=compute_probs(h_lam,a_lam)
+                t=p_h+p_d+p_a; p_h/=t; p_d/=t; p_a/=t
+                brier_sum+=(p_h-r_h)**2+(p_d-r_d)**2+(p_a-r_a)**2; n+=1
+            except: continue
         if n:
-            _calibration["n"]         += n
-            _calibration["brier_sum"] += brier_sum
-            _calibration["last_run"]   = now_t
-            cb = _calibration["brier_sum"] / _calibration["n"]
-            print(f"[CALIB] {yest}: n={n}, Brier={brier_sum/n:.4f} "
-                  f"(cumul: {cb:.4f} over {_calibration['n']} matches. target<0.50)")
+            _calibration["n"]+=n; _calibration["brier_sum"]+=brier_sum; _calibration["last_run"]=now_t
+            print(f"[CALIB] {yest}: n={n}, Brier={brier_sum/n:.4f} (cumul: {brier_sum/n:.4f} over {n} matches)")
         else:
             print(f"[CALIB] No finished matches for {yest}")
     except Exception as e:
         print(f"[CALIB ERROR] {e}")
 
 
-# FIX 10: Expose calibration data via API so frontend can surface model accuracy
-@app.route("/calibration")
-def calibration():
-    """
-    Returns current model calibration stats (Brier score).
-    Brier score: lower = better. Random guess = 0.667. Good model < 0.50.
-    Used by frontend to show users whether the model is performing.
-    """
-    n    = _calibration.get("n", 0)
-    bsum = _calibration.get("brier_sum", 0.0)
-    last = _calibration.get("last_run", 0.0)
-
-    if n == 0:
-        return jsonify({
-            "status":     "pending",
-            "message":    "Calibration data not yet available. Runs hourly after first day.",
-            "brier":      None,
-            "matches":    0,
-            "last_run":   None,
-            "rating":     None,
-        })
-
-    brier = round(bsum / n, 4)
-    if brier < 0.45:   rating = "Excellent"
-    elif brier < 0.50: rating = "Good"
-    elif brier < 0.55: rating = "Fair"
-    else:              rating = "Needs improvement"
-
-    return jsonify({
-        "status":   "ok",
-        "brier":    brier,
-        "matches":  n,
-        "last_run": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(last)),
-        "rating":   rating,
-        "baseline": 0.667,
-        "target":   0.50,
-    })
-
-
 # =========================================================
-# 🚀 BACKGROUND SCHEDULER
+# 🚀 SCHEDULER
 # =========================================================
 def preload_standings():
     print("[BOOT] Preloading standings cache...")
     for comp in COMPETITIONS:
-        get_standings(comp)
-        time.sleep(7)
+        get_standings(comp); time.sleep(7)
     print("[BOOT] Standings preload complete")
-
-def preload_odds():
-    """
-    Warm odds cache at boot — only for competitions that have fixtures
-    in the fixture store. Serial, 6-second gap between competitions.
-    Odds API has no strict per-minute limit so 6s is conservative and safe.
-    Total time: at most 10 comps × 6s = 60 seconds.
-    """
-    if not ODDS_API_KEY:
-        print("[BOOT] No ODDS_API_KEY — skipping odds preload")
-        return
-    # Only fetch competitions that actually have fixtures loaded
-    active_comps = [c for c in COMPETITIONS if any(
-        any(m.get("comp") == c for m in matches)
-        for matches in fixtures_store.values()
-    )] or COMPETITIONS   # fallback to all if store empty
-
-    print(f"[BOOT] Preloading odds for {len(active_comps)} active competitions...")
-    fetched = 0
-    for comp in active_comps:
-        try:
-            result = get_market_odds(comp)
-            if result:
-                fetched += 1
-                print(f"[BOOT] Odds: {comp} ({len(result)} fixtures)")
-            time.sleep(6)
-        except Exception as e:
-            print(f"[BOOT] Odds failed for {comp}: {e}")
-    print(f"[BOOT] Odds preload done — {fetched}/{len(active_comps)} competitions")
 
 def run_scheduler():
     fetch_all_fixtures()
     threading.Thread(target=preload_standings, daemon=True).start()
-    # Preload odds after standings settle (standings take ~70s, odds start after)
-    threading.Thread(target=preload_odds, daemon=True).start()
     while True:
         time.sleep(3600)
         print("[SCHEDULER] Hourly refresh...")
         fetch_all_fixtures()
         preload_standings()
-        # Refresh odds every hour in background — keeps edge detection current
-        threading.Thread(target=preload_odds, daemon=True).start()
         threading.Thread(target=run_calibration_check, daemon=True).start()
+
+_workers = int(os.getenv("WEB_CONCURRENCY","1"))
+if _workers > 1:
+    print(f"⚠️  WARNING: WEB_CONCURRENCY={_workers} — set to 1 to avoid duplicate schedulers.")
 
 _started = False
 def start_once():
@@ -1776,15 +995,7 @@ def start_once():
         print("[INIT] Starting background scheduler...")
         threading.Thread(target=run_scheduler, daemon=True).start()
 
-# FIX 11: Warn loudly if running with multiple workers — scheduler will duplicate
-_workers = int(os.getenv("WEB_CONCURRENCY", "1"))
-if _workers > 1:
-    print(f"⚠️  WARNING: WEB_CONCURRENCY={_workers}. Background scheduler will run "
-          f"in each worker independently, causing duplicate API calls and rate limit hits. "
-          f"Set WEB_CONCURRENCY=1 in Render environment variables.")
-
 load_cache_from_disk()
-load_odds_cache_from_disk()   # FIX 9: restore persisted odds cache on boot
 start_once()
 
 if __name__ == "__main__":

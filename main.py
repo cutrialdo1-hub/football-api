@@ -334,8 +334,10 @@ def find_match_odds(events: list, home: str, away: str) -> dict | None:
             return ev
 
         score = jaccard(ht, eh) + jaccard(at, ea)
-        # Both sides must have at least 0.4 Jaccard similarity (out of max 2.0)
-        if jaccard(ht, eh) >= 0.4 and jaccard(at, ea) >= 0.4 and score > best_score:
+        # Threshold: each side needs at least 0.30 Jaccard similarity.
+        # 0.30 catches heavy abbreviations: {"man","city"} vs {"manchester","city"}
+        # = 1 shared / 3 union = 0.33 ✓. Strict enough to prevent false positives.
+        if jaccard(ht, eh) >= 0.30 and jaccard(at, ea) >= 0.30 and score > best_score:
             best_score = score
             best_match = ev
 

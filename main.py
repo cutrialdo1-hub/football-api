@@ -497,7 +497,7 @@ def fetch_all_fixtures() -> bool:
         print("[CACHE] Fetching fixtures from API...")
         now        = time.time()
         start_date = time.strftime("%Y-%m-%d", time.gmtime(now - 86400))
-        end_date   = time.strftime("%Y-%m-%d", time.gmtime(now + 5 * 86400))
+        end_date   = time.strftime("%Y-%m-%d", time.gmtime(now + 7 * 86400))
 
         r = football_data_get(
             f"{BASE_URL}/matches",
@@ -1151,7 +1151,9 @@ def session():
             return jsonify({"status": "loading", "message": "Data syncing, try again shortly."})
 
         today   = _date.today()
-        max_day = today + timedelta(days=5)
+        # Allow up to 7 days ahead — not clamped to 5 so weekend ranges work fully
+        max_day = today + timedelta(days=7)
+
         raw_from = request.args.get("date_from","").split("T")[0] or today.isoformat()
         raw_to   = request.args.get("date_to",  "").split("T")[0] or max_day.isoformat()
 
@@ -1161,119 +1163,129 @@ def session():
         except ValueError:
             return jsonify({"error": "Invalid date format. Use YYYY-MM-DD."}), 400
 
+        # Only clamp the from-date to today (can't bet on past fixtures)
+        # Do NOT clamp d_to — respect the user's chosen end date exactly
         d_from = max(d_from, today)
-        d_to   = min(d_to, max_day)
         if d_from > d_to:
             return jsonify({"error": "date_from must be before date_to"}), 400
 
+        print(f"[SESSION] Request: {d_from} → {d_to}")
+
         def mas_score(prob, fo, conf):
-            if fo < 1.10 or fo > 5.0:    odds_suit = 0.0
-            elif fo <= 2.0:              odds_suit = (fo-1.10)/0.9
-            elif fo <= 3.5:              odds_suit = 1.0-((fo-2.0)/2.5)
-            else:                        odds_suit = max(0, 1.0-((fo-3.5)/3.0))
+            if fo < 1.10 or fo > 5.0:   odds_suit = 0.0
+            elif fo <= 2.0:              odds_suit = (fo - 1.10) / 0.9
+            elif fo <= 3.5:              odds_suit = 1.0 - ((fo - 2.0) / 2.5)
+            else:                        odds_suit = max(0, 1.0 - ((fo - 3.5) / 3.0))
             return round(prob * conf * odds_suit, 6)
 
-        # Hoist standings + radv
+        # Hoist standings + radv outside loop
         _comps: set = set()
         _tmp = d_from
         while _tmp <= d_to:
-            for _m in fixtures_store.get(_tmp.isoformat(),[]):
+            for _m in fixtures_store.get(_tmp.isoformat(), []):
                 if _m.get("comp"): _comps.add(_m["comp"])
             _tmp += timedelta(days=1)
         _standings = {c: get_standings(c) for c in _comps}
         _radv      = {c: math.sqrt(LEAGUE_HOME_ADV.get(c, DEFAULT_HOME_ADV)) for c in _comps}
 
+        print(f"[SESSION] Competitions in range: {_comps}")
+
         fixture_best = {}
+        total_fixtures_seen   = 0
+        total_fixtures_scored = 0
+
         current = d_from
         while current <= d_to:
-            ds = current.isoformat(); days_out = (current - today).days
-            for m in fixtures_store.get(ds, []):
+            ds       = current.isoformat()
+            days_out = (current - today).days
+            day_matches = fixtures_store.get(ds, [])
+            total_fixtures_seen += len(day_matches)
+
+            for m in day_matches:
                 try:
                     comp = m.get("comp"); h_id = m.get("home_id"); a_id = m.get("away_id")
                     if not comp or not h_id or not a_id: continue
 
-                    all_s  = _standings.get(comp, {"home":{}, "away":{}, "total":{}})
+                    # UTC date check: ensure fixture kickoff falls within user range
+                    # Fixes timezone bleed where a May 10 UTC kickoff at 23:00
+                    # displays as May 11 in local time
+                    kickoff_str = m.get("kickoff", "")
+                    if kickoff_str and len(kickoff_str) >= 10:
+                        ko_date = _date.fromisoformat(kickoff_str[:10])
+                        if ko_date < d_from or ko_date > d_to:
+                            print(f"[SESSION] Skipping {m.get('home')} vs {m.get('away')} — kickoff date {ko_date} outside range")
+                            continue
+
+                    all_s  = _standings.get(comp, {"home": {}, "away": {}, "total": {}})
                     lg_avg = all_s.get("league_avg", LEAGUE_AVG_GOALS.get(comp, DEFAULT_LEAGUE_AVG))
-                    fh = {"gf":1.2,"ga":1.2}; fa = {"gf":1.0,"ga":1.3}
+                    fh = {"gf": 1.2, "ga": 1.2}; fa = {"gf": 1.0, "ga": 1.3}
                     h_v = all_s["home"].get(str(h_id)) or all_s["total"].get(str(h_id), fh)
                     a_v = all_s["away"].get(str(a_id)) or all_s["total"].get(str(a_id), fa)
 
-                    hc = form_cache.get((h_id,"HOME")); ac = form_cache.get((a_id,"AWAY"))
+                    hc = form_cache.get((h_id, "HOME")); ac = form_cache.get((a_id, "AWAY"))
                     h_atk = hc["atk"] if hc else 1.0; h_def = hc["def"] if hc else 1.0
                     a_atk = ac["atk"] if ac else 1.0; a_def = ac["def"] if ac else 1.0
 
                     radv  = _radv.get(comp, math.sqrt(DEFAULT_HOME_ADV))
-                    h_lam = max(min(h_v["gf"]*(a_v["ga"]/lg_avg)*h_atk*(1.0/a_def)*radv, 3.2), 0.35)
-                    a_lam = max(min(a_v["gf"]*(h_v["ga"]/lg_avg)*a_atk*(1.0/h_def),       3.2), 0.35)
+                    h_lam = max(min(h_v["gf"] * (a_v["ga"] / lg_avg) * h_atk * (1.0 / a_def) * radv, 3.2), 0.35)
+                    a_lam = max(min(a_v["gf"] * (h_v["ga"] / lg_avg) * a_atk * (1.0 / h_def), 3.2), 0.35)
 
-                    p_h,p_d,p_a,p_btts,p_o15,p_o25,p_o35 = compute_probs(h_lam, a_lam)
-                    t = p_h+p_d+p_a; p_h/=t; p_d/=t; p_a/=t
+                    p_h, p_d, p_a, p_btts, p_o15, p_o25, p_o35 = compute_probs(h_lam, a_lam)
+                    t = p_h + p_d + p_a; p_h /= t; p_d /= t; p_a /= t
 
-                    ps = sorted([p_h,p_d,p_a], reverse=True)
+                    ps = sorted([p_h, p_d, p_a], reverse=True)
                     confidence = ps[0] - ps[1]
 
-                    def fair(p): return round(1/p,2) if p>0.04 else 25.0
+                    def fair(p): return round(1 / p, 2) if p > 0.04 else 25.0
 
                     markets = [
-                        ("Home Win","1X2",  p_h,    fair(p_h),    confidence),
-                        ("Draw",    "1X2",  p_d,    fair(p_d),    confidence*0.7),
-                        ("Away Win","1X2",  p_a,    fair(p_a),    confidence),
-                        ("BTTS",   "Goals", p_btts, fair(p_btts), 0.25),
-                        ("Over 1.5","Goals",p_o15,  fair(p_o15),  0.30),
-                        ("Over 2.5","Goals",p_o25,  fair(p_o25),  0.28),
-                        ("Over 3.5","Goals",p_o35,  fair(p_o35),  0.20),
+                        ("Home Win",  "1X2",   p_h,    fair(p_h),    confidence),
+                        ("Draw",      "1X2",   p_d,    fair(p_d),    confidence * 0.7),
+                        ("Away Win",  "1X2",   p_a,    fair(p_a),    confidence),
+                        ("BTTS",      "Goals", p_btts, fair(p_btts), 0.25),
+                        ("Over 1.5",  "Goals", p_o15,  fair(p_o15),  0.30),
+                        ("Over 2.5",  "Goals", p_o25,  fair(p_o25),  0.28),
+                        ("Over 3.5",  "Goals", p_o35,  fair(p_o35),  0.20),
                     ]
 
                     best_fix = None
                     for label, mkt_type, prob, fo, conf in markets:
                         sc = mas_score(prob, fo, conf)
                         if sc <= 0 or prob < 0.25: continue
+                        total_fixtures_scored += 1
                         if best_fix is None or sc > best_fix["mas_score"]:
                             best_fix = {
-                                "date": ds, "kickoff": m.get("kickoff",""),
+                                "date": ds, "kickoff": kickoff_str,
                                 "home": m["home"], "away": m["away"],
                                 "home_id": h_id,   "away_id": a_id,
                                 "comp": comp,      "league": m.get("league", comp),
                                 "market": label,   "mkt_type": mkt_type,
-                                "prob": round(prob*100,1), "fair_odds": fo,
-                                "confidence": round(conf,4), "mas_score": sc,
-                                "h_lam": round(h_lam,3), "a_lam": round(a_lam,3),
+                                "prob": round(prob * 100, 1), "fair_odds": fo,
+                                "confidence": round(conf, 4), "mas_score": sc,
+                                "h_lam": round(h_lam, 3), "a_lam": round(a_lam, 3),
                                 "days_out": days_out,
                             }
 
                     if best_fix:
-                        fixture_best[(ds, m["home"], m["away"])] = best_fix
+                        key = (ds, m["home"], m["away"])
+                        fixture_best[key] = best_fix
 
                 except Exception as e:
                     print(f"[SESSION] Skipped {m.get('home','?')} vs {m.get('away','?')}: {e}")
             current += timedelta(days=1)
 
-        # ── Step 2: sort all picks by score descending (best first) ──
-        # The greedy selector below will pick from this ordered pool.
-        all_picks_by_score = sorted(
-            fixture_best.values(),
-            key=lambda x: -x["mas_score"]
-        )
+        print(f"[SESSION] Fixtures seen: {total_fixtures_seen} | Scored: {total_fixtures_scored} | Unique fixtures: {len(fixture_best)}")
 
-        # ── Step 3: greedy sequential selection with 105-minute gap ──
-        # At each step, pick the HIGHEST-SCORING fixture whose kickoff is
-        # at least 105 minutes after the previous pick's kickoff.
-        # This guarantees every match result is known before the next bet.
-        # Fixtures without a kickoff time fall back to date-based ordering.
-
-        GAP_MINUTES = 90
+        # Sort all scored fixtures by score descending
+        all_picks_by_score = sorted(fixture_best.values(), key=lambda x: -x["mas_score"])
 
         def kickoff_dt(pick):
-            """Parse kickoff to datetime, fallback to date at 00:00 UTC."""
             ko = pick.get("kickoff", "")
             if ko and len(ko) > 10:
                 try:
-                    # ISO format: "2026-05-10T14:00:00Z"
                     return time.strptime(ko[:19], "%Y-%m-%dT%H:%M:%S")
                 except Exception:
                     pass
-            # Fallback: use date only — treated as midnight so same-day
-            # fixtures without exact times are grouped together
             ds = pick.get("date", "2000-01-01")
             try:
                 return time.strptime(ds, "%Y-%m-%d")
@@ -1283,27 +1295,53 @@ def session():
         def to_epoch(t_struct):
             return int(time.mktime(t_struct))
 
-        selected = []
-        reserves = []
-        last_kickoff_epoch = 0  # epoch seconds of last selected pick's kickoff
+        # ── Multi-pass greedy selection ──
+        # Pass 1: strict 105-minute gap (90min regulation + 15min added time)
+        # Pass 2: relax to 90 minutes if still short
+        # Pass 3: relax to 75 minutes as last resort for very dense schedules
 
-        for pick in all_picks_by_score:
-            ko_epoch = to_epoch(kickoff_dt(pick))
-            gap_ok   = (ko_epoch - last_kickoff_epoch) >= (GAP_MINUTES * 60)
+        def greedy_select(pool, gap_minutes, already_selected):
+            """Select picks from pool respecting gap_minutes after the last selected pick."""
+            selected = list(already_selected)
+            rejected = []
+            last_epoch = to_epoch(kickoff_dt(selected[-1])) if selected else 0
 
-            if len(selected) == 0 or gap_ok:
-                selected.append(pick)
-                last_kickoff_epoch = ko_epoch
-                if len(selected) >= 10:
-                    break
-            else:
-                reserves.append(pick)
+            for pick in pool:
+                ko_epoch = to_epoch(kickoff_dt(pick))
+                if not selected or (ko_epoch - last_epoch) >= (gap_minutes * 60):
+                    selected.append(pick)
+                    last_epoch = ko_epoch
+                    if len(selected) >= 10:
+                        break
+                else:
+                    rejected.append(pick)
+
+            return selected, rejected
+
+        selected, rejected_105 = greedy_select(all_picks_by_score, 105, [])
+        print(f"[SESSION] Pass 1 (105min gap): {len(selected)} selected, {len(rejected_105)} rejected")
+
+        if len(selected) < 10 and rejected_105:
+            remaining = sorted(rejected_105, key=lambda x: -x["mas_score"])
+            selected, rejected_90 = greedy_select(remaining, 90, selected)
+            print(f"[SESSION] Pass 2 (90min gap): {len(selected)} selected")
+
+            if len(selected) < 10 and rejected_90:
+                remaining2 = sorted(rejected_90, key=lambda x: -x["mas_score"])
+                selected, _ = greedy_select(remaining2, 75, selected)
+                print(f"[SESSION] Pass 3 (75min gap): {len(selected)} selected")
+
+        # Collect reserves: anything not selected, sorted by score
+        selected_keys = {(p["home"], p["away"], p["date"]) for p in selected}
+        reserves = sorted(
+            [p for p in all_picks_by_score if (p["home"], p["away"], p["date"]) not in selected_keys],
+            key=lambda x: -x["mas_score"]
+        )
 
         # Sort selected in strict kickoff order for display
         selected.sort(key=lambda x: kickoff_dt(x))
 
-        # Sort reserves by score so best replacements appear first
-        reserves.sort(key=lambda x: -x["mas_score"])
+        print(f"[SESSION] Final: {len(selected)} session picks, {len(reserves)} reserves")
 
         return jsonify({"session": selected, "reserves": reserves[:15]})
 

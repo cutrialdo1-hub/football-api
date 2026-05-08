@@ -394,6 +394,14 @@
         line-height: 1.5;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* GET VERDICT pulses twice when a fixture is selected */
+    @keyframes btn-pulse {
+        0%   { box-shadow: 0 0 0 0 rgba(0,255,157,0.7); }
+        70%  { box-shadow: 0 0 0 12px rgba(0,255,157,0); }
+        100% { box-shadow: 0 0 0 0 rgba(0,255,157,0); }
+    }
+    .btn-just-enabled { animation: btn-pulse 0.8s ease 0s 2; }
     .status-msg { text-align: center; font-size: 0.75rem; color: var(--dim); padding: 10px 0; }
     .error-msg  { text-align: center; font-size: 0.78rem; color: var(--away); padding: 12px 0; }
 </style>
@@ -407,21 +415,9 @@
     <div class="card">
         <input type="date" id="date">
         <button onclick="getFixtures()">SCAN TACTICAL BOARD</button>
-
-        <!-- Fixture dropdown — hidden until scan runs -->
-        <div id="fixture-dropdown" style="display:none;">
-            <div class="fixture-dropdown-toggle" id="fdt-toggle" onclick="toggleFixtureDropdown()">
-                <div class="fdt-left">
-                    <div class="fdt-count" id="fdt-count">0 Fixtures Found</div>
-                    <div class="fdt-sub" id="fdt-sub">Tap to browse</div>
-                </div>
-                <div class="fdt-chevron">▼</div>
-            </div>
-            <div class="fixture-dropdown-panel" id="fdt-panel">
-                <div id="fixture-list" class="fixture-list"></div>
-            </div>
-        </div>
-
+        <select id="matches" onchange="selectFixture(this.value)" style="display:none;">
+            <option value="">Select fixture...</option>
+        </select>
         <div id="fixture-status"></div>
         <button id="btn" onclick="predict()" disabled>GET VERDICT</button>
         <button onclick="window.location.href='acca.html'" style="background:#000;color:var(--neon);border:1px solid var(--neon);margin-bottom:0;">⚡ ACCA BUILDER</button>
@@ -471,112 +467,122 @@ function refreshKellyStakes() {
 
 document.getElementById("date").value = new Date().toISOString().split("T")[0];
 
-function toggleFixtureDropdown() {
-    const toggle = document.getElementById("fdt-toggle");
-    const panel  = document.getElementById("fdt-panel");
-    const isOpen = toggle.classList.contains("open");
-    toggle.classList.toggle("open", !isOpen);
-    panel.classList.toggle("open", !isOpen);
-}
-
-function openFixtureDropdown() {
-    document.getElementById("fdt-toggle").classList.add("open");
-    document.getElementById("fdt-panel").classList.add("open");
-}
-
-function closeFixtureDropdown() {
-    document.getElementById("fdt-toggle").classList.remove("open");
-    document.getElementById("fdt-panel").classList.remove("open");
-}
-
-function selectFixture(idx) {
-    selectedIndex = idx;
-    document.querySelectorAll(".fixture-card").forEach(c => {
-        c.classList.toggle("selected", parseInt(c.dataset.idx) === idx);
-    });
-    document.getElementById("btn").disabled = false;
+function selectFixture(val) {
+    if (val === "") return;
+    selectedIndex = parseInt(val);
+    const btn = document.getElementById("btn");
+    btn.disabled = false;
+    btn.classList.remove("btn-just-enabled");
+    void btn.offsetWidth;
+    btn.classList.add("btn-just-enabled");
     document.getElementById("output").innerHTML = "";
-    // Auto-close dropdown after selection
-    closeFixtureDropdown();
-    // Update toggle subtitle to show selected match
-    const m = fixturesData[idx];
-    if (m) {
-        document.getElementById("fdt-sub").textContent = `✓ ${m.home} vs ${m.away} selected`;
-    }
 }
 
-function renderFixtureList(fixtures) {
-    const list   = document.getElementById("fixture-list");
-    const dropdown = document.getElementById("fixture-dropdown");
+async function getFixtures(attempt = 1) {
+    const MAX_ATTEMPTS = 4;
+    const RETRY_DELAY  = 4000;
+
+    const d      = document.getElementById("date").value;
+    const sel    = document.getElementById("matches");
     const status = document.getElementById("fixture-status");
+    const out    = document.getElementById("output");
+    if (!d) return;
 
-    if (!fixtures.length) {
-        dropdown.style.display = "none";
-        status.innerHTML = `<div class="status-msg">No matches found for this date.</div>`;
-        return;
-    }
+    selectedIndex = null;
+    document.getElementById("btn").disabled = true;
+    sel.style.display = "none";
+    sel.innerHTML = `<option value="">Select fixture...</option>`;
+    out.innerHTML = "";
 
-    // Count by tier
-    const counts = {HIGH:0, MED:0, LOW:0};
-    fixtures.forEach(m => counts[m.tier || "LOW"]++);
+    status.innerHTML = `<div class="status-msg">
+        <div class="loader" style="width:20px;height:20px;margin:8px auto 4px;border-width:2px;"></div>
+        ${attempt === 1 ? "Scanning fixtures..." : `Server warming up... (attempt ${attempt}/${MAX_ATTEMPTS})`}
+    </div>`;
 
-    // Update toggle header
-    document.getElementById("fdt-count").textContent =
-        `📋 ${fixtures.length} Fixture${fixtures.length !== 1 ? "s" : ""} Found`;
-    document.getElementById("fdt-sub").textContent =
-        `${counts.HIGH} HIGH · ${counts.MED} MED · ${counts.LOW} LOW — Tap to browse`;
+    try {
+        const res  = await fetch(`${API}/scan?date_from=${d}&date_to=${d}`);
+        const data = await res.json();
 
-    // Sort: by kickoff time, HIGH first within same time
-    const sorted = [...fixtures].map((m,i) => ({...m, _origIdx: i}));
-    sorted.sort((a,b) => {
-        const ta = a.kickoff || a.date; const tb = b.kickoff || b.date;
-        if (ta !== tb) return ta < tb ? -1 : 1;
-        return b.confidence - a.confidence;
-    });
-
-    list.innerHTML = sorted.map(m => {
-        const idx = m._origIdx;
-        let timeStr = "";
-        if (m.kickoff && m.kickoff.length > 10) {
-            try { timeStr = new Date(m.kickoff).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}); }
-            catch(e) {}
+        if (data.status === "loading") {
+            if (attempt < MAX_ATTEMPTS) {
+                status.innerHTML = `<div class="status-msg">
+                    <div class="loader" style="width:20px;height:20px;margin:8px auto 4px;border-width:2px;"></div>
+                    Syncing... retrying in ${RETRY_DELAY/1000}s
+                </div>`;
+                setTimeout(() => getFixtures(attempt + 1), RETRY_DELAY);
+                return;
+            }
+            status.innerHTML = `<div class="status-msg">📋 Still syncing — please try again shortly.</div>`;
+            return;
         }
-        const tier   = m.tier || "LOW";
-        const cpct   = Math.min(100, Math.round(((m.confidence||0) / 0.50) * 100));
-        const ppct   = m.pick_prob || 0;
-        const pbCls  = ppct >= 55 ? "bar-prob-high" : ppct >= 40 ? "bar-prob-mid" : "bar-prob-low";
-        const cbCls  = cpct >= 50 ? "bar-conf-high" : cpct >= 25 ? "bar-conf-mid" : "bar-conf-low";
+        if (data.error) {
+            if (attempt < MAX_ATTEMPTS) { setTimeout(() => getFixtures(attempt + 1), RETRY_DELAY); return; }
+            status.innerHTML = `<div class="error-msg">⚡ ${data.error}</div>`;
+            return;
+        }
+        if (data.status === "no_games") {
+            status.innerHTML = `<div class="status-msg">📋 No matches scheduled for this date.</div>`;
+            return;
+        }
 
-        return `<div class="fixture-card" data-idx="${idx}" onclick="selectFixture(${idx})">
-            <div class="fx-left">
-                <div class="fx-teams">${m.home} vs ${m.away}</div>
-                <div class="fx-meta">${m.league}</div>
-                <div class="compact-vis">
-                    <span style="font-size:0.52rem;color:var(--dim);min-width:28px;">Prob</span>
-                    <div class="compact-bar-wrap">
-                        <div class="compact-bar-fill ${pbCls}" style="width:${ppct}%"></div>
-                    </div>
-                    <span class="compact-label">${ppct}%</span>
-                </div>
-                <div class="compact-vis">
-                    <span style="font-size:0.52rem;color:var(--dim);min-width:28px;">Conf</span>
-                    <div class="compact-bar-wrap">
-                        <div class="compact-bar-fill ${cbCls}" style="width:${cpct}%"></div>
-                    </div>
-                    <span class="compact-label">${cpct}%</span>
-                </div>
-            </div>
-            <div class="fx-right">
-                ${timeStr ? `<div class="fx-time">${timeStr}</div>` : ""}
-                <span class="conf-badge conf-${tier}">${tier}</span>
-            </div>
-        </div>`;
-    }).join("");
+        fixturesData = Array.isArray(data) ? data : [];
+        if (!fixturesData.length) {
+            status.innerHTML = `<div class="status-msg">No matches found.</div>`;
+            return;
+        }
 
-    // Show dropdown and auto-open it
-    dropdown.style.display = "block";
-    status.innerHTML = "";
-    openFixtureDropdown();
+        // Group fixtures by competition name, sorted by kickoff within each group
+        const groups = {};
+        fixturesData.forEach((m, i) => {
+            const league = m.league || m.comp || "Other";
+            if (!groups[league]) groups[league] = [];
+            groups[league].push({ m, i });
+        });
+
+        // Sort within each group by kickoff time
+        Object.values(groups).forEach(arr => {
+            arr.sort((a, b) => (a.m.kickoff || a.m.date) < (b.m.kickoff || b.m.date) ? -1 : 1);
+        });
+
+        // Sort competition groups by number of fixtures desc (most games first)
+        const sortedLeagues = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
+
+        // Build select with optgroups
+        sel.innerHTML = `<option value="">— ${fixturesData.length} fixtures · select a match —</option>`;
+        sortedLeagues.forEach(league => {
+            const group = document.createElement("optgroup");
+            group.label = league;
+            groups[league].forEach(({ m, i }) => {
+                const opt = document.createElement("option");
+                opt.value = i;
+                // Show kickoff time alongside team names
+                let timeStr = "";
+                if (m.kickoff && m.kickoff.length > 10) {
+                    try { timeStr = new Date(m.kickoff).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) + " · "; }
+                    catch(e) {}
+                }
+                const tier = m.tier === "HIGH" ? "★ " : m.tier === "MED" ? "◆ " : "";
+                opt.textContent = `${timeStr}${tier}${m.home} vs ${m.away}`;
+                group.appendChild(opt);
+            });
+            sel.appendChild(group);
+        });
+
+        sel.style.display = "block";
+        status.innerHTML = "";
+        _serverWarm = true;
+
+    } catch(e) {
+        if (attempt < MAX_ATTEMPTS) {
+            status.innerHTML = `<div class="status-msg">
+                <div class="loader" style="width:20px;height:20px;margin:8px auto 4px;border-width:2px;"></div>
+                Server waking up... retrying in ${RETRY_DELAY/1000}s
+            </div>`;
+            setTimeout(() => getFixtures(attempt + 1), RETRY_DELAY);
+            return;
+        }
+        status.innerHTML = `<div class="error-msg">⚡ Connection lost. Check your link and retry.</div>`;
+    }
 }
 
 async function getFixtures(attempt = 1) {
@@ -590,7 +596,9 @@ async function getFixtures(attempt = 1) {
 
     selectedIndex = null;
     document.getElementById("btn").disabled = true;
-    document.getElementById("fixture-dropdown").style.display = "none";
+    const sel = document.getElementById("matches");
+    sel.style.display = "none";
+    sel.innerHTML = `<option value="">Select fixture...</option>`;
     out.innerHTML = "";
 
     if (attempt === 1) {
@@ -875,7 +883,7 @@ function buildValueThresholdHtml(fairOdds, bookieOdds) {
 async function predict() {
     const idx = selectedIndex;
     const out = document.getElementById("output");
-    if (idx === null || idx === undefined) return;
+    if (idx === null || idx === undefined || isNaN(idx)) return;
 
     out.innerHTML = "<div class='loader'></div>";
 

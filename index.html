@@ -583,8 +583,8 @@ async function getFixtures(attempt = 1) {
                     try { timeStr = new Date(m.kickoff).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) + " · "; }
                     catch(e) {}
                 }
-                const tier = m.tier === "HIGH" ? "★ " : m.tier === "MED" ? "◆ " : "";
-                opt.textContent = `${timeStr}${tier}${m.home} vs ${m.away}`;
+                const dot  = m.tier === "HIGH" ? "🟢" : m.tier === "MED" ? "🟡" : "⚪";
+                opt.textContent = `${dot}  ${timeStr}${m.home} vs ${m.away}`;
                 group.appendChild(opt);
             });
             sel.appendChild(group);

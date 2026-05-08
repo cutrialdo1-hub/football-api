@@ -362,7 +362,18 @@
     }
     .rep-cancel-btn:hover { color: var(--away); box-shadow: none; }
 
-    /* ── Session complete ── */
+    /* ── Compact confidence bar for picks ── */
+    .pick-conf-row {
+        display: flex; align-items: center; gap: 6px;
+        margin-top: 5px; margin-bottom: 2px;
+    }
+    .pick-conf-label { font-size: 0.55rem; color: var(--dim); white-space: nowrap; }
+    .pick-conf-track { flex: 1; height: 4px; background: #1a1d28; border-radius: 2px; overflow: hidden; }
+    .pick-conf-fill  { height: 100%; border-radius: 2px; transition: width 0.4s; }
+    .pcf-high { background: var(--neon); }
+    .pcf-mid  { background: var(--gold); }
+    .pcf-low  { background: #555; }
+    .pick-conf-pct { font-family: Orbitron, sans-serif; font-size: 0.55rem; color: var(--dim); min-width: 26px; text-align: right; }
     .complete-card {
         background: var(--card); border: 1px solid rgba(0,255,157,0.2);
         border-radius: 16px; padding: 24px; text-align: center; display: none;
@@ -911,6 +922,15 @@ function renderSession() {
                 <div class="pick-meta">🕐 ${kickoffStr} · ${pick.league}</div>
                 <span class="pick-market-badge mkt-${pick.mkt_type||'1X2'}">${pick.market}</span>
                 <span class="pick-prob">${pick.prob}% · Fair: ${pick.fair_odds}</span>
+                <div class="pick-conf-row">
+                    <span class="pick-conf-label">Confidence</span>
+                    <div class="pick-conf-track">
+                        <div class="pick-conf-fill ${
+                            (pick.confidence||0)>=0.25?'pcf-high':(pick.confidence||0)>=0.12?'pcf-mid':'pcf-low'
+                        }" style="width:${Math.min(100,Math.round(((pick.confidence||0)/0.50)*100))}%"></div>
+                    </div>
+                    <span class="pick-conf-pct">${Math.min(100,Math.round(((pick.confidence||0)/0.50)*100))}%</span>
+                </div>
                 ${staleWarn}
                 ${resultTag}
                 ${(isPending || isUpcoming) && !isReviewing ? `

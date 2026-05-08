@@ -777,6 +777,8 @@ function buildValueThresholdHtml(fairOdds, bookieOdds) {
         <span class="vt-label ${cls}">${label}</span>
     </div>`;
 }
+
+function buildSuggestedMarketsHtml(suggestions, fixture) {
     if (!suggestions || !suggestions.length) {
         return `<div class="no-value-panel">
             — No standout markets identified for this fixture.<br>
@@ -794,8 +796,8 @@ function buildValueThresholdHtml(fairOdds, bookieOdds) {
     };
 
     const rows = suggestions.map((s, i) => {
-        const tc  = typeColors[s.type] || typeColors["Home"];
-        const badgeStyle = `background:${tc.bg};color:${tc.color};border:1px solid ${tc.border};`;
+        const tc         = typeColors[s.type] || typeColors["Home"];
+        const badgeStyle = "background:" + tc.bg + ";color:" + tc.color + ";border:1px solid " + tc.border + ";";
         const rankLabel  = i === 0 ? "★ Top pick" : i === 1 ? "2nd" : "3rd";
 
         return `

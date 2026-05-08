@@ -89,6 +89,29 @@
     .conf-MED  { background: rgba(255,204,0,0.12);  color: var(--gold); border: 1px solid rgba(255,204,0,0.25); }
     .conf-LOW  { background: rgba(136,146,176,0.1); color: var(--draw); border: 1px solid rgba(136,146,176,0.15); }
 
+    /* ── Fixture select — styled to match UI ── */
+    #matches {
+        width: 100%;
+        padding: 14px;
+        margin-bottom: 12px;
+        border-radius: 10px;
+        background: #000;
+        border: 1px solid var(--border);
+        color: #fff;
+        font-family: Inter, sans-serif;
+        font-size: 0.9rem;
+        appearance: none;
+        -webkit-appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%234a5060' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 14px center;
+        cursor: pointer;
+        transition: border-color 0.2s;
+    }
+    #matches:focus { outline: none; border-color: var(--neon); }
+    #matches option { background: #151821; color: #fff; padding: 8px; }
+    #matches optgroup { background: #0a0b10; color: var(--dim); font-size: 0.75rem; letter-spacing: 1px; }
+
     /* ── Bankroll row ── */
     .bankroll-row {
         display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
@@ -415,7 +438,7 @@
     <div class="card">
         <input type="date" id="date">
         <button onclick="getFixtures()">SCAN TACTICAL BOARD</button>
-        <select id="matches" onchange="selectFixture(this.value)" style="display:none;">
+        <select id="matches" onchange="selectFixture(this.value)">
             <option value="">Select fixture...</option>
         </select>
         <div id="fixture-status"></div>
@@ -490,8 +513,7 @@ async function getFixtures(attempt = 1) {
 
     selectedIndex = null;
     document.getElementById("btn").disabled = true;
-    sel.style.display = "none";
-    sel.innerHTML = `<option value="">Select fixture...</option>`;
+    sel.innerHTML = `<option value="">Scanning fixtures...</option>`;
     out.innerHTML = "";
 
     status.innerHTML = `<div class="status-msg">
@@ -568,85 +590,8 @@ async function getFixtures(attempt = 1) {
             sel.appendChild(group);
         });
 
-        sel.style.display = "block";
         status.innerHTML = "";
         _serverWarm = true;
-
-    } catch(e) {
-        if (attempt < MAX_ATTEMPTS) {
-            status.innerHTML = `<div class="status-msg">
-                <div class="loader" style="width:20px;height:20px;margin:8px auto 4px;border-width:2px;"></div>
-                Server waking up... retrying in ${RETRY_DELAY/1000}s
-            </div>`;
-            setTimeout(() => getFixtures(attempt + 1), RETRY_DELAY);
-            return;
-        }
-        status.innerHTML = `<div class="error-msg">⚡ Connection lost. Check your link and retry.</div>`;
-    }
-}
-
-async function getFixtures(attempt = 1) {
-    const MAX_ATTEMPTS = 4;
-    const RETRY_DELAY  = 4000;
-
-    const d      = document.getElementById("date").value;
-    const status = document.getElementById("fixture-status");
-    const out    = document.getElementById("output");
-    if (!d) return;
-
-    selectedIndex = null;
-    document.getElementById("btn").disabled = true;
-    const sel = document.getElementById("matches");
-    sel.style.display = "none";
-    sel.innerHTML = `<option value="">Select fixture...</option>`;
-    out.innerHTML = "";
-
-    if (attempt === 1) {
-        status.innerHTML = `<div class="status-msg">
-            <div class="loader" style="width:20px;height:20px;margin:8px auto 4px;border-width:2px;"></div>
-            Scanning fixtures...
-        </div>`;
-    } else {
-        status.innerHTML = `<div class="status-msg">
-            <div class="loader" style="width:20px;height:20px;margin:8px auto 4px;border-width:2px;"></div>
-            Server warming up... (attempt ${attempt}/${MAX_ATTEMPTS})
-        </div>`;
-    }
-
-    try {
-        const res  = await fetch(`${API}/scan?date_from=${d}&date_to=${d}`);
-        const data = await res.json();
-
-        if (data.status === "loading") {
-            if (attempt < MAX_ATTEMPTS) {
-                status.innerHTML = `<div class="status-msg">
-                    <div class="loader" style="width:20px;height:20px;margin:8px auto 4px;border-width:2px;"></div>
-                    Syncing match data... retrying in ${RETRY_DELAY/1000}s
-                </div>`;
-                setTimeout(() => getFixtures(attempt + 1), RETRY_DELAY);
-                return;
-            }
-            status.innerHTML = `<div class="status-msg">📋 Still syncing — please try again in a moment.</div>`;
-            return;
-        }
-        if (data.error) {
-            if (attempt < MAX_ATTEMPTS) { setTimeout(() => getFixtures(attempt + 1), RETRY_DELAY); return; }
-            status.innerHTML = `<div class="error-msg">⚡ ${data.error}</div>`;
-            return;
-        }
-        if (data.status === "no_games") {
-            status.innerHTML = `<div class="status-msg">📋 No matches scheduled for this date.</div>`;
-            return;
-        }
-
-        fixturesData = Array.isArray(data) ? data : [];
-        if (!fixturesData.length) {
-            status.innerHTML = `<div class="status-msg">No matches found.</div>`;
-            return;
-        }
-        status.innerHTML = "";
-        _serverWarm = true;
-        renderFixtureList(fixturesData);
 
     } catch(e) {
         if (attempt < MAX_ATTEMPTS) {

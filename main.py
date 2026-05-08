@@ -331,7 +331,17 @@ def fetch_all_fixtures() -> bool:
 # =========================================================
 # ⚽ ROUTES
 # =========================================================
-@app.route("/fixtures")
+@app.route("/ping")
+def ping():
+    """
+    Lightweight wake-up endpoint.
+    Called silently by all frontend pages on load to warm the server
+    before the user interacts. Returns instantly — no DB or API calls.
+    Also triggers fixture fetch if store is empty (non-blocking).
+    """
+    if not fixtures_store:
+        threading.Thread(target=fetch_all_fixtures, daemon=True).start()
+    return jsonify({"status": "ok", "warm": bool(fixtures_store)})
 def fixtures():
     date = request.args.get("date", "").split("T")[0]
     if not date: return jsonify([])

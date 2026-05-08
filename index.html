@@ -45,30 +45,46 @@
     button:hover:not(:disabled) { box-shadow: 0 0 18px rgba(0,255,157,0.35); }
     button:disabled { background: #1a1a1a; color: #444; cursor: not-allowed; box-shadow: none; }
 
-    /* ── Fixture card list ── */
-    .fixture-list { margin-bottom: 12px; }
+    /* ── Fixture dropdown ── */
+    .fixture-dropdown-toggle {
+        width: 100%; display: flex; align-items: center; justify-content: space-between;
+        background: #000; border: 1px solid var(--border); border-radius: 10px;
+        padding: 12px 14px; margin-bottom: 0; cursor: pointer;
+        transition: border-color 0.2s; user-select: none;
+    }
+    .fixture-dropdown-toggle:hover { border-color: rgba(0,255,157,0.4); box-shadow: none; }
+    .fixture-dropdown-toggle.open  { border-color: var(--neon); border-radius: 10px 10px 0 0; border-bottom-color: transparent; }
+    .fdt-left   { display: flex; flex-direction: column; gap: 2px; }
+    .fdt-count  { font-family: Orbitron, sans-serif; font-size: 0.72rem; font-weight: 700; color: var(--neon); }
+    .fdt-sub    { font-size: 0.58rem; color: var(--dim); letter-spacing: 1px; }
+    .fdt-chevron { font-size: 0.75rem; color: var(--dim); transition: transform 0.25s; flex-shrink: 0; }
+    .fixture-dropdown-toggle.open .fdt-chevron { transform: rotate(180deg); color: var(--neon); }
+
+    .fixture-dropdown-panel {
+        background: #000; border: 1px solid var(--neon); border-top: none;
+        border-radius: 0 0 10px 10px; max-height: 0; overflow: hidden;
+        transition: max-height 0.35s ease; margin-bottom: 12px;
+    }
+    .fixture-dropdown-panel.open { max-height: 420px; overflow-y: auto; padding: 8px 8px 4px; }
+
+    .fixture-list { margin-bottom: 0; }
 
     .fixture-card {
         display: flex; align-items: center; justify-content: space-between;
-        background: #000; border: 1px solid var(--border); border-radius: 10px;
-        padding: 10px 12px; margin-bottom: 6px; cursor: pointer;
+        background: #0d0f16; border: 1px solid var(--border); border-radius: 8px;
+        padding: 9px 12px; margin-bottom: 6px; cursor: pointer;
         transition: border-color 0.2s, background 0.2s;
         user-select: none; overflow: hidden;
     }
-    .fixture-card:hover    { border-color: #3a3f50; background: #080a10; }
-    .fixture-card.selected { border-color: var(--neon); background: rgba(0,255,157,0.04); }
+    .fixture-card:hover    { border-color: #3a3f50; background: #111318; }
+    .fixture-card.selected { border-color: var(--neon); background: rgba(0,255,157,0.06); }
 
     .fx-left { flex: 1; min-width: 0; overflow: hidden; }
     .fx-teams { font-size: 0.78rem; font-weight: 600; color: #dde; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .fx-meta  { font-size: 0.58rem; color: var(--dim); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
     .fx-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; margin-left: 8px; }
     .fx-time  { font-family: Orbitron, sans-serif; font-size: 0.58rem; color: var(--dim); }
-
-    .conf-badge {
-        font-family: Orbitron, sans-serif; font-size: 0.52rem; font-weight: 700;
-        letter-spacing: 0.5px; padding: 2px 6px; border-radius: 4px; white-space: nowrap;
-    }
+    .conf-badge { font-family: Orbitron, sans-serif; font-size: 0.52rem; font-weight: 700; letter-spacing: 0.5px; padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
     .conf-HIGH { background: rgba(0,255,157,0.12); color: var(--neon); border: 1px solid rgba(0,255,157,0.25); }
     .conf-MED  { background: rgba(255,204,0,0.12);  color: var(--gold); border: 1px solid rgba(255,204,0,0.25); }
     .conf-LOW  { background: rgba(136,146,176,0.1); color: var(--draw); border: 1px solid rgba(136,146,176,0.15); }
@@ -134,8 +150,168 @@
     .mkt-AH    { background: rgba(255,152,0,0.12);  color: #ff9800;     border: 1px solid rgba(255,152,0,0.25); }
     .mkt-Goals { background: rgba(255,204,0,0.12);  color: var(--gold); border: 1px solid rgba(255,204,0,0.25); }
 
-    .no-value  { color: #3a3f50; }
-    .thin-edge { color: var(--draw); font-size: 0.65rem; }
+    /* ══════════════════════════════════════════
+       VISUALISATION SYSTEM
+       ══════════════════════════════════════════ */
+
+    /* ── Shared bar component ── */
+    .vis-block {
+        margin-bottom: 10px;
+    }
+    .vis-label-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 4px;
+    }
+    .vis-label {
+        font-size: 0.6rem;
+        letter-spacing: 1.5px;
+        color: var(--dim);
+        text-transform: uppercase;
+    }
+    .vis-value {
+        font-family: Orbitron, sans-serif;
+        font-size: 0.72rem;
+        font-weight: 700;
+    }
+    .vis-bar-track {
+        height: 8px;
+        background: #1a1d28;
+        border-radius: 4px;
+        overflow: hidden;
+        margin-bottom: 3px;
+    }
+    .vis-bar-fill {
+        height: 100%;
+        border-radius: 4px;
+        transition: width 0.5s ease;
+    }
+    .vis-desc {
+        font-size: 0.6rem;
+        color: var(--dim);
+        line-height: 1.4;
+    }
+
+    /* Colour scales */
+    .bar-prob-high  { background: var(--neon); box-shadow: 0 0 6px rgba(0,255,157,0.4); }
+    .bar-prob-mid   { background: var(--gold); }
+    .bar-prob-low   { background: var(--away); }
+    .bar-conf-high  { background: var(--neon); box-shadow: 0 0 6px rgba(0,255,157,0.4); }
+    .bar-conf-mid   { background: var(--gold); }
+    .bar-conf-low   { background: #555; }
+
+    /* ── Verdict card visualisation panel ── */
+    .verdict-vis-panel {
+        background: #0d0f16;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px;
+        margin: 14px 0;
+    }
+    .verdict-vis-title {
+        font-size: 0.6rem;
+        letter-spacing: 3px;
+        color: var(--dim);
+        text-transform: uppercase;
+        margin-bottom: 14px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #1a1d28;
+    }
+    .verdict-vis-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+    }
+
+    /* ── Value threshold bar ── */
+    .value-threshold-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 4px;
+    }
+    .vt-track {
+        flex: 1;
+        height: 6px;
+        background: #1a1d28;
+        border-radius: 3px;
+        overflow: hidden;
+        position: relative;
+    }
+    .vt-fill {
+        height: 100%;
+        border-radius: 3px;
+        transition: width 0.4s ease;
+    }
+    .vt-fill.pos  { background: var(--neon); box-shadow: 0 0 6px rgba(0,255,157,0.4); }
+    .vt-fill.thin { background: var(--gold); }
+    .vt-fill.neg  { background: var(--away); }
+    .vt-label {
+        font-family: Orbitron, sans-serif;
+        font-size: 0.6rem;
+        min-width: 50px;
+        text-align: right;
+    }
+    .vt-label.pos  { color: var(--neon); }
+    .vt-label.thin { color: var(--gold); }
+    .vt-label.neg  { color: var(--away); }
+
+    /* ── Fair price context band ── */
+    .fair-context {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 3px;
+    }
+    .fc-track {
+        flex: 1;
+        height: 6px;
+        background: linear-gradient(to right, #1a1d28 0%, rgba(0,255,157,0.3) 30%, rgba(0,255,157,0.6) 55%, rgba(255,204,0,0.4) 75%, #1a1d28 100%);
+        border-radius: 3px;
+        position: relative;
+    }
+    .fc-marker {
+        position: absolute;
+        top: -3px;
+        width: 4px;
+        height: 12px;
+        background: #fff;
+        border-radius: 2px;
+        transform: translateX(-50%);
+        box-shadow: 0 0 4px rgba(255,255,255,0.6);
+    }
+    .fc-label {
+        font-size: 0.58rem;
+        color: var(--dim);
+        white-space: nowrap;
+    }
+
+    /* ── Compact vis for fixture list ── */
+    .compact-vis {
+        display: flex;
+        gap: 6px;
+        margin-top: 5px;
+        align-items: center;
+    }
+    .compact-bar-wrap {
+        flex: 1;
+        height: 4px;
+        background: #1a1d28;
+        border-radius: 2px;
+        overflow: hidden;
+    }
+    .compact-bar-fill {
+        height: 100%;
+        border-radius: 2px;
+    }
+    .compact-label {
+        font-size: 0.55rem;
+        color: var(--dim);
+        white-space: nowrap;
+        min-width: 26px;
+        text-align: right;
+    }
 
     .gaffer-box { background: rgba(0,255,157,0.04); border-left: 3px solid var(--neon); border-radius: 0 8px 8px 0; padding: 14px 16px; margin-top: 16px; font-size: 0.82rem; line-height: 1.65; color: #b0bcc8; }
     .gaffer-box .signature { font-family: Orbitron, sans-serif; color: var(--neon); font-size: 0.65rem; letter-spacing: 3px; text-align: right; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(0,255,157,0.1); }
@@ -231,7 +407,22 @@
     <div class="card">
         <input type="date" id="date">
         <button onclick="getFixtures()">SCAN TACTICAL BOARD</button>
-        <div id="fixture-list" class="fixture-list"></div>
+
+        <!-- Fixture dropdown — hidden until scan runs -->
+        <div id="fixture-dropdown" style="display:none;">
+            <div class="fixture-dropdown-toggle" id="fdt-toggle" onclick="toggleFixtureDropdown()">
+                <div class="fdt-left">
+                    <div class="fdt-count" id="fdt-count">0 Fixtures Found</div>
+                    <div class="fdt-sub" id="fdt-sub">Tap to browse</div>
+                </div>
+                <div class="fdt-chevron">▼</div>
+            </div>
+            <div class="fixture-dropdown-panel" id="fdt-panel">
+                <div id="fixture-list" class="fixture-list"></div>
+            </div>
+        </div>
+
+        <div id="fixture-status"></div>
         <button id="btn" onclick="predict()" disabled>GET VERDICT</button>
         <button onclick="window.location.href='acca.html'" style="background:#000;color:var(--neon);border:1px solid var(--neon);margin-bottom:0;">⚡ ACCA BUILDER</button>
         <button onclick="window.location.href='session.html'" style="background:#000;color:#ffcc00;border:1px solid #ffcc00;margin-top:12px;margin-bottom:0;">🎯 MASANIELLO</button>
@@ -280,6 +471,24 @@ function refreshKellyStakes() {
 
 document.getElementById("date").value = new Date().toISOString().split("T")[0];
 
+function toggleFixtureDropdown() {
+    const toggle = document.getElementById("fdt-toggle");
+    const panel  = document.getElementById("fdt-panel");
+    const isOpen = toggle.classList.contains("open");
+    toggle.classList.toggle("open", !isOpen);
+    panel.classList.toggle("open", !isOpen);
+}
+
+function openFixtureDropdown() {
+    document.getElementById("fdt-toggle").classList.add("open");
+    document.getElementById("fdt-panel").classList.add("open");
+}
+
+function closeFixtureDropdown() {
+    document.getElementById("fdt-toggle").classList.remove("open");
+    document.getElementById("fdt-panel").classList.remove("open");
+}
+
 function selectFixture(idx) {
     selectedIndex = idx;
     document.querySelectorAll(".fixture-card").forEach(c => {
@@ -287,16 +496,37 @@ function selectFixture(idx) {
     });
     document.getElementById("btn").disabled = false;
     document.getElementById("output").innerHTML = "";
+    // Auto-close dropdown after selection
+    closeFixtureDropdown();
+    // Update toggle subtitle to show selected match
+    const m = fixturesData[idx];
+    if (m) {
+        document.getElementById("fdt-sub").textContent = `✓ ${m.home} vs ${m.away} selected`;
+    }
 }
 
 function renderFixtureList(fixtures) {
-    const list = document.getElementById("fixture-list");
+    const list   = document.getElementById("fixture-list");
+    const dropdown = document.getElementById("fixture-dropdown");
+    const status = document.getElementById("fixture-status");
+
     if (!fixtures.length) {
-        list.innerHTML = `<div class="status-msg">No matches found for this date.</div>`;
+        dropdown.style.display = "none";
+        status.innerHTML = `<div class="status-msg">No matches found for this date.</div>`;
         return;
     }
 
-    // Sort by kickoff time, then by confidence descending within same time
+    // Count by tier
+    const counts = {HIGH:0, MED:0, LOW:0};
+    fixtures.forEach(m => counts[m.tier || "LOW"]++);
+
+    // Update toggle header
+    document.getElementById("fdt-count").textContent =
+        `📋 ${fixtures.length} Fixture${fixtures.length !== 1 ? "s" : ""} Found`;
+    document.getElementById("fdt-sub").textContent =
+        `${counts.HIGH} HIGH · ${counts.MED} MED · ${counts.LOW} LOW — Tap to browse`;
+
+    // Sort: by kickoff time, HIGH first within same time
     const sorted = [...fixtures].map((m,i) => ({...m, _origIdx: i}));
     sorted.sort((a,b) => {
         const ta = a.kickoff || a.date; const tb = b.kickoff || b.date;
@@ -311,11 +541,30 @@ function renderFixtureList(fixtures) {
             try { timeStr = new Date(m.kickoff).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}); }
             catch(e) {}
         }
-        const tier = m.tier || "LOW";
+        const tier   = m.tier || "LOW";
+        const cpct   = Math.min(100, Math.round(((m.confidence||0) / 0.50) * 100));
+        const ppct   = m.pick_prob || 0;
+        const pbCls  = ppct >= 55 ? "bar-prob-high" : ppct >= 40 ? "bar-prob-mid" : "bar-prob-low";
+        const cbCls  = cpct >= 50 ? "bar-conf-high" : cpct >= 25 ? "bar-conf-mid" : "bar-conf-low";
+
         return `<div class="fixture-card" data-idx="${idx}" onclick="selectFixture(${idx})">
             <div class="fx-left">
                 <div class="fx-teams">${m.home} vs ${m.away}</div>
                 <div class="fx-meta">${m.league}</div>
+                <div class="compact-vis">
+                    <span style="font-size:0.52rem;color:var(--dim);min-width:28px;">Prob</span>
+                    <div class="compact-bar-wrap">
+                        <div class="compact-bar-fill ${pbCls}" style="width:${ppct}%"></div>
+                    </div>
+                    <span class="compact-label">${ppct}%</span>
+                </div>
+                <div class="compact-vis">
+                    <span style="font-size:0.52rem;color:var(--dim);min-width:28px;">Conf</span>
+                    <div class="compact-bar-wrap">
+                        <div class="compact-bar-fill ${cbCls}" style="width:${cpct}%"></div>
+                    </div>
+                    <span class="compact-label">${cpct}%</span>
+                </div>
             </div>
             <div class="fx-right">
                 ${timeStr ? `<div class="fx-time">${timeStr}</div>` : ""}
@@ -323,28 +572,34 @@ function renderFixtureList(fixtures) {
             </div>
         </div>`;
     }).join("");
+
+    // Show dropdown and auto-open it
+    dropdown.style.display = "block";
+    status.innerHTML = "";
+    openFixtureDropdown();
 }
 
 async function getFixtures(attempt = 1) {
     const MAX_ATTEMPTS = 4;
-    const RETRY_DELAY  = 4000; // ms between retries
+    const RETRY_DELAY  = 4000;
 
-    const d    = document.getElementById("date").value;
-    const list = document.getElementById("fixture-list");
-    const out  = document.getElementById("output");
+    const d      = document.getElementById("date").value;
+    const status = document.getElementById("fixture-status");
+    const out    = document.getElementById("output");
     if (!d) return;
 
     selectedIndex = null;
     document.getElementById("btn").disabled = true;
+    document.getElementById("fixture-dropdown").style.display = "none";
     out.innerHTML = "";
 
     if (attempt === 1) {
-        list.innerHTML = `<div class="status-msg">
+        status.innerHTML = `<div class="status-msg">
             <div class="loader" style="width:20px;height:20px;margin:8px auto 4px;border-width:2px;"></div>
             Scanning fixtures...
         </div>`;
     } else {
-        list.innerHTML = `<div class="status-msg">
+        status.innerHTML = `<div class="status-msg">
             <div class="loader" style="width:20px;height:20px;margin:8px auto 4px;border-width:2px;"></div>
             Server warming up... (attempt ${attempt}/${MAX_ATTEMPTS})
         </div>`;
@@ -355,51 +610,46 @@ async function getFixtures(attempt = 1) {
         const data = await res.json();
 
         if (data.status === "loading") {
-            // Server awake but still syncing — retry
             if (attempt < MAX_ATTEMPTS) {
-                list.innerHTML = `<div class="status-msg">
+                status.innerHTML = `<div class="status-msg">
                     <div class="loader" style="width:20px;height:20px;margin:8px auto 4px;border-width:2px;"></div>
                     Syncing match data... retrying in ${RETRY_DELAY/1000}s
                 </div>`;
                 setTimeout(() => getFixtures(attempt + 1), RETRY_DELAY);
                 return;
             }
-            list.innerHTML = `<div class="status-msg">📋 Still syncing — please try again in a moment.</div>`;
+            status.innerHTML = `<div class="status-msg">📋 Still syncing — please try again in a moment.</div>`;
             return;
         }
-
         if (data.error) {
-            if (attempt < MAX_ATTEMPTS) {
-                setTimeout(() => getFixtures(attempt + 1), RETRY_DELAY);
-                return;
-            }
-            list.innerHTML = `<div class="error-msg">⚡ ${data.error}</div>`;
+            if (attempt < MAX_ATTEMPTS) { setTimeout(() => getFixtures(attempt + 1), RETRY_DELAY); return; }
+            status.innerHTML = `<div class="error-msg">⚡ ${data.error}</div>`;
             return;
         }
-
         if (data.status === "no_games") {
-            list.innerHTML = `<div class="status-msg">📋 No matches scheduled for this date.</div>`;
+            status.innerHTML = `<div class="status-msg">📋 No matches scheduled for this date.</div>`;
             return;
         }
 
         fixturesData = Array.isArray(data) ? data : [];
         if (!fixturesData.length) {
-            list.innerHTML = `<div class="status-msg">No matches found.</div>`;
+            status.innerHTML = `<div class="status-msg">No matches found.</div>`;
             return;
         }
+        status.innerHTML = "";
         _serverWarm = true;
         renderFixtureList(fixturesData);
 
     } catch(e) {
         if (attempt < MAX_ATTEMPTS) {
-            list.innerHTML = `<div class="status-msg">
+            status.innerHTML = `<div class="status-msg">
                 <div class="loader" style="width:20px;height:20px;margin:8px auto 4px;border-width:2px;"></div>
                 Server waking up... retrying in ${RETRY_DELAY/1000}s
             </div>`;
             setTimeout(() => getFixtures(attempt + 1), RETRY_DELAY);
             return;
         }
-        list.innerHTML = `<div class="error-msg">⚡ Connection lost. Check your link and retry.</div>`;
+        status.innerHTML = `<div class="error-msg">⚡ Connection lost. Check your link and retry.</div>`;
     }
 }
 
@@ -424,25 +674,156 @@ function calcKelly(inputEl, fairOdds, targetId) {
     const val      = parseFloat(inputEl.value);
     const bankroll = getBankroll();
     row.classList.remove("value");
+
     if (!val || isNaN(val) || val <= 1.0 || !fairOdds || fairOdds <= 1) {
         target.innerHTML = `<span class="no-value">--</span>`; return;
     }
-    const p = 1/fairOdds; const q = 1-p; const b = val-1;
+
+    const p      = 1/fairOdds; const q = 1-p; const b = val-1;
     const f_star = (b*p-q)/b;
     const edge   = (val/fairOdds)-1;
-    if (edge <= 0.05) {
-        target.innerHTML = edge > 0
-            ? `<span class="thin-edge">Thin</span>`
-            : `<span class="no-value">No edge</span>`;
+    const edgePct = (edge*100).toFixed(1);
+    const barW   = Math.min(100, Math.abs(edge)*500);
+
+    if (edge <= 0) {
+        target.innerHTML = `
+            <div class="vt-track"><div class="vt-fill neg" style="width:${barW}%"></div></div>
+            <span class="vt-label neg" style="font-size:0.58rem;">${edgePct}%</span>`;
         return;
     }
-    if (f_star <= 0) { target.innerHTML = `<span class="no-value">No edge</span>`; return; }
+    if (edge <= 0.05) {
+        target.innerHTML = `
+            <div class="vt-track"><div class="vt-fill thin" style="width:${barW}%"></div></div>
+            <span class="vt-label thin" style="font-size:0.58rem;">Thin</span>`;
+        return;
+    }
+    if (f_star <= 0) {
+        target.innerHTML = `<span class="no-value">No edge</span>`; return;
+    }
+
     const stake = (0.25 * f_star * bankroll).toFixed(2);
     row.classList.add("value");
-    target.innerHTML = `<span class="prime">★ €${stake}</span>`;
+    target.innerHTML = `
+        <div class="vt-track"><div class="vt-fill pos" style="width:${Math.min(100,barW)}%"></div></div>
+        <span class="vt-label pos" style="font-size:0.6rem;">+${edgePct}%</span>
+        <span class="prime" style="display:block;font-size:0.7rem;text-align:right;margin-top:2px;">★ €${stake}</span>`;
 }
 
-function buildSuggestedMarketsHtml(suggestions, fixture) {
+// ── Visualisation helpers ──
+
+function probBarClass(pct) {
+    if (pct >= 55) return "bar-prob-high";
+    if (pct >= 40) return "bar-prob-mid";
+    return "bar-prob-low";
+}
+
+function confBarClass(conf) {
+    // conf = confidence gap (0-1 float from backend)
+    if (conf >= 0.25) return "bar-conf-high";
+    if (conf >= 0.12) return "bar-conf-mid";
+    return "bar-conf-low";
+}
+
+function confPct(conf) {
+    // Map 0–0.50 range to 0–100% display
+    return Math.min(100, Math.round((conf / 0.50) * 100));
+}
+
+function confDesc(conf) {
+    if (conf >= 0.25) return "Model clearly separates this outcome from alternatives";
+    if (conf >= 0.12) return "Moderate separation — check both top markets";
+    return "Closely contested — predictions carry higher uncertainty";
+}
+
+function probDesc(pct) {
+    if (pct >= 60) return "Strong model conviction on this outcome";
+    if (pct >= 45) return "Model sees a genuine contest — neither side dominant";
+    return "Lower probability outcome — higher variance bet";
+}
+
+function fairPricePos(fair) {
+    // Map fair odds to 0–100% position on the context band
+    // 1.40 = 10%, 2.00 = 40%, 2.50 = 60%, 3.50 = 85%, 4.00+ = 95%
+    if (fair <= 1.40) return 5;
+    if (fair <= 2.00) return 10 + ((fair - 1.40) / 0.60) * 30;
+    if (fair <= 2.50) return 40 + ((fair - 2.00) / 0.50) * 20;
+    if (fair <= 3.50) return 60 + ((fair - 2.50) / 1.00) * 25;
+    return Math.min(95, 85 + ((fair - 3.50) / 1.00) * 10);
+}
+
+function fairPriceLabel(fair) {
+    if (fair < 1.40) return "Short — near certainty";
+    if (fair < 1.80) return "Odds-on favourite";
+    if (fair < 2.20) return "Even money range — value zone peak";
+    if (fair < 3.00) return "Slight underdog";
+    if (fair < 4.00) return "Underdog";
+    return "Longshot";
+}
+
+function buildVisPanel(probPct, confFloat, fairOdds, mktLabel) {
+    const pbClass  = probBarClass(probPct);
+    const cbClass  = confBarClass(confFloat);
+    const cpct     = confPct(confFloat);
+    const fpos     = fairPricePos(fairOdds);
+
+    return `
+    <div class="verdict-vis-panel">
+        <div class="verdict-vis-title">Model Analysis</div>
+        <div class="verdict-vis-grid">
+
+            <div class="vis-block">
+                <div class="vis-label-row">
+                    <span class="vis-label">Outcome probability</span>
+                    <span class="vis-value" style="color:${probPct>=55?'var(--neon)':probPct>=40?'var(--gold)':'var(--away)'};">${probPct}%</span>
+                </div>
+                <div class="vis-bar-track">
+                    <div class="vis-bar-fill ${pbClass}" style="width:${probPct}%"></div>
+                </div>
+                <div class="vis-desc">${probDesc(probPct)}</div>
+            </div>
+
+            <div class="vis-block">
+                <div class="vis-label-row">
+                    <span class="vis-label">Model confidence</span>
+                    <span class="vis-value" style="color:${cpct>=50?'var(--neon)':cpct>=25?'var(--gold)':'var(--dim)'};">${cpct}%</span>
+                </div>
+                <div class="vis-bar-track">
+                    <div class="vis-bar-fill ${cbClass}" style="width:${cpct}%"></div>
+                </div>
+                <div class="vis-desc">${confDesc(confFloat)}</div>
+            </div>
+
+        </div>
+
+        <div class="vis-block" style="margin-top:12px;padding-top:12px;border-top:1px solid #1a1d28;">
+            <div class="vis-label-row">
+                <span class="vis-label">Fair price context — ${mktLabel}</span>
+                <span class="vis-value" style="color:var(--neon);">${fairOdds}</span>
+            </div>
+            <div class="fair-context">
+                <span class="fc-label">Short</span>
+                <div class="fc-track">
+                    <div class="fc-marker" style="left:${fpos}%"></div>
+                </div>
+                <span class="fc-label">Long</span>
+            </div>
+            <div class="vis-desc" style="margin-top:4px;">${fairPriceLabel(fairOdds)} — ${fpos > 20 && fpos < 80 ? 'within the value zone where bookmaker errors are most common' : fpos <= 20 ? 'bookmakers price short-odds markets very accurately — edge is rare' : 'longshot territory — high variance, edge harder to realise'}</div>
+        </div>
+    </div>`;
+}
+
+function buildValueThresholdHtml(fairOdds, bookieOdds) {
+    if (!bookieOdds || bookieOdds <= 1) return "";
+    const edge    = (bookieOdds / fairOdds) - 1;
+    const edgePct = (edge * 100).toFixed(1);
+    const barW    = Math.min(100, Math.abs(edge) * 500);
+    const cls     = edge > 0.05 ? "pos" : edge > 0 ? "thin" : "neg";
+    const label   = edge > 0.05 ? `+${edgePct}% VALUE` : edge > 0 ? "Thin" : `${edgePct}%`;
+    return `<div class="value-threshold-row">
+        <div class="vt-track"><div class="vt-fill ${cls}" style="width:${barW}%"></div></div>
+        <span class="vt-label ${cls}">${label}</span>
+    </div>`;
+}
     if (!suggestions || !suggestions.length) {
         return `<div class="no-value-panel">
             — No standout markets identified for this fixture.<br>
@@ -527,6 +908,19 @@ async function predict() {
             </tr>`;
         };
 
+        // Compute confidence from probs for vis panel
+        const probs    = [d.probs.home, d.probs.draw, d.probs.away].sort((a,b)=>b-a);
+        const confGap  = (probs[0] - probs[1]) / 100;
+        const topProb  = probs[0];
+        const topLabel = d.probs.home >= d.probs.away && d.probs.home >= d.probs.draw
+            ? `${m.home} Win`
+            : d.probs.away >= d.probs.home && d.probs.away >= d.probs.draw
+            ? `${m.away} Win` : "Draw";
+        const topFair  = d.probs.home >= d.probs.away && d.probs.home >= d.probs.draw
+            ? market.home
+            : d.probs.away >= d.probs.home && d.probs.away >= d.probs.draw
+            ? market.away : market.draw;
+
         const h_w  = d.probs.home > d.probs.away;
         const fav  = h_w ? m.home : m.away;
         const conf = Math.max(d.probs.home, d.probs.away);
@@ -567,6 +961,8 @@ async function predict() {
                 <div class="p-a" style="width:${d.probs.away}%">${d.probs.away}%</div>
             </div>
 
+            ${buildVisPanel(topProb, confGap, topFair || 2.00, topLabel)}
+
             ${buildSuggestedMarketsHtml(d.suggested_markets || [], m)}
 
             <div class="section-label">Fair Odds · Enter Bookie Price to Check Value · ¼ Kelly Staker</div>
@@ -580,7 +976,7 @@ async function predict() {
 
             <table class="market-table">
                 <thead><tr>
-                    <th>Market</th><th>Fair Odds</th><th>Your Bookie</th><th>Stake</th>
+                    <th>Market</th><th>Fair Odds</th><th>Your Bookie</th><th>Value / Stake</th>
                 </tr></thead>
                 <tbody>
                     ${mkRow("Home Win",     "home",    "k-h",    "1X2")}

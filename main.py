@@ -762,17 +762,43 @@ def scan():
                             if int(kickoff_str[11:13]) >= 22: continue
                         except: pass
 
+                    # Quick AH probability for scan (half-line only — no push)
+                    _hp = poisson_vec(h_lam); _ap = poisson_vec(a_lam)
+                    def scan_ah(handicap):
+                        p = 0.0
+                        for i in range(len(_hp)):
+                            for j in range(len(_ap)):
+                                if (i - j) + handicap > 0: p += _hp[i]*_ap[j]
+                        return max(min(p, 0.99), 0.01)
+
+                    ah_hm05 = scan_ah(-0.5)          # home must win
+                    ah_hp05 = scan_ah(+0.5)          # home wins or draws
+                    ah_a05  = 1.0 - ah_hm05          # away +0.5 (away wins or draws)
+                    ah_am05 = 1.0 - ah_hp05          # away -0.5 (away must win)
+                    ah_hm10 = scan_ah(-1.0)          # home wins by 2+
+                    ah_hp10 = scan_ah(+1.0)          # home wins, draws, or loses by 1
+
                     all_markets = [
-                        {"code":"H",    "label":f"{m['home']} Win","type":"1X2",   "prob":round(p_h*100,1),  "fair":fo(p_h)},
-                        {"code":"D",    "label":"Draw",             "type":"1X2",   "prob":round(p_d*100,1),  "fair":fo(p_d)},
-                        {"code":"A",    "label":f"{m['away']} Win","type":"1X2",   "prob":round(p_a*100,1),  "fair":fo(p_a)},
-                        {"code":"1X",   "label":"1X Home/Draw",    "type":"DC",    "prob":round(p_1x*100,1), "fair":fo(p_1x)},
-                        {"code":"X2",   "label":"X2 Draw/Away",    "type":"DC",    "prob":round(p_x2*100,1), "fair":fo(p_x2)},
-                        {"code":"12",   "label":"12 Home/Away",    "type":"DC",    "prob":round(p_12*100,1), "fair":fo(p_12)},
-                        {"code":"BTTS", "label":"BTTS",            "type":"Goals", "prob":round(p_btts*100,1),"fair":fo(p_btts)},
-                        {"code":"O15",  "label":"Over 1.5",        "type":"Goals", "prob":round(p_o15*100,1),"fair":fo(p_o15)},
-                        {"code":"O25",  "label":"Over 2.5",        "type":"Goals", "prob":round(p_o25*100,1),"fair":fo(p_o25)},
-                        {"code":"O35",  "label":"Over 3.5",        "type":"Goals", "prob":round(p_o35*100,1),"fair":fo(p_o35)},
+                        # 1X2 — type must match mktInefficiency keys exactly
+                        {"code":"H",      "label":f"{m['home']} Win",  "type":"Home",  "prob":round(p_h*100,1),    "fair":fo(p_h)},
+                        {"code":"D",      "label":"Draw",               "type":"Draw",  "prob":round(p_d*100,1),    "fair":fo(p_d)},
+                        {"code":"A",      "label":f"{m['away']} Win",   "type":"Away",  "prob":round(p_a*100,1),    "fair":fo(p_a)},
+                        # Double Chance
+                        {"code":"1X",     "label":"1X Home/Draw",       "type":"DC",    "prob":round(p_1x*100,1),   "fair":fo(p_1x)},
+                        {"code":"X2",     "label":"X2 Draw/Away",       "type":"DC",    "prob":round(p_x2*100,1),   "fair":fo(p_x2)},
+                        {"code":"12",     "label":"12 Home/Away",       "type":"DC",    "prob":round(p_12*100,1),   "fair":fo(p_12)},
+                        # Goals
+                        {"code":"BTTS",   "label":"BTTS",               "type":"Goals", "prob":round(p_btts*100,1), "fair":fo(p_btts)},
+                        {"code":"O15",    "label":"Over 1.5",           "type":"Goals", "prob":round(p_o15*100,1),  "fair":fo(p_o15)},
+                        {"code":"O25",    "label":"Over 2.5",           "type":"Goals", "prob":round(p_o25*100,1),  "fair":fo(p_o25)},
+                        {"code":"O35",    "label":"Over 3.5",           "type":"Goals", "prob":round(p_o35*100,1),  "fair":fo(p_o35)},
+                        # Asian Handicap — key lines both sides
+                        {"code":"AH_HM05","label":f"{m['home']} -0.5",  "type":"AH",   "prob":round(ah_hm05*100,1),"fair":fo(ah_hm05)},
+                        {"code":"AH_A05", "label":f"{m['away']} +0.5",  "type":"AH",   "prob":round(ah_a05*100,1), "fair":fo(ah_a05)},
+                        {"code":"AH_HP05","label":f"{m['home']} +0.5",  "type":"AH",   "prob":round(ah_hp05*100,1),"fair":fo(ah_hp05)},
+                        {"code":"AH_AM05","label":f"{m['away']} -0.5",  "type":"AH",   "prob":round(ah_am05*100,1),"fair":fo(ah_am05)},
+                        {"code":"AH_HM10","label":f"{m['home']} -1.0",  "type":"AH",   "prob":round(ah_hm10*100,1),"fair":fo(ah_hm10)},
+                        {"code":"AH_HP10","label":f"{m['home']} +1.0",  "type":"AH",   "prob":round(ah_hp10*100,1),"fair":fo(ah_hp10)},
                     ]
 
                     ranked.append({

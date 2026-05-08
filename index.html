@@ -140,7 +140,83 @@
     .gaffer-box { background: rgba(0,255,157,0.04); border-left: 3px solid var(--neon); border-radius: 0 8px 8px 0; padding: 14px 16px; margin-top: 16px; font-size: 0.82rem; line-height: 1.65; color: #b0bcc8; }
     .gaffer-box .signature { font-family: Orbitron, sans-serif; color: var(--neon); font-size: 0.65rem; letter-spacing: 3px; text-align: right; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(0,255,157,0.1); }
 
-    .loader { border: 3px solid #1a1d28; border-top: 3px solid var(--neon); border-radius: 50%; width: 32px; height: 32px; margin: 20px auto; animation: spin 0.9s linear infinite; }
+    /* ── Suggested Markets Panel ── */
+    .suggested-panel {
+        background: rgba(0,255,157,0.04);
+        border: 1px solid rgba(0,255,157,0.2);
+        border-radius: 12px;
+        padding: 14px 16px;
+        margin: 14px 0;
+    }
+    .suggested-title {
+        font-family: Orbitron, sans-serif;
+        font-size: 0.6rem;
+        letter-spacing: 2px;
+        color: var(--neon);
+        text-transform: uppercase;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .suggested-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 9px 0;
+        border-top: 1px solid rgba(0,255,157,0.08);
+    }
+    .suggested-item:first-of-type { border-top: none; }
+    .suggested-left { flex: 1; min-width: 0; }
+    .suggested-mkt-name {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #dde;
+        margin-bottom: 3px;
+    }
+    .suggested-instruction {
+        font-size: 0.62rem;
+        color: var(--dim);
+        line-height: 1.4;
+    }
+    .suggested-right {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 3px;
+        flex-shrink: 0;
+        margin-left: 12px;
+    }
+    .suggested-fair {
+        font-family: Orbitron, sans-serif;
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: var(--neon);
+    }
+    .suggested-prob {
+        font-family: Orbitron, sans-serif;
+        font-size: 0.6rem;
+        color: var(--dim);
+    }
+    .suggested-type-badge {
+        font-family: Orbitron, sans-serif;
+        font-size: 0.48rem;
+        font-weight: 700;
+        letter-spacing: 1px;
+        padding: 2px 5px;
+        border-radius: 3px;
+    }
+    .no-value-panel {
+        background: rgba(136,146,176,0.06);
+        border: 1px solid rgba(136,146,176,0.15);
+        border-radius: 12px;
+        padding: 12px 16px;
+        margin: 14px 0;
+        font-size: 0.72rem;
+        color: var(--draw);
+        text-align: center;
+        line-height: 1.5;
+    }
     @keyframes spin { to { transform: rotate(360deg); } }
     .status-msg { text-align: center; font-size: 0.75rem; color: var(--dim); padding: 10px 0; }
     .error-msg  { text-align: center; font-size: 0.78rem; color: var(--away); padding: 12px 0; }
@@ -298,6 +374,55 @@ function calcKelly(inputEl, fairOdds, targetId) {
     target.innerHTML = `<span class="prime">★ €${stake}</span>`;
 }
 
+function buildSuggestedMarketsHtml(suggestions, fixture) {
+    if (!suggestions || !suggestions.length) {
+        return `<div class="no-value-panel">
+            — No standout markets identified for this fixture.<br>
+            <span style="font-size:0.62rem;">All markets appear efficiently priced or outside the value zone. Enter bookie odds below to check manually.</span>
+        </div>`;
+    }
+
+    const typeColors = {
+        "AH":    { bg: "rgba(255,152,0,0.12)",    color: "#ff9800",  border: "rgba(255,152,0,0.3)"    },
+        "Goals": { bg: "rgba(255,204,0,0.12)",    color: "var(--gold)", border: "rgba(255,204,0,0.3)" },
+        "Draw":  { bg: "rgba(136,146,176,0.15)",  color: "var(--draw)", border: "rgba(136,146,176,0.3)" },
+        "Home":  { bg: "rgba(0,255,157,0.12)",    color: "var(--neon)", border: "rgba(0,255,157,0.3)"  },
+        "Away":  { bg: "rgba(255,51,102,0.12)",   color: "var(--away)", border: "rgba(255,51,102,0.3)" },
+        "DC":    { bg: "rgba(79,195,247,0.12)",   color: "#4fc3f7",   border: "rgba(79,195,247,0.3)"  },
+    };
+
+    const rows = suggestions.map((s, i) => {
+        const tc  = typeColors[s.type] || typeColors["Home"];
+        const badgeStyle = `background:${tc.bg};color:${tc.color};border:1px solid ${tc.border};`;
+        const rankLabel  = i === 0 ? "★ Top pick" : i === 1 ? "2nd" : "3rd";
+
+        return `
+        <div class="suggested-item">
+            <div class="suggested-left">
+                <div class="suggested-mkt-name">
+                    ${s.label}
+                    <span class="suggested-type-badge" style="${badgeStyle}">${s.type}</span>
+                </div>
+                <div class="suggested-instruction">
+                    Check this at your bookie — if they offer <b>above ${s.fair}</b>, there is value
+                </div>
+            </div>
+            <div class="suggested-right">
+                <div class="suggested-fair">${s.fair}</div>
+                <div class="suggested-prob">${s.prob}% model prob</div>
+            </div>
+        </div>`;
+    }).join("");
+
+    return `
+    <div class="suggested-panel">
+        <div class="suggested-title">
+            📍 Markets Worth Checking at Your Bookie
+        </div>
+        ${rows}
+    </div>`;
+}
+
 async function predict() {
     const idx = selectedIndex;
     const out = document.getElementById("output");
@@ -373,6 +498,8 @@ async function predict() {
                 <div class="p-d" style="width:${d.probs.draw}%">${d.probs.draw}%</div>
                 <div class="p-a" style="width:${d.probs.away}%">${d.probs.away}%</div>
             </div>
+
+            ${buildSuggestedMarketsHtml(d.suggested_markets || [], m)}
 
             <div class="section-label">Fair Odds · Enter Bookie Price to Check Value · ¼ Kelly Staker</div>
 

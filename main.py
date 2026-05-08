@@ -526,6 +526,133 @@ def predict():
                 "under_odds": ah_fair_odds(pu, pp),
             }
 
+        # ── Suggested Markets ──────────────────────────────────────────────
+        # Directs the user to the 2-3 most worthwhile markets to check at
+        # their bookie. Scoring combines three factors:
+        #
+        # 1. MARKET INEFFICIENCY WEIGHT — where bookmakers make the most
+        #    systematic pricing errors (AH > Draw > Goals > DC > Home Win)
+        # 2. VALUE ZONE — fair odds between 1.40 and 3.50. Below 1.40 the
+        #    market is near-certain and bookmakers price it very accurately.
+        #    Above 3.50 it's a longshot where variance is too high for Kelly.
+        # 3. PROBABILITY STRENGTH — how cleanly the model separates this
+        #    outcome. Combined with the value zone, this filters out markets
+        #    where the model has weak signal.
+
+        def mkt_inefficiency(mkt_type: str) -> float:
+            """
+            Structural inefficiency weight per market type.
+            AH highest because: less liquid, complex pricing, Poisson matrix
+            directly models goal margins which is exactly what AH requires.
+            Draw high because: public systematically underbets draws, bookmakers
+            can overprice them. Goals/BTTS medium. Home Win lowest — most
+            efficient market on earth, sharp money corrects it fastest.
+            """
+            return {
+                "AH":     1.00,   # Most inefficient — model's structural advantage
+                "Draw":   0.85,   # Public bias creates systematic overpricing
+                "Goals":  0.70,   # Popular but priceable with good goals model
+                "DC":     0.45,   # Safety net markets — low edge potential
+                "Home":   0.30,   # Most liquid, most efficient — hardest to beat
+                "Away":   0.55,   # Public bias inflates away prices on big fixtures
+            }.get(mkt_type, 0.50)
+
+        def value_zone_score(fo: float) -> float:
+            """
+            Score based on how well the fair odds sit in the value zone.
+            Peak at 1.80-2.20 (sweet spot for finding bookie errors).
+            Falls off sharply below 1.40 (too short) and above 3.50 (longshot).
+            Returns 0 outside viable range — these markets are not suggested.
+            """
+            if fo < 1.40 or fo > 4.00: return 0.0
+            if fo <= 2.00: return (fo - 1.40) / 0.60        # ramp up 1.40→2.00
+            if fo <= 2.50: return 1.0                        # peak zone
+            if fo <= 3.50: return 1.0 - ((fo - 2.50) / 2.0) # ramp down 2.50→3.50
+            return max(0, 1.0 - ((fo - 3.50) / 1.0))        # sharp drop 3.50→4.00
+
+        # Build candidate list — every market the model has priced
+        home_name = req.get("home", "Home")
+        away_name = req.get("away", "Away")
+
+        candidates = []
+
+        # 1X2
+        candidates.append({"label": f"{home_name} Win", "type": "Home",  "code": "home",   "fair": fair_odds(p_h),   "prob": p_h})
+        candidates.append({"label": "Draw",              "type": "Draw",  "code": "draw",   "fair": fair_odds(p_d),   "prob": p_d})
+        candidates.append({"label": f"{away_name} Win",  "type": "Away",  "code": "away",   "fair": fair_odds(p_a),   "prob": p_a})
+
+        # Double Chance — only suggest if it fills a genuine gap
+        candidates.append({"label": "1X (Home or Draw)", "type": "DC", "code": "dc_1x", "fair": fair_odds(p_1x), "prob": p_1x})
+        candidates.append({"label": "X2 (Draw or Away)", "type": "DC", "code": "dc_x2", "fair": fair_odds(p_x2), "prob": p_x2})
+
+        # Goals
+        candidates.append({"label": "BTTS",      "type": "Goals", "code": "btts",   "fair": fair_odds(p_btts),   "prob": p_btts})
+        candidates.append({"label": "Over 1.5",  "type": "Goals", "code": "over15", "fair": fair_odds(p_over15), "prob": p_over15})
+        candidates.append({"label": "Over 2.5",  "type": "Goals", "code": "over25", "fair": fair_odds(p_over25), "prob": p_over25})
+        candidates.append({"label": "Over 3.5",  "type": "Goals", "code": "over35", "fair": fair_odds(p_over35), "prob": p_over35})
+
+        # Asian Handicap — both sides, key lines only (most liquid AH markets)
+        for line, label_h, label_a in [
+            (-0.5, f"{home_name} -0.5", f"{away_name} +0.5"),
+            (-1.0, f"{home_name} -1.0", f"{away_name} +1.0"),
+            (+0.5, f"{home_name} +0.5", f"{away_name} -0.5"),
+            (+1.0, f"{home_name} +1.0", f"{away_name} -1.0"),
+            (-1.5, f"{home_name} -1.5", f"{away_name} +1.5"),
+            (+1.5, f"{home_name} +1.5", f"{away_name} -1.5"),
+        ]:
+            ph_c, pp, pa_c = ah_prob(line)
+            fo_h = ah_fair_odds(ph_c, pp)
+            fo_a = ah_fair_odds(pa_c, pp)
+            prob_h = ph_c / (1 - pp) if pp < 1 else 0
+            prob_a = pa_c / (1 - pp) if pp < 1 else 0
+            candidates.append({"label": label_h, "type": "AH", "code": f"ah_h_{line}", "fair": fo_h, "prob": prob_h})
+            candidates.append({"label": label_a, "type": "AH", "code": f"ah_a_{line}", "fair": fo_a, "prob": prob_a})
+
+        # Score each candidate
+        def suggestion_score(c: dict) -> float:
+            ineff = mkt_inefficiency(c["type"])
+            vzone = value_zone_score(c["fair"])
+            # Probability strength: peaks at 50-65% (genuine contest)
+            prob  = c["prob"]
+            if prob < 0.25 or prob > 0.85: prob_score = 0.0
+            elif prob <= 0.50: prob_score = (prob - 0.25) / 0.25
+            else:              prob_score = 1.0 - ((prob - 0.50) / 0.50)
+            prob_score = max(0, prob_score)
+            return round(ineff * vzone * (0.5 + 0.5 * prob_score), 4)
+
+        for c in candidates:
+            c["score"] = suggestion_score(c)
+
+        # Filter to scoreable candidates and sort by score desc
+        viable = sorted([c for c in candidates if c["score"] > 0], key=lambda x: -x["score"])
+
+        # Take top 3, but ensure diversity — no more than 1 AH, 1 Goals, 1 1X2/DC
+        # This prevents the suggestions being 3 AH lines which confuses users
+        suggestions = []
+        type_counts = {}
+        for c in viable:
+            broad = "AH" if c["type"] == "AH" else \
+                    "Goals" if c["type"] == "Goals" else \
+                    "Result"  # covers Home, Away, Draw, DC
+            if type_counts.get(broad, 0) < 1:
+                suggestions.append(c)
+                type_counts[broad] = type_counts.get(broad, 0) + 1
+            if len(suggestions) >= 3:
+                break
+
+        # Format for frontend
+        suggested_markets = [
+            {
+                "label":    s["label"],
+                "type":     s["type"],
+                "code":     s["code"],
+                "fair":     s["fair"],
+                "prob":     round(s["prob"] * 100, 1),
+                "score":    s["score"],
+            }
+            for s in suggestions
+        ]
+
         return jsonify({
             "score":   best,
             "probs":   {"home": h_pct, "draw": d_pct, "away": a_pct},
@@ -537,6 +664,7 @@ def predict():
                 "ah_hm05": ah_fair_odds(ah["hm05"], 0), "ah_hp05": ah_fair_odds(ah["hp05"], 0),
                 "ah_hm15": ah_fair_odds(ah["hm15"], 0), "ah_hp15": ah_fair_odds(ah["hp15"], 0),
             },
+            "suggested_markets": suggested_markets,
             "ah":      ah_results,
             "at":      at_results,
             "h_rank":  h_rank,  "a_rank": a_rank,

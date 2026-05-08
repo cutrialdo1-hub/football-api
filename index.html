@@ -14,212 +14,360 @@
         --away:   #ff3366;
         --draw:   #8892b0;
         --dim:    #4a5060;
-        --gold:   #ffcc00;
     }
 
     * { box-sizing: border-box; }
 
     body {
-        background: var(--bg); color: #fff;
+        background: var(--bg);
+        color: #fff;
         font-family: Inter, sans-serif;
-        display: flex; justify-content: center;
-        padding: 20px; min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        padding: 20px;
+        min-height: 100vh;
     }
 
     .container { width: 100%; max-width: 480px; }
 
-    h1 { font-family: Orbitron, sans-serif; color: var(--neon); text-align: center; letter-spacing: 5px; font-size: 1.2rem; margin-bottom: 6px; }
-    .tagline { text-align: center; font-size: 0.65rem; color: var(--dim); letter-spacing: 3px; text-transform: uppercase; margin-bottom: 24px; }
+    h1 {
+        font-family: Orbitron, sans-serif;
+        color: var(--neon);
+        text-align: center;
+        letter-spacing: 5px;
+        font-size: 1.2rem;
+        margin-bottom: 6px;
+    }
 
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; margin-bottom: 20px; }
+    .tagline {
+        text-align: center;
+        font-size: 0.65rem;
+        color: var(--dim);
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        margin-bottom: 24px;
+    }
 
-    input[type="date"] { width: 100%; padding: 14px; margin-bottom: 12px; border-radius: 10px; background: #000; border: 1px solid var(--border); color: #fff; font-family: Inter, sans-serif; font-size: 0.9rem; }
-    input[type="date"]:focus { outline: 1px solid var(--neon); }
+    .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+
+    input[type="date"],
+    select {
+        width: 100%;
+        padding: 14px;
+        margin-bottom: 12px;
+        border-radius: 10px;
+        background: #000;
+        border: 1px solid var(--border);
+        color: #fff;
+        font-family: Inter, sans-serif;
+        font-size: 0.9rem;
+    }
+
+    input[type="date"]:focus,
+    select:focus { outline: 1px solid var(--neon); }
 
     button {
-        width: 100%; padding: 14px; margin-bottom: 12px; border-radius: 10px;
-        background: var(--neon); color: #000; font-weight: 800;
-        font-family: Orbitron, sans-serif; font-size: 0.75rem; letter-spacing: 2px;
-        cursor: pointer; border: none; transition: opacity 0.2s, box-shadow 0.2s;
+        width: 100%;
+        padding: 14px;
+        margin-bottom: 12px;
+        border-radius: 10px;
+        background: var(--neon);
+        color: #000;
+        font-weight: 800;
+        font-family: Orbitron, sans-serif;
+        font-size: 0.75rem;
+        letter-spacing: 2px;
+        cursor: pointer;
+        border: none;
+        transition: opacity 0.2s, box-shadow 0.2s;
     }
-    button:hover:not(:disabled) { box-shadow: 0 0 18px rgba(0,255,157,0.35); }
-    button:disabled { background: #1a1a1a; color: #444; cursor: not-allowed; box-shadow: none; }
 
-    /* ── Fixture card list ── */
-    .fixture-list { margin-bottom: 12px; }
-
-    .fixture-card {
-        display: flex; align-items: center; justify-content: space-between;
-        background: #000; border: 1px solid var(--border); border-radius: 10px;
-        padding: 10px 12px; margin-bottom: 6px; cursor: pointer;
-        transition: border-color 0.2s, background 0.2s;
-        user-select: none; overflow: hidden;
+    button:hover:not(:disabled) {
+        box-shadow: 0 0 18px rgba(0,255,157,0.35);
     }
-    .fixture-card:hover    { border-color: #3a3f50; background: #080a10; }
-    .fixture-card.selected { border-color: var(--neon); background: rgba(0,255,157,0.04); }
 
-    .fx-left { flex: 1; min-width: 0; overflow: hidden; }
-    .fx-teams { font-size: 0.78rem; font-weight: 600; color: #dde; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .fx-meta  { font-size: 0.58rem; color: var(--dim); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-    .fx-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; margin-left: 8px; }
-    .fx-time  { font-family: Orbitron, sans-serif; font-size: 0.58rem; color: var(--dim); }
-
-    .conf-badge {
-        font-family: Orbitron, sans-serif; font-size: 0.52rem; font-weight: 700;
-        letter-spacing: 0.5px; padding: 2px 6px; border-radius: 4px; white-space: nowrap;
+    button:disabled {
+        background: #1a1a1a;
+        color: #444;
+        cursor: not-allowed;
+        box-shadow: none;
     }
-    .conf-HIGH { background: rgba(0,255,157,0.12); color: var(--neon); border: 1px solid rgba(0,255,157,0.25); }
-    .conf-MED  { background: rgba(255,204,0,0.12);  color: var(--gold); border: 1px solid rgba(255,204,0,0.25); }
-    .conf-LOW  { background: rgba(136,146,176,0.1); color: var(--draw); border: 1px solid rgba(136,146,176,0.15); }
 
-    /* ── Bankroll row ── */
+    /* ── Bankroll input row ── */
     .bankroll-row {
-        display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
-        background: #000; border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+        background: #000;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 14px;
     }
-    .bankroll-row label { font-size: 0.65rem; letter-spacing: 2px; color: var(--dim); text-transform: uppercase; white-space: nowrap; flex-shrink: 0; }
-    .bankroll-symbol { font-family: Orbitron, sans-serif; font-size: 0.85rem; color: var(--neon); flex-shrink: 0; }
-    #bankroll-input { flex: 1; background: transparent; border: none; color: var(--neon); font-family: Orbitron, sans-serif; font-size: 0.85rem; padding: 0; margin: 0; outline: none; width: 100%; min-width: 0; }
-    #bankroll-input::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+    .bankroll-row label {
+        font-size: 0.65rem;
+        letter-spacing: 2px;
+        color: var(--dim);
+        text-transform: uppercase;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    .bankroll-symbol {
+        font-family: Orbitron, sans-serif;
+        font-size: 0.85rem;
+        color: var(--neon);
+        flex-shrink: 0;
+    }
+
+    #bankroll-input {
+        flex: 1;
+        background: transparent;
+        border: none;
+        color: var(--neon);
+        font-family: Orbitron, sans-serif;
+        font-size: 0.85rem;
+        padding: 0;
+        margin: 0;
+        outline: none;
+        width: 100%;
+        min-width: 0;
+    }
+
+    #bankroll-input::-webkit-inner-spin-button,
+    #bankroll-input::-webkit-outer-spin-button { -webkit-appearance: none; }
 
     /* ── Score ── */
-    .score { font-family: Orbitron, sans-serif; font-size: 4rem; font-weight: 900; text-align: center; color: var(--neon); margin: 12px 0 4px; text-shadow: 0 0 24px rgba(0,255,157,0.4); }
-    .lambda-row { display: flex; justify-content: center; gap: 20px; font-size: 0.65rem; color: var(--dim); letter-spacing: 1px; margin-bottom: 4px; }
+    .score {
+        font-family: Orbitron, sans-serif;
+        font-size: 4rem;
+        font-weight: 900;
+        text-align: center;
+        color: var(--neon);
+        margin: 12px 0 4px;
+        text-shadow: 0 0 24px rgba(0,255,157,0.4);
+    }
+
+    .lambda-row {
+        display: flex;
+        justify-content: center;
+        gap: 20px;
+        font-size: 0.65rem;
+        color: var(--dim);
+        letter-spacing: 1px;
+        margin-bottom: 4px;
+    }
 
     /* ── Prob bar ── */
-    .prob-bar { display: flex; height: 24px; border-radius: 6px; overflow: hidden; margin: 16px 0; font-family: Orbitron, sans-serif; font-size: 0.65rem; line-height: 24px; text-align: center; }
+    .prob-bar {
+        display: flex;
+        height: 24px;
+        border-radius: 6px;
+        overflow: hidden;
+        margin: 16px 0;
+        font-family: Orbitron, sans-serif;
+        font-size: 0.65rem;
+        line-height: 24px;
+        text-align: center;
+    }
+
+    /* min-width prevents text clipping on small probability segments */
     .p-h { background: var(--neon); color: #000; min-width: 28px; }
     .p-d { background: var(--draw); color: #000; min-width: 28px; }
     .p-a { background: var(--away); color: #000; min-width: 28px; }
 
     /* ── Form dots ── */
     .form-row { display: flex; gap: 3px; margin-top: 4px; flex-wrap: wrap; }
-    .dot { width: 20px; height: 20px; border-radius: 4px; font-size: 10px; line-height: 20px; text-align: center; color: #000; font-weight: 700; display: inline-block; }
-    .W { background: var(--neon); } .D { background: var(--draw); } .L { background: var(--away); } .Q { background: #2a2d3a; color: #556; border: 1px solid #333; }
-    .form-venue-label { font-size: 0.58rem; letter-spacing: 2px; color: var(--dim); text-transform: uppercase; margin-top: 6px; margin-bottom: 2px; }
 
-    .teams-row { display: flex; justify-content: space-between; align-items: flex-start; font-size: 0.82rem; margin-bottom: 4px; }
-    .team-block { width: 48%; } .team-block.right { text-align: right; }
+    .dot {
+        width: 20px; height: 20px;
+        border-radius: 4px;
+        font-size: 10px;
+        line-height: 20px;
+        text-align: center;
+        color: #000;
+        font-weight: 700;
+        display: inline-block;
+    }
+
+    .W { background: var(--neon); }
+    .D { background: var(--draw); }
+    .L { background: var(--away); }
+    .Q { background: #2a2d3a; color: #556; border: 1px solid #333; }
+
+    /* ── Form venue label ── */
+    .form-venue-label {
+        font-size: 0.58rem;
+        letter-spacing: 2px;
+        color: var(--dim);
+        text-transform: uppercase;
+        margin-top: 6px;
+        margin-bottom: 2px;
+    }
+
+    /* ── Teams header ── */
+    .teams-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        font-size: 0.82rem;
+        margin-bottom: 4px;
+    }
+
+    .team-block { width: 48%; }
+    .team-block.right { text-align: right; }
     .team-block b { font-size: 0.9rem; display: block; margin-bottom: 2px; }
     .team-block small { color: var(--dim); font-size: 0.7rem; }
     .team-block .form-row.right { justify-content: flex-end; }
     .team-block.right .form-venue-label { text-align: right; }
 
-    .section-label { font-size: 0.6rem; letter-spacing: 3px; color: var(--dim); text-transform: uppercase; margin: 16px 0 8px; border-top: 1px solid #1a1d28; padding-top: 12px; }
+    /* ── Section label ── */
+    .section-label {
+        font-size: 0.6rem;
+        letter-spacing: 3px;
+        color: var(--dim);
+        text-transform: uppercase;
+        margin: 16px 0 8px;
+        border-top: 1px solid #1a1d28;
+        padding-top: 12px;
+    }
 
-    /* ── Market table ── */
+    /* ── Market comparison table ── */
     .market-table { width: 100%; border-collapse: collapse; }
-    .market-table th { font-size: 0.6rem; letter-spacing: 2px; color: var(--dim); text-transform: uppercase; padding: 4px 0 8px; text-align: left; font-weight: 400; }
-    .market-table th:last-child, .market-table td:last-child { text-align: right; }
-    .market-row-tr { border-top: 1px solid #1a1d28; transition: background 0.25s; }
-    .market-row-tr td { padding: 10px 4px; font-size: 0.8rem; vertical-align: middle; }
 
-    .fair-price { font-family: Orbitron, sans-serif; font-size: 0.75rem; color: var(--neon); }
+    .market-table th {
+        font-size: 0.6rem;
+        letter-spacing: 2px;
+        color: var(--dim);
+        text-transform: uppercase;
+        padding: 4px 0 8px;
+        text-align: left;
+        font-weight: 400;
+    }
 
-    .bookie-input { width: 72px; padding: 7px 8px; border-radius: 7px; background: #000; border: 1px solid var(--border); color: #fff; font-family: Orbitron, sans-serif; font-size: 0.72rem; text-align: center; transition: border-color 0.2s; }
+    .market-table th:last-child,
+    .market-table td:last-child { text-align: right; }
+
+    .market-row-tr {
+        border-top: 1px solid #1a1d28;
+        transition: background 0.25s;
+    }
+
+    .market-row-tr td {
+        padding: 10px 4px;
+        font-size: 0.8rem;
+        vertical-align: middle;
+    }
+
+    .fair-price {
+        font-family: Orbitron, sans-serif;
+        font-size: 0.75rem;
+        color: var(--neon);
+    }
+
+    .bookie-input {
+        width: 72px;
+        padding: 7px 8px;
+        border-radius: 7px;
+        background: #000;
+        border: 1px solid var(--border);
+        color: #fff;
+        font-family: Orbitron, sans-serif;
+        font-size: 0.72rem;
+        text-align: center;
+        transition: border-color 0.2s;
+    }
+
     .bookie-input:focus { outline: none; border-color: var(--neon); }
 
-    .kelly-result { font-family: Orbitron, sans-serif; font-size: 0.72rem; color: var(--dim); min-width: 80px; text-align: right; }
-    .market-row-tr.value { background: rgba(0,255,157,0.05); }
-    .market-row-tr.value td:first-child { border-left: 2px solid var(--neon); padding-left: 8px; }
+    .kelly-result {
+        font-family: Orbitron, sans-serif;
+        font-size: 0.72rem;
+        color: var(--dim);
+        min-width: 80px;
+        text-align: right;
+    }
 
-    .prime { color: var(--neon); font-weight: 700; animation: pulse-text 2s ease-in-out infinite; }
-    @keyframes pulse-text { 0%,100%{opacity:1;} 50%{opacity:0.6;} }
+    /* Value highlight state */
+    .market-row-tr.value {
+        background: rgba(0,255,157,0.05);
+    }
 
-    /* Market type badges */
-    .mkt-badge { display: inline-block; font-family: Orbitron, sans-serif; font-size: 0.52rem; font-weight: 700; letter-spacing: 1px; padding: 2px 6px; border-radius: 4px; margin-left: 4px; vertical-align: middle; }
-    .mkt-1X2   { background: rgba(0,255,157,0.12);  color: var(--neon); border: 1px solid rgba(0,255,157,0.25); }
-    .mkt-DC    { background: rgba(79,195,247,0.12); color: #4fc3f7;     border: 1px solid rgba(79,195,247,0.25); }
-    .mkt-AH    { background: rgba(255,152,0,0.12);  color: #ff9800;     border: 1px solid rgba(255,152,0,0.25); }
-    .mkt-Goals { background: rgba(255,204,0,0.12);  color: var(--gold); border: 1px solid rgba(255,204,0,0.25); }
+    .market-row-tr.value td:first-child {
+        border-left: 2px solid var(--neon);
+        padding-left: 8px;
+    }
+
+    .prime {
+        color: var(--neon);
+        font-weight: 700;
+        animation: pulse-text 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse-text {
+        0%, 100% { opacity: 1; }
+        50%       { opacity: 0.6; }
+    }
 
     .no-value  { color: #3a3f50; }
     .thin-edge { color: var(--draw); font-size: 0.65rem; }
 
-    .gaffer-box { background: rgba(0,255,157,0.04); border-left: 3px solid var(--neon); border-radius: 0 8px 8px 0; padding: 14px 16px; margin-top: 16px; font-size: 0.82rem; line-height: 1.65; color: #b0bcc8; }
-    .gaffer-box .signature { font-family: Orbitron, sans-serif; color: var(--neon); font-size: 0.65rem; letter-spacing: 3px; text-align: right; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(0,255,157,0.1); }
-
-    /* ── Suggested Markets Panel ── */
-    .suggested-panel {
+    /* ── Gaffer verdict box ── */
+    .gaffer-box {
         background: rgba(0,255,157,0.04);
-        border: 1px solid rgba(0,255,157,0.2);
-        border-radius: 12px;
+        border-left: 3px solid var(--neon);
+        border-radius: 0 8px 8px 0;
         padding: 14px 16px;
-        margin: 14px 0;
-    }
-    .suggested-title {
-        font-family: Orbitron, sans-serif;
-        font-size: 0.6rem;
-        letter-spacing: 2px;
-        color: var(--neon);
-        text-transform: uppercase;
-        margin-bottom: 12px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-    .suggested-item {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 9px 0;
-        border-top: 1px solid rgba(0,255,157,0.08);
-    }
-    .suggested-item:first-of-type { border-top: none; }
-    .suggested-left { flex: 1; min-width: 0; }
-    .suggested-mkt-name {
+        margin-top: 16px;
         font-size: 0.82rem;
-        font-weight: 600;
-        color: #dde;
-        margin-bottom: 3px;
+        line-height: 1.65;
+        color: #b0bcc8;
     }
-    .suggested-instruction {
-        font-size: 0.62rem;
-        color: var(--dim);
-        line-height: 1.4;
-    }
-    .suggested-right {
-        display: flex;
-        flex-direction: column;
-        align-items: flex-end;
-        gap: 3px;
-        flex-shrink: 0;
-        margin-left: 12px;
-    }
-    .suggested-fair {
+
+    .gaffer-box .signature {
         font-family: Orbitron, sans-serif;
-        font-size: 0.85rem;
-        font-weight: 700;
         color: var(--neon);
+        font-size: 0.65rem;
+        letter-spacing: 3px;
+        text-align: right;
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(0,255,157,0.1);
     }
-    .suggested-prob {
-        font-family: Orbitron, sans-serif;
-        font-size: 0.6rem;
-        color: var(--dim);
+
+    /* ── Loader ── */
+    .loader {
+        border: 3px solid #1a1d28;
+        border-top: 3px solid var(--neon);
+        border-radius: 50%;
+        width: 32px;
+        height: 32px;
+        margin: 20px auto;
+        animation: spin 0.9s linear infinite;
     }
-    .suggested-type-badge {
-        font-family: Orbitron, sans-serif;
-        font-size: 0.48rem;
-        font-weight: 700;
-        letter-spacing: 1px;
-        padding: 2px 5px;
-        border-radius: 3px;
-    }
-    .no-value-panel {
-        background: rgba(136,146,176,0.06);
-        border: 1px solid rgba(136,146,176,0.15);
-        border-radius: 12px;
-        padding: 12px 16px;
-        margin: 14px 0;
-        font-size: 0.72rem;
-        color: var(--draw);
-        text-align: center;
-        line-height: 1.5;
-    }
+
     @keyframes spin { to { transform: rotate(360deg); } }
-    .status-msg { text-align: center; font-size: 0.75rem; color: var(--dim); padding: 10px 0; }
-    .error-msg  { text-align: center; font-size: 0.78rem; color: var(--away); padding: 12px 0; }
+
+    .status-msg {
+        text-align: center;
+        font-size: 0.75rem;
+        color: var(--dim);
+        padding: 10px 0;
+    }
+
+    .error-msg {
+        text-align: center;
+        font-size: 0.78rem;
+        color: var(--away);
+        padding: 12px 0;
+    }
 </style>
 </head>
 <body>
@@ -230,11 +378,27 @@
 
     <div class="card">
         <input type="date" id="date">
+
+        <!-- Adjustable bankroll in euros -->
+        <div class="bankroll-row">
+            <label>Bankroll</label>
+            <span class="bankroll-symbol">€</span>
+            <input
+                type="number"
+                id="bankroll-input"
+                value="1000"
+                min="1"
+                step="1"
+                inputmode="decimal"
+                placeholder="1000"
+            >
+        </div>
+
         <button onclick="getFixtures()">SCAN TACTICAL BOARD</button>
-        <div id="fixture-list" class="fixture-list"></div>
+        <select id="matches" onchange="toggleBtn()">
+            <option value="">Select Match...</option>
+        </select>
         <button id="btn" onclick="predict()" disabled>GET VERDICT</button>
-        <button onclick="window.location.href='acca.html'" style="background:#000;color:var(--neon);border:1px solid var(--neon);margin-bottom:0;">⚡ ACCA BUILDER</button>
-        <button onclick="window.location.href='session.html'" style="background:#000;color:#ffcc00;border:1px solid #ffcc00;margin-top:12px;margin-bottom:0;">🎯 MASANIELLO</button>
     </div>
 
     <div id="output"></div>
@@ -243,302 +407,262 @@
 
 <script>
 const API = "https://football-api-9e4p.onrender.com";
-let fixturesData  = [];
-let selectedIndex = null;
+let fixturesData = [];
 
+// Bankroll is read live from the input field
 function getBankroll() {
-    const el = document.getElementById("bankroll-input");
-    const val = el ? parseFloat(el.value) : 1000;
+    const val = parseFloat(document.getElementById("bankroll-input").value);
     return (!val || isNaN(val) || val <= 0) ? 1000 : val;
 }
 
-function refreshKellyStakes() {
-    document.querySelectorAll(".bookie-input").forEach(input => {
-        if (input.value) {
-            const fairOdds = parseFloat(input.dataset.fair || "0");
-            const kellyId  = input.dataset.kelly;
-            if (fairOdds && kellyId) calcKelly(input, fairOdds, kellyId);
-        }
-    });
-}
-
+// Set today's date as default
 document.getElementById("date").value = new Date().toISOString().split("T")[0];
 
-function selectFixture(idx) {
-    selectedIndex = idx;
-    document.querySelectorAll(".fixture-card").forEach(c => {
-        c.classList.toggle("selected", parseInt(c.dataset.idx) === idx);
-    });
-    document.getElementById("btn").disabled = false;
-    document.getElementById("output").innerHTML = "";
-}
+const toggleBtn = () => {
+    document.getElementById("btn").disabled =
+        document.getElementById("matches").value === "";
+};
 
-function renderFixtureList(fixtures) {
-    const list = document.getElementById("fixture-list");
-    if (!fixtures.length) {
-        list.innerHTML = `<div class="status-msg">No matches found for this date.</div>`;
-        return;
-    }
-
-    // Sort by kickoff time, then by confidence descending within same time
-    const sorted = [...fixtures].map((m,i) => ({...m, _origIdx: i}));
-    sorted.sort((a,b) => {
-        const ta = a.kickoff || a.date; const tb = b.kickoff || b.date;
-        if (ta !== tb) return ta < tb ? -1 : 1;
-        return b.confidence - a.confidence;
-    });
-
-    list.innerHTML = sorted.map(m => {
-        const idx = m._origIdx;
-        let timeStr = "";
-        if (m.kickoff && m.kickoff.length > 10) {
-            try { timeStr = new Date(m.kickoff).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}); }
-            catch(e) {}
-        }
-        const tier = m.tier || "LOW";
-        return `<div class="fixture-card" data-idx="${idx}" onclick="selectFixture(${idx})">
-            <div class="fx-left">
-                <div class="fx-teams">${m.home} vs ${m.away}</div>
-                <div class="fx-meta">${m.league}</div>
-            </div>
-            <div class="fx-right">
-                ${timeStr ? `<div class="fx-time">${timeStr}</div>` : ""}
-                <span class="conf-badge conf-${tier}">${tier}</span>
-            </div>
-        </div>`;
-    }).join("");
-}
-
-async function getFixtures() {
-    const d    = document.getElementById("date").value;
-    const list = document.getElementById("fixture-list");
-    const out  = document.getElementById("output");
-    if (!d) return;
-
-    selectedIndex = null;
-    document.getElementById("btn").disabled = true;
-    out.innerHTML = "";
-    list.innerHTML = `<div class="status-msg"><div class="loader" style="width:20px;height:20px;margin:8px auto 4px;border-width:2px;"></div>Scanning fixtures...</div>`;
-
-    try {
-        const res  = await fetch(`${API}/scan?date_from=${d}&date_to=${d}`);
-        const data = await res.json();
-        if (data.status === "loading") { list.innerHTML = `<div class="status-msg">Server syncing — refresh in ~30s.</div>`; return; }
-        if (data.error)  { list.innerHTML = `<div class="error-msg">⚡ ${data.error}</div>`; return; }
-        if (data.status === "no_games") { list.innerHTML = `<div class="status-msg">📋 No matches scheduled for this date.</div>`; return; }
-
-        fixturesData = Array.isArray(data) ? data : [];
-        if (!fixturesData.length) { list.innerHTML = `<div class="status-msg">No matches found.</div>`; return; }
-        renderFixtureList(fixturesData);
-    } catch(e) {
-        list.innerHTML = `<div class="error-msg">⚡ Connection lost. Check your link and retry.</div>`;
-    }
-}
-
-function renderForm(str, align="left", venueLabel="") {
-    const isRight = align === "right";
+// Render form dots with venue label above
+function renderForm(str, align = "left", venueLabel = "") {
+    const isRight      = align === "right";
     const justifyStyle = `justify-content:${isRight ? "flex-end" : "flex-start"}`;
-    const labelHtml = venueLabel ? `<div class="form-venue-label">${venueLabel}</div>` : "";
+    const labelHtml    = venueLabel
+        ? `<div class="form-venue-label">${venueLabel}</div>`
+        : "";
+
     if (!str || str === "???") {
         return `${labelHtml}<div class="form-row" style="${justifyStyle}">
-            <div class="dot Q">?</div><div class="dot Q">?</div><div class="dot Q">?</div></div>`;
+            <div class="dot Q">?</div><div class="dot Q">?</div><div class="dot Q">?</div>
+        </div>`;
     }
+
     const dots = str.split("").map(c => {
         const cls = ["W","D","L"].includes(c) ? c : "Q";
         return `<div class="dot ${cls}">${c}</div>`;
     }).join("");
+
     return `${labelHtml}<div class="form-row" style="${justifyStyle}">${dots}</div>`;
 }
 
+// Fetch fixtures
+async function getFixtures() {
+    const d   = document.getElementById("date").value;
+    const sel = document.getElementById("matches");
+    const out = document.getElementById("output");
+
+    if (!d) return;
+
+    sel.innerHTML = "<option>Accessing Satellites...</option>";
+    out.innerHTML = "";
+    document.getElementById("btn").disabled = true;
+
+    try {
+        const res  = await fetch(`${API}/fixtures?date=${d}`);
+        const data = await res.json();
+
+        if (data.status === "loading") {
+            sel.innerHTML = "<option value=''>Still syncing...</option>";
+            out.innerHTML = `<div class="card">
+                <div class="loader"></div>
+                <div class="status-msg">${data.message || "Server is booting. Refresh in ~30s."}</div>
+            </div>`;
+            return;
+        }
+
+        if (data.status === "no_games") {
+            sel.innerHTML = "<option value=''>No matches today</option>";
+            out.innerHTML = `<div class="card">
+                <div class="status-msg">📋 ${data.message || "No fixtures scheduled for this date."}</div>
+            </div>`;
+            return;
+        }
+
+        fixturesData = Array.isArray(data) ? data : [];
+
+        if (fixturesData.length === 0) {
+            sel.innerHTML = "<option value=''>No matches found</option>";
+            return;
+        }
+
+        sel.innerHTML = "<option value=''>Select match...</option>";
+        fixturesData.forEach((m, i) => {
+            sel.innerHTML += `<option value="${i}">[${m.comp}] ${m.home} vs ${m.away}</option>`;
+        });
+
+    } catch (e) {
+        sel.innerHTML = "<option value=''>Connection error</option>";
+        out.innerHTML = `<div class="error-msg">⚡ Satellite link lost. Check connection.</div>`;
+    }
+}
+
+// Quarter-Kelly calculator — live bankroll, euros
 function calcKelly(inputEl, fairOdds, targetId) {
     const target   = document.getElementById(targetId);
     const row      = inputEl.closest(".market-row-tr");
     const val      = parseFloat(inputEl.value);
     const bankroll = getBankroll();
+
     row.classList.remove("value");
+
     if (!val || isNaN(val) || val <= 1.0 || !fairOdds || fairOdds <= 1) {
-        target.innerHTML = `<span class="no-value">--</span>`; return;
+        target.innerHTML = `<span class="no-value">--</span>`;
+        return;
     }
-    const p = 1/fairOdds; const q = 1-p; const b = val-1;
-    const f_star = (b*p-q)/b;
-    const edge   = (val/fairOdds)-1;
+
+    const p      = 1 / fairOdds;
+    const q      = 1 - p;
+    const b      = val - 1;
+    const f_star = (b * p - q) / b;
+    const edge   = (val / fairOdds) - 1;
+
     if (edge <= 0.05) {
         target.innerHTML = edge > 0
             ? `<span class="thin-edge">Thin</span>`
             : `<span class="no-value">No edge</span>`;
         return;
     }
-    if (f_star <= 0) { target.innerHTML = `<span class="no-value">No edge</span>`; return; }
+
+    if (f_star <= 0) {
+        target.innerHTML = `<span class="no-value">No edge</span>`;
+        return;
+    }
+
     const stake = (0.25 * f_star * bankroll).toFixed(2);
     row.classList.add("value");
     target.innerHTML = `<span class="prime">★ €${stake}</span>`;
 }
 
-function buildSuggestedMarketsHtml(suggestions, fixture) {
-    if (!suggestions || !suggestions.length) {
-        return `<div class="no-value-panel">
-            — No standout markets identified for this fixture.<br>
-            <span style="font-size:0.62rem;">All markets appear efficiently priced or outside the value zone. Enter bookie odds below to check manually.</span>
-        </div>`;
-    }
-
-    const typeColors = {
-        "AH":    { bg: "rgba(255,152,0,0.12)",    color: "#ff9800",  border: "rgba(255,152,0,0.3)"    },
-        "Goals": { bg: "rgba(255,204,0,0.12)",    color: "var(--gold)", border: "rgba(255,204,0,0.3)" },
-        "Draw":  { bg: "rgba(136,146,176,0.15)",  color: "var(--draw)", border: "rgba(136,146,176,0.3)" },
-        "Home":  { bg: "rgba(0,255,157,0.12)",    color: "var(--neon)", border: "rgba(0,255,157,0.3)"  },
-        "Away":  { bg: "rgba(255,51,102,0.12)",   color: "var(--away)", border: "rgba(255,51,102,0.3)" },
-        "DC":    { bg: "rgba(79,195,247,0.12)",   color: "#4fc3f7",   border: "rgba(79,195,247,0.3)"  },
-    };
-
-    const rows = suggestions.map((s, i) => {
-        const tc  = typeColors[s.type] || typeColors["Home"];
-        const badgeStyle = `background:${tc.bg};color:${tc.color};border:1px solid ${tc.border};`;
-        const rankLabel  = i === 0 ? "★ Top pick" : i === 1 ? "2nd" : "3rd";
-
-        return `
-        <div class="suggested-item">
-            <div class="suggested-left">
-                <div class="suggested-mkt-name">
-                    ${s.label}
-                    <span class="suggested-type-badge" style="${badgeStyle}">${s.type}</span>
-                </div>
-                <div class="suggested-instruction">
-                    Check this at your bookie — if they offer <b>above ${s.fair}</b>, there is value
-                </div>
-            </div>
-            <div class="suggested-right">
-                <div class="suggested-fair">${s.fair}</div>
-                <div class="suggested-prob">${s.prob}% model prob</div>
-            </div>
-        </div>`;
-    }).join("");
-
-    return `
-    <div class="suggested-panel">
-        <div class="suggested-title">
-            📍 Markets Worth Checking at Your Bookie
-        </div>
-        ${rows}
-    </div>`;
-}
-
+// Fetch prediction
 async function predict() {
-    const idx = selectedIndex;
+    const idx = document.getElementById("matches").value;
     const out = document.getElementById("output");
-    if (idx === null || idx === undefined) return;
+
+    if (idx === "") return;
 
     out.innerHTML = "<div class='loader'></div>";
 
     try {
         const res = await fetch(`${API}/predict`, {
-            method: "POST", headers: {"Content-Type":"application/json"},
-            body: JSON.stringify(fixturesData[idx])
+            method:  "POST",
+            headers: { "Content-Type": "application/json" },
+            body:    JSON.stringify(fixturesData[idx])
         });
-        if (!res.ok) { out.innerHTML = `<div class="error-msg">⚡ Prediction engine offline (${res.status}). Try again.</div>`; return; }
+
+        if (!res.ok) {
+            out.innerHTML = `<div class="error-msg">⚡ Prediction engine offline (${res.status}). Try again.</div>`;
+            return;
+        }
+
         const d = await res.json();
-        if (d.error) { out.innerHTML = `<div class="error-msg">⚡ ${d.error}</div>`; return; }
 
-        const m      = fixturesData[idx];
-        const market = d.market || {};
+        if (d.error) {
+            out.innerHTML = `<div class="error-msg">⚡ ${d.error}</div>`;
+            return;
+        }
 
-        const mkRow = (label, fairKey, kellyId, mktType) => {
-            const fairVal = market[fairKey];
-            const badge   = mktType ? `<span class="mkt-badge mkt-${mktType}"></span>` : "";
-            return `
+        const m        = fixturesData[idx];
+        const market   = d.market || {};
+        const bankroll = getBankroll();
+
+        // Market row builder
+        const mkRow = (label, fairKey, kellyId) => `
             <tr class="market-row-tr" id="row-${kellyId}">
                 <td>${label}</td>
-                <td class="fair-price">${fairVal || "--"}</td>
+                <td class="fair-price">${market[fairKey] || "--"}</td>
                 <td>
-                    <input type="number" class="bookie-input" placeholder="Odds"
-                        step="0.01" min="1.01" inputmode="decimal"
-                        data-fair="${fairVal || 0}" data-kelly="${kellyId}"
-                        oninput="calcKelly(this, ${fairVal || 0}, '${kellyId}')">
+                    <input
+                        type="number"
+                        class="bookie-input"
+                        placeholder="Odds"
+                        step="0.01"
+                        min="1.01"
+                        inputmode="decimal"
+                        oninput="calcKelly(this, ${market[fairKey] || 0}, '${kellyId}')"
+                    >
                 </td>
-                <td class="kelly-result" id="${kellyId}"><span class="no-value">--</span></td>
+                <td class="kelly-result" id="${kellyId}">
+                    <span class="no-value">--</span>
+                </td>
             </tr>`;
-        };
 
-        const h_w  = d.probs.home > d.probs.away;
-        const fav  = h_w ? m.home : m.away;
-        const conf = Math.max(d.probs.home, d.probs.away);
-        const btts_pct = market.btts   ? Math.round((1/market.btts)*100) : "?";
-        const o25_pct  = market.over25 ? Math.round((1/market.over25)*100) : "?";
+        // Gaffer narrative
+        const h_w      = d.probs.home > d.probs.away;
+        const fav      = h_w ? m.home : m.away;
+        const conf     = Math.max(d.probs.home, d.probs.away);
+        const btts_pct = market.btts   ? Math.round((1 / market.btts)   * 100) : "?";
+        const o25_pct  = market.over25 ? Math.round((1 / market.over25) * 100) : "?";
 
         const verdict = `
             Projected scoreline: <b>${d.score}</b>.
             ${fav} are favoured at <b>${conf}%</b> win probability.
-            BTTS probability: <b>${btts_pct}%</b>.
+            Both teams to score probability: <b>${btts_pct}%</b>.
             Over 2.5 goals probability: <b>${o25_pct}%</b>.
-            Enter your bookie's odds in the table above to detect value and calculate ¼-Kelly stakes.
+            Enter bookie odds in the table above to detect value and calculate ¼-Kelly stakes.
         `.trim();
 
         out.innerHTML = `
         <div class="card">
+
+            <!-- Teams + Form — labelled by venue -->
             <div class="teams-row">
                 <div class="team-block">
-                    <b>${m.home}</b><small>Rank #${d.h_rank}</small>
-                    ${renderForm(d.h_form,"left","Last 5 Home")}
+                    <b>${m.home}</b>
+                    <small>Rank #${d.h_rank}</small>
+                    ${renderForm(d.h_form, "left", "Last 5 Home")}
                 </div>
                 <div class="team-block right">
-                    <b>${m.away}</b><small>Rank #${d.a_rank}</small>
-                    ${renderForm(d.a_form,"right","Last 5 Away")}
+                    <b>${m.away}</b>
+                    <small>Rank #${d.a_rank}</small>
+                    ${renderForm(d.a_form, "right", "Last 5 Away")}
                 </div>
             </div>
 
+            <!-- Predicted Score -->
             <div class="score">${d.score}</div>
             <div class="lambda-row">
                 <span>λ HOME ${d.h_lam}</span>
-                <span>⚪ POISSON</span>
                 <span>λ AWAY ${d.a_lam}</span>
             </div>
 
+            <!-- Probability Bar (min-width fix applied via CSS) -->
             <div class="prob-bar">
                 <div class="p-h" style="width:${d.probs.home}%">${d.probs.home}%</div>
                 <div class="p-d" style="width:${d.probs.draw}%">${d.probs.draw}%</div>
                 <div class="p-a" style="width:${d.probs.away}%">${d.probs.away}%</div>
             </div>
 
-            ${buildSuggestedMarketsHtml(d.suggested_markets || [], m)}
-
-            <div class="section-label">Fair Odds · Enter Bookie Price to Check Value · ¼ Kelly Staker</div>
-
-            <div class="bankroll-row">
-                <label>Bankroll</label>
-                <span class="bankroll-symbol">€</span>
-                <input type="number" id="bankroll-input" value="1000" min="1" step="1"
-                    inputmode="decimal" placeholder="1000" oninput="refreshKellyStakes()">
-            </div>
-
+            <!-- Market Comparison + Kelly Staker -->
+            <div class="section-label">Market Comparison · ¼ Kelly Staker (€${bankroll.toLocaleString()} Bank)</div>
             <table class="market-table">
-                <thead><tr>
-                    <th>Market</th><th>Fair Odds</th><th>Your Bookie</th><th>Stake</th>
-                </tr></thead>
+                <thead>
+                    <tr>
+                        <th>Market</th>
+                        <th>Fair Odds</th>
+                        <th>Bookie Odds</th>
+                        <th>Stake</th>
+                    </tr>
+                </thead>
                 <tbody>
-                    ${mkRow("Home Win",     "home",    "k-h",    "1X2")}
-                    ${mkRow("Draw",         "draw",    "k-d",    "1X2")}
-                    ${mkRow("Away Win",     "away",    "k-a",    "1X2")}
-                    ${mkRow("1X Home/Draw", "dc_1x",   "k-dc1x", "DC")}
-                    ${mkRow("X2 Draw/Away", "dc_x2",   "k-dcx2", "DC")}
-                    ${mkRow("12 Home/Away", "dc_12",   "k-dc12", "DC")}
-                    ${mkRow("BTTS",         "btts",    "k-btts", "Goals")}
-                    ${mkRow("Over 1.5",     "over15",  "k-o15",  "Goals")}
-                    ${mkRow("Over 2.5",     "over25",  "k-o25",  "Goals")}
-                    ${mkRow("Over 3.5",     "over35",  "k-o35",  "Goals")}
-                    ${mkRow("AH Home -0.5", "ah_hm05", "k-ahm05","AH")}
-                    ${mkRow("AH Home +0.5", "ah_hp05", "k-ahp05","AH")}
-                    ${mkRow("AH Home -1.5", "ah_hm15", "k-ahm15","AH")}
-                    ${mkRow("AH Home +1.5", "ah_hp15", "k-ahp15","AH")}
+                    ${mkRow("Home Win",  "home",   "k-h")}
+                    ${mkRow("Draw",      "draw",   "k-d")}
+                    ${mkRow("Away Win",  "away",   "k-a")}
+                    ${mkRow("BTTS",      "btts",   "k-btts")}
+                    ${mkRow("Over 1.5",  "over15", "k-o15")}
+                    ${mkRow("Over 2.5",  "over25", "k-o25")}
+                    ${mkRow("Over 3.5",  "over35", "k-o35")}
                 </tbody>
             </table>
 
+            <!-- Gaffer Verdict -->
             <div class="gaffer-box">
                 ${verdict}
                 <div class="signature">— THE GAFFER</div>
             </div>
+
         </div>`;
 
-    } catch(e) {
+    } catch (e) {
         out.innerHTML = `<div class="error-msg">⚡ Connection lost. Check your link and retry.</div>`;
     }
 }

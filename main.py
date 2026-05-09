@@ -342,7 +342,144 @@ def ping():
     if not fixtures_store:
         threading.Thread(target=fetch_all_fixtures, daemon=True).start()
     return jsonify({"status": "ok", "warm": bool(fixtures_store)})
-def fixtures():
+
+
+# =========================================================
+# 📒 PREDICTION LOG SYSTEM
+# =========================================================
+LOG_FILE  = "predictions.json"
+_log_lock = threading.Lock()
+
+def load_log() -> list:
+    try:
+        if os.path.exists(LOG_FILE):
+            with open(LOG_FILE, "r") as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"[LOG] Load error: {e}")
+    return []
+
+def save_log(entries: list):
+    try:
+        with open(LOG_FILE, "w") as f:
+            json.dump(entries, f)
+    except Exception as e:
+        print(f"[LOG] Save error: {e}")
+
+def log_prediction(entry: dict):
+    with _log_lock:
+        entries = load_log()
+        key = entry.get("match_key", "")
+        if not any(e.get("match_key") == key for e in entries):
+            entries.append(entry)
+            save_log(entries)
+            print(f"[LOG] Logged: {key}")
+
+def match_results_to_log():
+    now_t = time.time()
+    yest  = time.strftime("%Y-%m-%d", time.gmtime(now_t - 86400))
+    try:
+        r = football_data_get(
+            f"{BASE_URL}/matches", headers=HEADERS,
+            params={"dateFrom": yest, "dateTo": yest, "status": "FINISHED"}, timeout=15
+        )
+        if r.status_code != 200:
+            print(f"[LOG] Results fetch failed ({r.status_code})"); return
+        matches = r.json().get("matches", [])
+
+        def jac(s1, s2):
+            t1 = set(s1.lower().split()); t2 = set(s2.lower().split())
+            return len(t1&t2)/len(t1|t2) if t1|t2 else 0
+
+        with _log_lock:
+            entries = load_log(); updated = 0
+            for entry in entries:
+                if entry.get("resolved") or entry.get("date") != yest: continue
+                for m in matches:
+                    h  = m.get("homeTeam",{}).get("name","")
+                    a  = m.get("awayTeam",{}).get("name","")
+                    sc = m["score"]["fullTime"]
+                    if sc["home"] is None: continue
+                    if jac(entry.get("home",""), h) > 0.3 and jac(entry.get("away",""), a) > 0.3:
+                        hs, as_ = sc["home"], sc["away"]
+                        outcome = "H" if hs>as_ else ("D" if hs==as_ else "A")
+                        entry.update({"actual_home":hs,"actual_away":as_,
+                                      "actual_score":f"{hs}-{as_}","actual_outcome":outcome,"resolved":True})
+                        total = hs+as_; diff = hs-as_
+                        for mkt in entry.get("suggested_markets",[]):
+                            code = mkt.get("code","")
+                            won  = False
+                            if code=="H":       won = diff>0
+                            elif code=="D":     won = diff==0
+                            elif code=="A":     won = diff<0
+                            elif code=="BTTS":  won = hs>0 and as_>0
+                            elif code=="O25":   won = total>2
+                            elif code=="O15":   won = total>1
+                            elif code=="O35":   won = total>3
+                            elif "HM05" in code: won = diff>=1
+                            elif "HP05" in code: won = diff>=0
+                            elif "A05" in code:  won = diff<=0
+                            mkt["won"] = won
+                        ph = entry.get("prob_home",33)/100; pd = entry.get("prob_draw",33)/100; pa = entry.get("prob_away",34)/100
+                        r_h,r_d,r_a = (1.0 if outcome=="H" else 0.0),(1.0 if outcome=="D" else 0.0),(1.0 if outcome=="A" else 0.0)
+                        entry["brier"] = round((ph-r_h)**2+(pd-r_d)**2+(pa-r_a)**2,4)
+                        updated += 1; break
+            if updated:
+                save_log(entries)
+                print(f"[LOG] Resolved {updated} predictions for {yest}")
+    except Exception as e:
+        print(f"[LOG] match_results_to_log error: {e}")
+
+
+@app.route("/log/predictions")
+def get_predictions_log():
+    try:
+        entries   = load_log()
+        resolved  = [e for e in entries if e.get("resolved")]
+        brier_avg = round(sum(e.get("brier",0) for e in resolved)/len(resolved),4) if resolved else None
+        mkt_stats = {}
+        for e in resolved:
+            for mkt in e.get("suggested_markets",[]):
+                t = mkt.get("type","Unknown")
+                if t not in mkt_stats: mkt_stats[t] = {"won":0,"total":0}
+                mkt_stats[t]["total"] += 1
+                if mkt.get("won"): mkt_stats[t]["won"] += 1
+        return jsonify({
+            "entries":    sorted(entries, key=lambda x: x.get("timestamp",""), reverse=True),
+            "total":      len(entries),
+            "resolved":   len(resolved),
+            "unresolved": len(entries)-len(resolved),
+            "brier_avg":  brier_avg,
+            "mkt_stats":  mkt_stats,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/log/bet", methods=["POST"])
+def log_bet():
+    try:
+        body = request.json
+        if not body: return jsonify({"error": "No data"}), 400
+        with _log_lock:
+            entries = load_log()
+            key = body.get("match_key","")
+            for entry in entries:
+                if entry.get("match_key") == key:
+                    entry.update({
+                        "bet_market":    body.get("market"),
+                        "bet_bookie":    body.get("bookie_odds"),
+                        "bet_stake":     body.get("stake"),
+                        "bet_edge":      body.get("edge"),
+                        "bet_logged_at": time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
+                    })
+                    save_log(entries)
+                    return jsonify({"status":"ok"})
+            body["bet_logged_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
+            entries.append(body); save_log(entries)
+        return jsonify({"status":"ok"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
     date = request.args.get("date", "").split("T")[0]
     if not date: return jsonify([])
     if not fixtures_store:
@@ -662,6 +799,27 @@ def predict():
             }
             for s in suggestions
         ]
+
+        # ── Auto-log this prediction ──
+        match_key = f"{comp}_{h_id}_{a_id}_{time.strftime('%Y-%m-%d',time.gmtime())}"
+        log_prediction({
+            "match_key":         match_key,
+            "date":              time.strftime("%Y-%m-%d", time.gmtime()),
+            "timestamp":         time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "home":              req.get("home",""),
+            "away":              req.get("away",""),
+            "comp":              comp,
+            "league":            req.get("league",""),
+            "kickoff":           req.get("kickoff",""),
+            "prob_home":         h_pct,
+            "prob_draw":         d_pct,
+            "prob_away":         a_pct,
+            "projected_score":   best,
+            "h_lam":             round(h_lam,3),
+            "a_lam":             round(a_lam,3),
+            "suggested_markets": suggested_markets,
+            "resolved":          False,
+        })
 
         return jsonify({
             "score":   best,
@@ -1146,6 +1304,7 @@ def run_scheduler():
         fetch_all_fixtures()
         preload_standings()
         threading.Thread(target=run_calibration_check, daemon=True).start()
+        threading.Thread(target=match_results_to_log,  daemon=True).start()
 
 _workers = int(os.getenv("WEB_CONCURRENCY","1"))
 if _workers > 1:

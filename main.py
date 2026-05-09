@@ -829,6 +829,8 @@ def predict():
                 "dc_1x":  fair_odds(p_1x),  "dc_x2": fair_odds(p_x2),  "dc_12": fair_odds(p_12),
                 "btts":   fair_odds(p_btts),
                 "over15": fair_odds(p_over15), "over25": fair_odds(p_over25), "over35": fair_odds(p_over35),
+                "under25": fair_odds(at["u25"]) if at["u25"] > 0 else None,
+                "under35": fair_odds(at["u35"]) if at["u35"] > 0 else None,
                 "ah_hm05": ah_fair_odds(ah["hm05"], 0), "ah_hp05": ah_fair_odds(ah["hp05"], 0),
                 "ah_hm15": ah_fair_odds(ah["hm15"], 0), "ah_hp15": ah_fair_odds(ah["hp15"], 0),
             },

@@ -405,6 +405,8 @@ function menuAiPrompt() {
         "    Over 1.5:     " + (mkt.over15  || "--") + "\n" +
         "    Over 2.5:     " + (mkt.over25  || "--") + "\n" +
         "    Over 3.5:     " + (mkt.over35  || "--") + "\n" +
+        "    Under 2.5:    " + (mkt.under25 || "--") + "\n" +
+        "    Under 3.5:    " + (mkt.under35 || "--") + "\n" +
         "  Asian Handicap:\n" +
         "    Home -0.5:    " + (mkt.ah_hm05 || "--") + "\n" +
         "    Home +0.5:    " + (mkt.ah_hp05 || "--") + "\n" +
@@ -863,6 +865,8 @@ async function predict() {
             mkRow("Over 1.5",     market.over15,  "k-o15") +
             mkRow("Over 2.5",     market.over25,  "k-o25") +
             mkRow("Over 3.5",     market.over35,  "k-o35") +
+            mkRow("Under 2.5",    market.under25, "k-u25") +
+            mkRow("Under 3.5",    market.under35, "k-u35") +
             mkRow("AH Home -0.5", market.ah_hm05, "k-ahm05") +
             mkRow("AH Home +0.5", market.ah_hp05, "k-ahp05") +
             mkRow("AH Home -1.5", market.ah_hm15, "k-ahm15") +

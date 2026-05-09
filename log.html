@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>THE GAFFER | Prediction Log</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+    :root { --neon:#00ff9d; --bg:#0a0b10; --card:#151821; --border:#2a2d3a; --away:#ff3366; --draw:#8892b0; --dim:#4a5060; --gold:#ffcc00; }
+    * { box-sizing: border-box; }
+    body { background:var(--bg); color:#fff; font-family:Inter,sans-serif; display:flex; justify-content:center; padding:20px; min-height:100vh; }
+    .container { width:100%; max-width:520px; }
+    .back-btn { display:inline-flex; align-items:center; gap:6px; font-family:Orbitron,sans-serif; font-size:0.65rem; letter-spacing:2px; color:var(--dim); cursor:pointer; border:none; background:none; padding:0; margin-bottom:16px; transition:color 0.2s; width:auto; }
+    .back-btn:hover { color:var(--neon); box-shadow:none; }
+    h1 { font-family:Orbitron,sans-serif; color:var(--neon); text-align:center; letter-spacing:5px; font-size:1.1rem; margin-bottom:4px; }
+    .tagline { text-align:center; font-size:0.62rem; color:var(--dim); letter-spacing:3px; text-transform:uppercase; margin-bottom:24px; }
+
+    /* Summary cards */
+    .summary-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:20px; }
+    .stat-card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px; text-align:center; }
+    .stat-val { font-family:Orbitron,sans-serif; font-size:1.4rem; font-weight:900; color:var(--neon); margin-bottom:4px; }
+    .stat-lbl { font-size:0.58rem; letter-spacing:2px; color:var(--dim); text-transform:uppercase; }
+
+    /* Brier score panel */
+    .brier-panel { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:20px; }
+    .brier-title { font-size:0.6rem; letter-spacing:3px; color:var(--dim); text-transform:uppercase; margin-bottom:12px; }
+    .brier-score { font-family:Orbitron,sans-serif; font-size:2rem; font-weight:900; color:var(--neon); text-align:center; margin-bottom:6px; }
+    .brier-track { height:8px; background:#1a1d28; border-radius:4px; overflow:hidden; margin-bottom:8px; }
+    .brier-fill  { height:100%; border-radius:4px; background:var(--neon); transition:width 0.5s; }
+    .brier-labels { display:flex; justify-content:space-between; font-size:0.58rem; color:var(--dim); }
+    .brier-rating { text-align:center; font-size:0.72rem; color:var(--draw); margin-top:4px; }
+
+    /* Market accuracy */
+    .mkt-panel { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:20px; }
+    .mkt-title { font-size:0.6rem; letter-spacing:3px; color:var(--dim); text-transform:uppercase; margin-bottom:12px; }
+    .mkt-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+    .mkt-type { font-family:Orbitron,sans-serif; font-size:0.6rem; min-width:52px; color:#dde; }
+    .mkt-bar-wrap { flex:1; height:6px; background:#1a1d28; border-radius:3px; overflow:hidden; }
+    .mkt-bar-fill { height:100%; border-radius:3px; background:var(--neon); transition:width 0.5s; }
+    .mkt-pct { font-family:Orbitron,sans-serif; font-size:0.6rem; color:var(--neon); min-width:36px; text-align:right; }
+    .mkt-count { font-size:0.58rem; color:var(--dim); min-width:40px; text-align:right; }
+
+    /* Entry table */
+    .entries-panel { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:20px; }
+    .entries-title { font-size:0.6rem; letter-spacing:3px; color:var(--dim); text-transform:uppercase; margin-bottom:14px; }
+
+    .entry-card { border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:8px; }
+    .entry-card.resolved   { border-color:#1a2a1a; }
+    .entry-card.unresolved { border-color:#1a1d28; opacity:0.7; }
+    .entry-teams { font-size:0.82rem; font-weight:600; color:#dde; margin-bottom:4px; }
+    .entry-meta  { display:flex; justify-content:space-between; font-size:0.6rem; color:var(--dim); margin-bottom:8px; }
+    .entry-probs { display:flex; height:16px; border-radius:4px; overflow:hidden; margin-bottom:6px; font-size:0.55rem; line-height:16px; text-align:center; }
+    .ep-h { background:var(--neon); color:#000; } .ep-d { background:var(--draw); color:#000; } .ep-a { background:var(--away); color:#000; }
+    .entry-bottom { display:flex; align-items:center; justify-content:space-between; }
+    .entry-score { font-family:Orbitron,sans-serif; font-size:0.7rem; }
+    .score-correct { color:var(--neon); } .score-wrong { color:var(--away); } .score-pending { color:var(--dim); }
+    .entry-outcome { font-family:Orbitron,sans-serif; font-size:0.6rem; padding:2px 8px; border-radius:4px; }
+    .oc-correct { background:rgba(0,255,157,0.12); color:var(--neon); border:1px solid rgba(0,255,157,0.3); }
+    .oc-wrong   { background:rgba(255,51,102,0.12); color:var(--away); border:1px solid rgba(255,51,102,0.3); }
+    .oc-pending { background:rgba(74,80,96,0.2);    color:var(--dim);  border:1px solid rgba(74,80,96,0.2); }
+
+    .entry-bet  { font-size:0.62rem; color:var(--gold); margin-top:5px; border-top:1px solid #1a1d28; padding-top:5px; }
+
+    .filter-row { display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap; }
+    .filter-btn { padding:5px 12px; border-radius:6px; border:1px solid var(--border); background:transparent; color:var(--dim); font-family:Orbitron,sans-serif; font-size:0.58rem; letter-spacing:1px; cursor:pointer; transition:all 0.2s; width:auto; }
+    .filter-btn.active { border-color:var(--neon); color:var(--neon); background:rgba(0,255,157,0.05); box-shadow:none; }
+
+    .loader { border:3px solid #1a1d28; border-top:3px solid var(--neon); border-radius:50%; width:32px; height:32px; margin:20px auto; animation:spin 0.9s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .status-msg { text-align:center; font-size:0.75rem; color:var(--dim); padding:20px 0; }
+    .error-msg  { text-align:center; font-size:0.78rem; color:var(--away); padding:10px 0; }
+    .empty-msg  { text-align:center; font-size:0.75rem; color:var(--dim); padding:30px 0; line-height:1.7; }
+</style>
+</head>
+<body>
+<div class="container">
+
+    <button class="back-btn" onclick="window.location.href='index.html'">← BACK TO GAFFER</button>
+    <h1>PREDICTION LOG</h1>
+    <p class="tagline">Model Validation · 90-Day Tracker</p>
+
+    <div id="content"><div class="loader"></div></div>
+
+</div>
+<script>
+var API = "https://football-api-9e4p.onrender.com";
+var allEntries = [];
+var currentFilter = "ALL";
+
+async function loadLog() {
+    var content = document.getElementById("content");
+    try {
+        var res  = await fetch(API + "/log/predictions");
+        var data = await res.json();
+        if (data.error) { content.innerHTML = '<div class="error-msg">⚡ ' + data.error + '</div>'; return; }
+        allEntries = data.entries || [];
+        render(data);
+    } catch(e) {
+        content.innerHTML = '<div class="error-msg">⚡ Could not load log. Server may be cold — try again.</div>';
+    }
+}
+
+function brierRating(b) {
+    if (b === null || b === undefined) return "Pending data";
+    if (b < 0.45) return "Excellent";
+    if (b < 0.50) return "Good";
+    if (b < 0.55) return "Fair";
+    return "Needs improvement";
+}
+
+function brierColor(b) {
+    if (b === null) return "var(--dim)";
+    if (b < 0.45) return "var(--neon)";
+    if (b < 0.50) return "var(--gold)";
+    return "var(--away)";
+}
+
+function render(data) {
+    var content = document.getElementById("content");
+    var entries = data.entries || [];
+    var resolved = entries.filter(function(e) { return e.resolved; });
+    var bets     = entries.filter(function(e) { return e.bet_market; });
+    var brier    = data.brier_avg;
+    var mkt      = data.mkt_stats || {};
+
+    // ── Summary grid ──
+    var correctOutcome = resolved.filter(function(e) {
+        var probH = e.prob_home, probD = e.prob_draw, probA = e.prob_away;
+        var predicted = probH >= probD && probH >= probA ? "H" : probA >= probH && probA >= probD ? "A" : "D";
+        return predicted === e.actual_outcome;
+    }).length;
+    var accuracy = resolved.length ? Math.round((correctOutcome/resolved.length)*100) : null;
+
+    var summaryHtml =
+        '<div class="summary-grid">' +
+        statCard(data.total || 0, "Predictions") +
+        statCard(data.resolved || 0, "Resolved") +
+        statCard(bets.length, "Bets Logged") +
+        statCard(accuracy !== null ? accuracy + "%" : "—", "Direction Acc.") +
+        '</div>';
+
+    // ── Brier panel ──
+    var brierHtml = '<div class="brier-panel">' +
+        '<div class="brier-title">Brier Score — Model Calibration</div>';
+    if (brier !== null && brier !== undefined) {
+        var fillPct = Math.max(0, Math.min(100, (1 - brier/0.667) * 100));
+        brierHtml +=
+            '<div class="brier-score" style="color:' + brierColor(brier) + '">' + brier + '</div>' +
+            '<div class="brier-track"><div class="brier-fill" style="width:' + fillPct + '%;background:' + brierColor(brier) + '"></div></div>' +
+            '<div class="brier-labels"><span>0.667 (random)</span><span>0.50 (target)</span><span>0.0 (perfect)</span></div>' +
+            '<div class="brier-rating">' + brierRating(brier) + ' — based on ' + resolved.length + ' resolved predictions</div>';
+    } else {
+        brierHtml += '<div class="empty-msg">No resolved predictions yet.<br>Data populates automatically after matches finish.</div>';
+    }
+    brierHtml += '</div>';
+
+    // ── Market accuracy ──
+    var mktHtml = '<div class="mkt-panel"><div class="mkt-title">Market Accuracy by Type</div>';
+    var mktKeys = Object.keys(mkt);
+    if (mktKeys.length) {
+        mktHtml += mktKeys.map(function(t) {
+            var s   = mkt[t];
+            var pct = s.total ? Math.round((s.won/s.total)*100) : 0;
+            return '<div class="mkt-row">' +
+                '<span class="mkt-type">' + t + '</span>' +
+                '<div class="mkt-bar-wrap"><div class="mkt-bar-fill" style="width:' + pct + '%"></div></div>' +
+                '<span class="mkt-pct">' + pct + '%</span>' +
+                '<span class="mkt-count">' + s.won + '/' + s.total + '</span>' +
+                '</div>';
+        }).join("");
+    } else {
+        mktHtml += '<div class="status-msg">Market data populates as predictions resolve.</div>';
+    }
+    mktHtml += '</div>';
+
+    // ── Entry list ──
+    var entryHtml = '<div class="entries-panel"><div class="entries-title">All Predictions</div>' +
+        '<div class="filter-row">' +
+        filterBtn("ALL") + filterBtn("RESOLVED") + filterBtn("PENDING") + filterBtn("BETS") +
+        '</div>' +
+        '<div id="entry-list">' + renderEntries(entries) + '</div>' +
+        '</div>';
+
+    content.innerHTML = summaryHtml + brierHtml + mktHtml + entryHtml;
+}
+
+function statCard(val, lbl) {
+    return '<div class="stat-card"><div class="stat-val">' + val + '</div><div class="stat-lbl">' + lbl + '</div></div>';
+}
+
+function filterBtn(f) {
+    return '<button class="filter-btn' + (currentFilter===f?' active':'') + '" onclick="setFilter(\'' + f + '\')">' + f + '</button>';
+}
+
+function setFilter(f) {
+    currentFilter = f;
+    var filtered = allEntries;
+    if (f === "RESOLVED") filtered = allEntries.filter(function(e) { return e.resolved; });
+    if (f === "PENDING")  filtered = allEntries.filter(function(e) { return !e.resolved; });
+    if (f === "BETS")     filtered = allEntries.filter(function(e) { return e.bet_market; });
+    document.getElementById("entry-list").innerHTML = renderEntries(filtered);
+    // Update filter buttons
+    document.querySelectorAll(".filter-btn").forEach(function(btn) {
+        btn.classList.toggle("active", btn.textContent === f);
+    });
+}
+
+function renderEntries(entries) {
+    if (!entries.length) return '<div class="empty-msg">No predictions yet.<br>Press GET VERDICT on any fixture to start logging.</div>';
+    return entries.map(function(e) {
+        var probH = e.prob_home||33; var probD = e.prob_draw||33; var probA = e.prob_away||34;
+        var predicted = probH >= probD && probH >= probA ? "H" : probA >= probH && probA >= probD ? "A" : "D";
+
+        var outcomeHtml = "";
+        if (e.resolved) {
+            var correct = predicted === e.actual_outcome;
+            outcomeHtml = '<span class="entry-outcome ' + (correct?'oc-correct':'oc-wrong') + '">' +
+                (correct ? '✓ Correct' : '✗ Wrong') + '</span>';
+        } else {
+            outcomeHtml = '<span class="entry-outcome oc-pending">Pending</span>';
+        }
+
+        var scoreHtml = e.resolved
+            ? '<span class="entry-score ' + (predicted===e.actual_outcome?'score-correct':'score-wrong') + '">' + e.actual_score + '</span>'
+            : '<span class="entry-score score-pending">TBC</span>';
+
+        var betHtml = e.bet_market
+            ? '<div class="entry-bet">📊 Bet logged: ' + e.bet_market +
+              (e.bet_bookie ? ' @ ' + e.bet_bookie : '') +
+              (e.bet_stake  ? ' · Stake €' + e.bet_stake : '') +
+              (e.bet_edge   ? ' · ' + e.bet_edge : '') + '</div>'
+            : '';
+
+        return '<div class="entry-card ' + (e.resolved?'resolved':'unresolved') + '">' +
+            '<div class="entry-teams">' + (e.home||"?") + ' vs ' + (e.away||"?") + '</div>' +
+            '<div class="entry-meta"><span>' + (e.league||e.comp||"") + '</span><span>' + (e.date||"") + '</span></div>' +
+            '<div class="entry-probs">' +
+            '<div class="ep-h" style="width:' + probH + '%">' + (probH>15?probH+'%':'') + '</div>' +
+            '<div class="ep-d" style="width:' + probD + '%">' + (probD>15?probD+'%':'') + '</div>' +
+            '<div class="ep-a" style="width:' + probA + '%">' + (probA>15?probA+'%':'') + '</div>' +
+            '</div>' +
+            '<div class="entry-bottom">' + scoreHtml + outcomeHtml + '</div>' +
+            betHtml +
+            '</div>';
+    }).join("");
+}
+
+loadLog();
+</script>
+</body>
+</html>

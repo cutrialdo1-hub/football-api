@@ -378,31 +378,64 @@ function menuDownload() {
 function menuAiPrompt() {
     document.getElementById("menu-dropdown").classList.remove("open");
     if (!currentVerdict) return;
-    var m   = fixturesData[selectedIndex] || {};
+
     var d   = currentVerdict;
+    var m   = d._fixture || fixturesData[selectedIndex] || {};
+    var mkt = d._market  || d.market || {};
+    var vis = d._vis     || {};
+    var p   = d.probs    || {};
+
+    // Suggested markets
     var sug = (d.suggested_markets || []).map(function(s) {
         return "  - " + s.label + " · Fair " + s.fair + " · " + s.prob + "% model prob";
     }).join("\n");
 
+    // All fair odds
+    var allFair =
+        "  1X2:\n" +
+        "    Home Win:     " + (mkt.home    || "--") + "\n" +
+        "    Draw:         " + (mkt.draw    || "--") + "\n" +
+        "    Away Win:     " + (mkt.away    || "--") + "\n" +
+        "  Double Chance:\n" +
+        "    1X:           " + (mkt.dc_1x   || "--") + "\n" +
+        "    X2:           " + (mkt.dc_x2   || "--") + "\n" +
+        "    12:           " + (mkt.dc_12   || "--") + "\n" +
+        "  Goals:\n" +
+        "    BTTS:         " + (mkt.btts    || "--") + "\n" +
+        "    Over 1.5:     " + (mkt.over15  || "--") + "\n" +
+        "    Over 2.5:     " + (mkt.over25  || "--") + "\n" +
+        "    Over 3.5:     " + (mkt.over35  || "--") + "\n" +
+        "  Asian Handicap:\n" +
+        "    Home -0.5:    " + (mkt.ah_hm05 || "--") + "\n" +
+        "    Home +0.5:    " + (mkt.ah_hp05 || "--") + "\n" +
+        "    Home -1.5:    " + (mkt.ah_hm15 || "--") + "\n" +
+        "    Home +1.5:    " + (mkt.ah_hp15 || "--");
+
     var prompt =
         "I am using a Poisson football prediction model and want your help validating this fixture before placing a bet.\n\n" +
-        "Match: " + m.home + " vs " + m.away + "\n" +
-        "Competition: " + (m.league || m.comp || "") + "\n" +
+        "Match: " + (m.home||"?") + " vs " + (m.away||"?") + "\n" +
+        "Competition: " + (m.league||m.comp||"") + "\n" +
         "Date: " + ((m.kickoff||"").split("T")[0] || m.date || "") + "\n" +
         "Kickoff: " + ((m.kickoff||"").substring(11,16) || "TBC") + " UTC\n\n" +
-        "Model output:\n" +
+        "MODEL ANALYSIS:\n" +
         "  Projected score: " + (d.score||"") + "\n" +
-        "  Home win: " + (d.probs||{}).home + "% · Draw: " + (d.probs||{}).draw + "% · Away win: " + (d.probs||{}).away + "%\n" +
-        "  λ Home: " + (d.h_lam||"") + " · λ Away: " + (d.a_lam||"") + "\n" +
-        (sug ? "  Suggested markets:\n" + sug + "\n" : "") + "\n" +
-        "Please research the following and give me a final betting verdict:\n" +
+        "  Home win: " + (p.home||"?") + "% · Draw: " + (p.draw||"?") + "% · Away win: " + (p.away||"?") + "%\n" +
+        "  λ Home: " + (d.h_lam||"") + " · λ Away: " + (d.a_lam||"") + "\n\n" +
+        "  Top outcome: " + (vis.topLabel||"") + "\n" +
+        "  Outcome probability: " + (vis.topProb||"") + "% — " + (vis.probDesc||"") + "\n" +
+        "  Model confidence: " + (vis.confPctVal||"") + "% — " + (vis.confDesc||"") + "\n" +
+        "  Fair price (" + (vis.topLabel||"") + "): " + (vis.topFair||"") + " — " + (vis.fairLblVal||"") + "\n\n" +
+        "ALL FAIR ODDS (model prices, no margin):\n" + allFair + "\n\n" +
+        (sug ? "SUGGESTED MARKETS:\n" + sug + "\n\n" : "") +
+        "Please research the following and give me a full verdict:\n" +
         "1. Current injuries and suspensions for both teams\n" +
         "2. Expected lineups\n" +
         "3. Recent form in context (not just W/D/L)\n" +
         "4. Head to head history at this ground\n" +
         "5. Motivation and tactical setup\n" +
-        "6. Whether the suggested market holds up against real world intelligence\n" +
-        "7. Final recommendation: back, reduce stake, or avoid";
+        "6. Whether the suggested markets hold up against real world intelligence\n" +
+        "7. Your final recommendation: back, reduce stake, or avoid — and why\n\n" +
+        "After giving your verdict, please tell me what odds my bookie would need to offer on each suggested market for it to represent genuine value, so I can make a final decision before placing the bet.";
 
     navigator.clipboard.writeText(prompt).then(function() {
         var btn = document.getElementById("menu-btn");
@@ -410,14 +443,11 @@ function menuAiPrompt() {
         btn.textContent = "✓"; btn.style.color = "var(--gold)";
         setTimeout(function() { btn.textContent = orig; btn.style.color = ""; }, 2000);
     }).catch(function() {
-        // Fallback: show prompt in a textarea for manual copy
         var ta = document.createElement("textarea");
-        ta.value = prompt; ta.style.position = "fixed"; ta.style.top = "20px";
-        ta.style.left = "20px"; ta.style.right = "20px"; ta.style.zIndex = "9999";
-        ta.style.height = "200px"; ta.style.background = "#0a0b10"; ta.style.color = "#fff";
-        ta.style.border = "1px solid var(--neon)"; ta.style.borderRadius = "8px"; ta.style.padding = "12px";
+        ta.value = prompt;
+        ta.style.cssText = "position:fixed;top:20px;left:20px;right:20px;z-index:9999;height:200px;background:#0a0b10;color:#fff;border:1px solid var(--neon);border-radius:8px;padding:12px;font-size:0.75rem;";
         document.body.appendChild(ta); ta.select();
-        setTimeout(function() { document.body.removeChild(ta); }, 8000);
+        setTimeout(function() { document.body.removeChild(ta); }, 10000);
     });
 }
 
@@ -778,6 +808,19 @@ async function predict() {
         } else {
             topProb = probs.draw; topLabel = "Draw"; topFair = market.draw || 3.00;
         }
+
+        // Store computed vis data so menuAiPrompt can include it
+        currentVerdict._vis = {
+            topProb:    topProb,
+            topLabel:   topLabel,
+            topFair:    topFair,
+            confPctVal: confPct(conf),
+            fairLblVal: fairLbl(topFair),
+            confDesc:   confDesc(conf),
+            probDesc:   probDesc(topProb),
+        };
+        currentVerdict._market = market;
+        currentVerdict._fixture = m;
 
         var fav = probs.home > probs.away ? m.home : m.away;
         var maxP = Math.max(probs.home, probs.away);

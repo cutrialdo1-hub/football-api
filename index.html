@@ -216,9 +216,52 @@
 
     .loader { border: 3px solid #1a1d28; border-top: 3px solid var(--neon); border-radius: 50%; width: 32px; height: 32px; margin: 20px auto; animation: spin 0.9s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
-</style>
+
+    /* ── Hamburger menu ── */
+    .menu-btn {
+        position: fixed; top: 16px; right: 16px; z-index: 999;
+        width: 38px; height: 38px; border-radius: 8px;
+        background: #151821; border: 1px solid var(--border);
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer; font-size: 1rem; color: var(--dim);
+        opacity: 0; pointer-events: none; transition: opacity 0.3s, border-color 0.2s;
+    }
+    .menu-btn.ready { opacity: 1; pointer-events: all; }
+    .menu-btn.ready:hover { border-color: var(--neon); color: var(--neon); }
+
+    .menu-dropdown {
+        position: fixed; top: 62px; right: 16px; z-index: 998;
+        background: #151821; border: 1px solid var(--border);
+        border-radius: 12px; padding: 6px; min-width: 190px;
+        display: none; flex-direction: column; gap: 2px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    }
+    .menu-dropdown.open { display: flex; }
+
+    .menu-item {
+        display: flex; align-items: center; gap: 10px;
+        padding: 10px 12px; border-radius: 8px; cursor: pointer;
+        font-family: monospace; font-size: 0.65rem; letter-spacing: 1px;
+        transition: background 0.15s; border: none; background: transparent;
+        width: 100%; text-align: left;
+    }
+    .menu-item:hover { background: rgba(255,255,255,0.04); }
+    .menu-item .mi   { font-size: 0.85rem; width: 18px; text-align: center; }</style>
 </head>
 <body>
+
+<!-- Context-aware hamburger menu — only activates after verdict loads -->
+<div class="menu-btn" id="menu-btn" onclick="toggleMenu()">≡</div>
+<div class="menu-dropdown" id="menu-dropdown">
+    <button class="menu-item" style="color:var(--neon);"  onclick="menuLogBet()">   <span class="mi">📊</span> LOG BET</button>
+    <button class="menu-item" style="color:var(--draw);"  onclick="menuDownload()"> <span class="mi">⬇</span> DOWNLOAD</button>
+    <button class="menu-item" style="color:var(--gold);"  onclick="menuAiPrompt()"> <span class="mi">🤖</span> AI PROMPT</button>
+    <div style="border-top:1px solid #1a1d28;margin:4px 0;"></div>
+    <button class="menu-item" style="color:var(--dim);"   onclick="window.location.href='log.html'">
+        <span class="mi">📋</span> VIEW LOG
+    </button>
+</div>
+
 <div class="container">
 
     <h1>THE GAFFER</h1>
@@ -254,6 +297,7 @@
 const API = "https://football-api-9e4p.onrender.com";
 let fixturesData  = [];
 let selectedIndex = null;
+let currentVerdict = null;  // stores last predict() response for menu actions
 
 // ── Server wake-up ──
 async function keepAlive() {
@@ -261,6 +305,121 @@ async function keepAlive() {
 }
 keepAlive();
 document.getElementById("date").value = new Date().toISOString().split("T")[0];
+
+// ── Menu ──
+function toggleMenu() {
+    document.getElementById("menu-dropdown").classList.toggle("open");
+}
+document.addEventListener("click", function(e) {
+    var btn = document.getElementById("menu-btn");
+    var dd  = document.getElementById("menu-dropdown");
+    if (!btn.contains(e.target) && !dd.contains(e.target)) {
+        dd.classList.remove("open");
+    }
+});
+
+function activateMenu() {
+    document.getElementById("menu-btn").classList.add("ready");
+}
+
+function menuLogBet() {
+    document.getElementById("menu-dropdown").classList.remove("open");
+    if (!currentVerdict) return;
+    var m = fixturesData[selectedIndex] || {};
+    // Find first value market from table
+    var valueRow = document.querySelector(".market-row-tr.value");
+    var market = "—"; var bookie = null; var stake = null; var edge = null;
+    if (valueRow) {
+        market = valueRow.querySelector("td") ? valueRow.querySelector("td").textContent : "—";
+        var inp = valueRow.querySelector(".bookie-input");
+        if (inp) bookie = inp.value;
+        var stakeEl = valueRow.querySelector(".prime");
+        if (stakeEl) stake = stakeEl.textContent.replace("★ €","").trim();
+        var edgeEl = valueRow.querySelector(".vt-lbl.pos");
+        if (edgeEl) edge = edgeEl.textContent;
+    }
+    var bankroll = getBankroll();
+    var payload = {
+        match_key:   currentVerdict.match_key,
+        home:        m.home, away: m.away,
+        comp:        m.comp, date: (m.kickoff||"").split("T")[0]||m.date,
+        market:      market, bookie_odds: bookie,
+        stake:       stake,  edge: edge, bankroll: bankroll,
+    };
+    fetch(API + "/log/bet", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify(payload)
+    }).then(function(r) { return r.json(); }).then(function() {
+        var btn = document.getElementById("menu-btn");
+        var orig = btn.textContent;
+        btn.textContent = "✓"; btn.style.color = "var(--neon)";
+        setTimeout(function() { btn.textContent = orig; btn.style.color = ""; }, 2000);
+    }).catch(function() {});
+}
+
+function menuDownload() {
+    document.getElementById("menu-dropdown").classList.remove("open");
+    if (!currentVerdict) return;
+    var m = fixturesData[selectedIndex] || {};
+    var data = Object.assign({}, currentVerdict, {
+        home: m.home, away: m.away, comp: m.comp,
+        league: m.league, kickoff: m.kickoff,
+        exported_at: new Date().toISOString(),
+    });
+    var blob = new Blob([JSON.stringify(data, null, 2)], {type:"application/json"});
+    var url  = URL.createObjectURL(blob);
+    var a    = document.createElement("a");
+    a.href   = url;
+    a.download = (m.home||"fixture").replace(/\s/g,"_") + "_vs_" + (m.away||"away").replace(/\s/g,"_") + ".json";
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function menuAiPrompt() {
+    document.getElementById("menu-dropdown").classList.remove("open");
+    if (!currentVerdict) return;
+    var m   = fixturesData[selectedIndex] || {};
+    var d   = currentVerdict;
+    var sug = (d.suggested_markets || []).map(function(s) {
+        return "  - " + s.label + " · Fair " + s.fair + " · " + s.prob + "% model prob";
+    }).join("\n");
+
+    var prompt =
+        "I am using a Poisson football prediction model and want your help validating this fixture before placing a bet.\n\n" +
+        "Match: " + m.home + " vs " + m.away + "\n" +
+        "Competition: " + (m.league || m.comp || "") + "\n" +
+        "Date: " + ((m.kickoff||"").split("T")[0] || m.date || "") + "\n" +
+        "Kickoff: " + ((m.kickoff||"").substring(11,16) || "TBC") + " UTC\n\n" +
+        "Model output:\n" +
+        "  Projected score: " + (d.score||"") + "\n" +
+        "  Home win: " + (d.probs||{}).home + "% · Draw: " + (d.probs||{}).draw + "% · Away win: " + (d.probs||{}).away + "%\n" +
+        "  λ Home: " + (d.h_lam||"") + " · λ Away: " + (d.a_lam||"") + "\n" +
+        (sug ? "  Suggested markets:\n" + sug + "\n" : "") + "\n" +
+        "Please research the following and give me a final betting verdict:\n" +
+        "1. Current injuries and suspensions for both teams\n" +
+        "2. Expected lineups\n" +
+        "3. Recent form in context (not just W/D/L)\n" +
+        "4. Head to head history at this ground\n" +
+        "5. Motivation and tactical setup\n" +
+        "6. Whether the suggested market holds up against real world intelligence\n" +
+        "7. Final recommendation: back, reduce stake, or avoid";
+
+    navigator.clipboard.writeText(prompt).then(function() {
+        var btn = document.getElementById("menu-btn");
+        var orig = btn.textContent;
+        btn.textContent = "✓"; btn.style.color = "var(--gold)";
+        setTimeout(function() { btn.textContent = orig; btn.style.color = ""; }, 2000);
+    }).catch(function() {
+        // Fallback: show prompt in a textarea for manual copy
+        var ta = document.createElement("textarea");
+        ta.value = prompt; ta.style.position = "fixed"; ta.style.top = "20px";
+        ta.style.left = "20px"; ta.style.right = "20px"; ta.style.zIndex = "9999";
+        ta.style.height = "200px"; ta.style.background = "#0a0b10"; ta.style.color = "#fff";
+        ta.style.border = "1px solid var(--neon)"; ta.style.borderRadius = "8px"; ta.style.padding = "12px";
+        document.body.appendChild(ta); ta.select();
+        setTimeout(function() { document.body.removeChild(ta); }, 8000);
+    });
+}
 
 // ── Custom dropdown ──
 function toggleFixtures() {
@@ -600,6 +759,11 @@ async function predict() {
         if (d.error) { out.innerHTML = '<div class="error-msg">⚡ ' + d.error + '</div>'; return; }
 
         var m      = fixturesData[idx];
+        // Store verdict for menu actions
+        d.match_key = (m.comp||"") + "_" + (m.home_id||idx) + "_" + (m.away_id||idx) + "_" + new Date().toISOString().split("T")[0];
+        currentVerdict = d;
+        activateMenu();
+
         var market = d.market || {};
         var probs  = d.probs  || { home: 33, draw: 33, away: 34 };
 

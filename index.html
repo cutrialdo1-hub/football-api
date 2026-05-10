@@ -443,12 +443,23 @@ function menuAiPrompt() {
 "───\n" +
 "\n" +
 "STEP 4 — BETTING VERDICT\n" +
-"State clearly:\n" +
-"• Which single market (if any) represents the best bet\n" +
-"• Whether it clears a minimum 5% edge over real-world fair price\n" +
-"• If NO market clears the bar, say so explicitly — do not force a pick\n" +
-"• If a below-model-price market is the most probable outcome, flag it\n" +
-"  as a 'probability play, not a value play' so the user can decide\n" +
+"Give TWO separate verdicts:\n" +
+"\n" +
+"SINGLE BET:\n" +
+"• Which market (if any) represents the best single bet\n" +
+"• Must clear a minimum 5% edge over real-world fair price\n" +
+"• If no market clears the bar, say NO BET explicitly — do not force a pick\n" +
+"• State the minimum bookie price needed to constitute value\n" +
+"\n" +
+"ACCA LEG:\n" +
+"• Which market (if any) is suitable as an acca leg\n" +
+"• Criteria: bookie implied probability LOWER than real-world probability\n" +
+"  (value still exists, even if edge is slim)\n" +
+"• Outcome probability should ideally be 60%+ for acca inclusion\n" +
+"• Prefer low-variance markets: 1X2, AH, DC over goals or longshots\n" +
+"• A smaller edge is acceptable here — the acca multiplier amplifies it\n" +
+"• If NO market is suitable as an acca leg, say so explicitly\n" +
+"• These two verdicts can be different markets or the same market\n" +
 "\n" +
 "───\n" +
 "\n" +
@@ -456,9 +467,10 @@ function menuAiPrompt() {
 "• Never force a selection if no genuine edge exists\n" +
 "• Always distinguish between VALUE (bookie longer than real-world fair)\n" +
 "  and PROBABILITY (most likely outcome regardless of price)\n" +
+"• A high probability outcome at a bad price is still a bad bet\n" +
 "• Flag any market where the model's lambda/averages may be distorted\n" +
 "  by sample size, weak opposition, or context (rotation, cup finals etc.)\n" +
-"• Be direct. No hedging. Give a clear recommendation at the end.\n" +
+"• Be direct. No hedging. Give clear recommendations at the end.\n" +
 "\n" +
 "───\n" +
 "\n" +

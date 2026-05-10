@@ -385,59 +385,124 @@ function menuAiPrompt() {
     var vis = d._vis     || {};
     var p   = d.probs    || {};
 
-    // Suggested markets
     var sug = (d.suggested_markets || []).map(function(s) {
-        return "  - " + s.label + " · Fair " + s.fair + " · " + s.prob + "% model prob";
+        return "  " + s.label + " · Fair " + s.fair + " · " + s.prob + "% model prob";
     }).join("\n");
 
-    // All fair odds
-    var allFair =
-        "  1X2:\n" +
-        "    Home Win:     " + (mkt.home    || "--") + "\n" +
-        "    Draw:         " + (mkt.draw    || "--") + "\n" +
-        "    Away Win:     " + (mkt.away    || "--") + "\n" +
-        "  Double Chance:\n" +
-        "    1X:           " + (mkt.dc_1x   || "--") + "\n" +
-        "    X2:           " + (mkt.dc_x2   || "--") + "\n" +
-        "    12:           " + (mkt.dc_12   || "--") + "\n" +
-        "  Goals:\n" +
-        "    BTTS:         " + (mkt.btts    || "--") + "\n" +
-        "    Over 1.5:     " + (mkt.over15  || "--") + "\n" +
-        "    Over 2.5:     " + (mkt.over25  || "--") + "\n" +
-        "    Over 3.5:     " + (mkt.over35  || "--") + "\n" +
-        "    Under 2.5:    " + (mkt.under25 || "--") + "\n" +
-        "    Under 3.5:    " + (mkt.under35 || "--") + "\n" +
-        "  Asian Handicap:\n" +
-        "    Home -0.5:    " + (mkt.ah_hm05 || "--") + "\n" +
-        "    Home +0.5:    " + (mkt.ah_hp05 || "--") + "\n" +
-        "    Home -1.5:    " + (mkt.ah_hm15 || "--") + "\n" +
-        "    Home +1.5:    " + (mkt.ah_hp15 || "--");
-
     var prompt =
-        "I am using a Poisson football prediction model and want your help validating this fixture before placing a bet.\n\n" +
-        "Match: " + (m.home||"?") + " vs " + (m.away||"?") + "\n" +
-        "Competition: " + (m.league||m.comp||"") + "\n" +
-        "Date: " + ((m.kickoff||"").split("T")[0] || m.date || "") + "\n" +
-        "Kickoff: " + ((m.kickoff||"").substring(11,16) || "TBC") + " UTC\n\n" +
-        "MODEL ANALYSIS:\n" +
-        "  Projected score: " + (d.score||"") + "\n" +
-        "  Home win: " + (p.home||"?") + "% · Draw: " + (p.draw||"?") + "% · Away win: " + (p.away||"?") + "%\n" +
-        "  λ Home: " + (d.h_lam||"") + " · λ Away: " + (d.a_lam||"") + "\n\n" +
-        "  Top outcome: " + (vis.topLabel||"") + "\n" +
-        "  Outcome probability: " + (vis.topProb||"") + "% — " + (vis.probDesc||"") + "\n" +
-        "  Model confidence: " + (vis.confPctVal||"") + "% — " + (vis.confDesc||"") + "\n" +
-        "  Fair price (" + (vis.topLabel||"") + "): " + (vis.topFair||"") + " — " + (vis.fairLblVal||"") + "\n\n" +
-        "ALL FAIR ODDS (model prices, no margin):\n" + allFair + "\n\n" +
-        (sug ? "SUGGESTED MARKETS:\n" + sug + "\n\n" : "") +
-        "Please research the following and give me a full verdict:\n" +
-        "1. Current injuries and suspensions for both teams\n" +
-        "2. Expected lineups\n" +
-        "3. Recent form in context (not just W/D/L)\n" +
-        "4. Head to head history at this ground\n" +
-        "5. Motivation and tactical setup\n" +
-        "6. Whether the suggested markets hold up against real world intelligence\n" +
-        "7. Your final recommendation: back, reduce stake, or avoid — and why\n\n" +
-        "After giving your verdict, please tell me what odds my bookie would need to offer on each suggested market for it to represent genuine value, so I can make a final decision before placing the bet.";
+"You are a professional football betting analyst. I will give you two inputs:\n" +
+"\n" +
+"1. A Poisson model analysis for a football fixture\n" +
+"2. The bookmaker's live market odds (copy-pasted)\n" +
+"\n" +
+"Your job is to cross-reference EVERY market the model provides against\n" +
+"EVERY corresponding market the bookmaker offers, then identify the best\n" +
+"selection for an accumulator leg.\n" +
+"\n" +
+"───\n" +
+"\n" +
+"STEP 1 — RESEARCH (before seeing bookie odds)\n" +
+"Research the following for the fixture:\n" +
+"• Current injuries and suspensions for both teams\n" +
+"• Expected lineups\n" +
+"• Recent form in context (scorelines, opposition quality, not just W/D/L)\n" +
+"• Head to head history at this specific ground\n" +
+"• Motivation and tactical context (cup finals nearby, title won,\n" +
+"  relegation battles, rotation risk etc.)\n" +
+"\n" +
+"───\n" +
+"\n" +
+"STEP 2 — FULL MARKET COMPARISON\n" +
+"Present a structured table for EVERY model market vs the bookie price:\n" +
+"\n" +
+"| Market | Model Fair | Bookie Price | Edge |\n" +
+"• ✅ if bookie is LONGER than model fair (potential value)\n" +
+"• ❌ if bookie is SHORTER than model fair (no value)\n" +
+"• ➖ if they are roughly equal (no edge)\n" +
+"\n" +
+"Cover all available categories:\n" +
+"• 1X2\n" +
+"• Double Chance\n" +
+"• Goals (all lines: Over/Under 1.5, 2.5, 3.5 etc.)\n" +
+"• BTTS\n" +
+"• Asian Handicap\n" +
+"• Any other model markets provided\n" +
+"\n" +
+"───\n" +
+"\n" +
+"STEP 3 — REALITY CHECK\n" +
+"For every market showing ✅ (bookie longer than model):\n" +
+"• Does real-world intelligence SUPPORT or UNDERMINE the model probability?\n" +
+"• Adjust the real-world probability estimate based on:\n" +
+"  ◦ Injury impact\n" +
+"  ◦ Rotation/motivation context\n" +
+"  ◦ H2H specifics at this ground\n" +
+"  ◦ Form quality (who did they beat/lose to?)\n" +
+"• If real-world probability is LOWER than model, flag it and downgrade\n" +
+"\n" +
+"───\n" +
+"\n" +
+"STEP 4 — ACCA VERDICT\n" +
+"State clearly:\n" +
+"• Which single market (if any) represents the strongest acca leg\n" +
+"• Whether it clears a minimum 5% edge over real-world fair price\n" +
+"• If NO market clears the bar, say so explicitly — do not force a pick\n" +
+"• If a below-model-price market is the most probable outcome, flag it\n" +
+"  as a 'probability play, not a value play' so the user can decide\n" +
+"\n" +
+"───\n" +
+"\n" +
+"RULES:\n" +
+"• Never force a selection if no genuine edge exists\n" +
+"• Always distinguish between VALUE (bookie longer than real-world fair)\n" +
+"  and PROBABILITY (most likely outcome regardless of price)\n" +
+"• Flag any market where the model's lambda/averages may be distorted\n" +
+"  by sample size, weak opposition, or context (rotation, cup finals etc.)\n" +
+"• Be direct. No hedging. Give a clear recommendation at the end.\n" +
+"\n" +
+"───\n" +
+"\n" +
+"[MODEL ANALYSIS]\n" +
+"Match:           " + (m.home||"?") + " vs " + (m.away||"?") + "\n" +
+"Competition:     " + (m.league||m.comp||"") + "\n" +
+"Date / Kickoff:  " + ((m.kickoff||"").split("T")[0]||m.date||"") + " · " + ((m.kickoff||"").substring(11,16)||"TBC") + " UTC\n" +
+"Projected score: " + (d.score||"") + "\n" +
+"Home win: " + (p.home||"?") + "% · Draw: " + (p.draw||"?") + "% · Away win: " + (p.away||"?") + "%\n" +
+"λ Home: " + (d.h_lam||"") + " · λ Away: " + (d.a_lam||"") + "\n" +
+"\n" +
+"Model Analysis:\n" +
+"  Top outcome:          " + (vis.topLabel||"") + "\n" +
+"  Outcome probability:  " + (vis.topProb||"") + "% — " + (vis.probDesc||"") + "\n" +
+"  Model confidence:     " + (vis.confPctVal||"") + "% — " + (vis.confDesc||"") + "\n" +
+"  Fair price context:   " + (vis.topFair||"") + " — " + (vis.fairLblVal||"") + "\n" +
+"\n" +
+"All Model Fair Odds (no margin):\n" +
+"  1X2:\n" +
+"    Home Win:     " + (mkt.home    ||"--") + "\n" +
+"    Draw:         " + (mkt.draw    ||"--") + "\n" +
+"    Away Win:     " + (mkt.away    ||"--") + "\n" +
+"  Double Chance:\n" +
+"    1X:           " + (mkt.dc_1x   ||"--") + "\n" +
+"    X2:           " + (mkt.dc_x2   ||"--") + "\n" +
+"    12:           " + (mkt.dc_12   ||"--") + "\n" +
+"  Goals:\n" +
+"    BTTS:         " + (mkt.btts    ||"--") + "\n" +
+"    Over 1.5:     " + (mkt.over15  ||"--") + "\n" +
+"    Over 2.5:     " + (mkt.over25  ||"--") + "\n" +
+"    Over 3.5:     " + (mkt.over35  ||"--") + "\n" +
+"    Under 2.5:    " + (mkt.under25 ||"--") + "\n" +
+"    Under 3.5:    " + (mkt.under35 ||"--") + "\n" +
+"  Asian Handicap:\n" +
+"    Home -0.5:    " + (mkt.ah_hm05 ||"--") + "\n" +
+"    Home +0.5:    " + (mkt.ah_hp05 ||"--") + "\n" +
+"    Home -1.5:    " + (mkt.ah_hm15 ||"--") + "\n" +
+"    Home +1.5:    " + (mkt.ah_hp15 ||"--") + "\n" +
+"\n" +
+(sug ? "Suggested Markets:\n" + sug + "\n\n" : "") +
+"───\n" +
+"\n" +
+"[BOOKMAKER ODDS]\n" +
+"(Paste your bookie's live market board here before sending)\n";
 
     navigator.clipboard.writeText(prompt).then(function() {
         var btn = document.getElementById("menu-btn");
